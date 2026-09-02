@@ -6,7 +6,9 @@ settings:
 
 importers:
 
-  .:
+  .: {}
+
+  apps/desktop:
     dependencies:
       '@agentclientprotocol/claude-agent-acp':
         specifier: 0.66.0
@@ -14,6 +16,15 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: ^0.19.0
         version: 0.19.2(zod@4.5.4)
+      '@berd/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@berd/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@berd/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@daypicker/react':
         specifier: ^10.0.1
         version: 10.0.1(@types/react@19.2.18)(react@19.2.8)
@@ -237,6 +248,86 @@ importers:
       vite:
         specifier: ^8.2.2
         version: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+
+  packages/agent:
+    dependencies:
+      '@agentclientprotocol/claude-agent-acp':
+        specifier: 0.66.0
+        version: 0.66.0(@anthropic-ai/sdk@0.123.0(zod@4.5.4))(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))
+      '@agentclientprotocol/sdk':
+        specifier: ^0.19.0
+        version: 0.19.2(zod@4.5.4)
+      '@berd/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.1
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/cli:
+    dependencies:
+      '@berd/core':
+        specifier: workspace:*
+        version: link:../core
+      '@berd/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.1
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/core:
+    dependencies:
+      '@berd/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@berd/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.1
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/eval:
+    dependencies:
+      '@berd/core':
+        specifier: workspace:*
+        version: link:../core
+      '@berd/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.1
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/protocol:
+    dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: ^0.19.0
+        version: 0.19.2(zod@4.5.4)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.1
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
 
 packages:
 

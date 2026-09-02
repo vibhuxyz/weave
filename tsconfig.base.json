@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "verbatimModuleSyntax": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+
+    "baseUrl": ".",
+    "paths": {
+      "@berd/protocol": ["packages/protocol/src/index.ts"],
+      "@berd/protocol/*": ["packages/protocol/src/*"],
+      "@berd/agent": ["packages/agent/src/index.ts"],
+      "@berd/agent/*": ["packages/agent/src/*"],
+      "@berd/core": ["packages/core/src/index.ts"],
+      "@berd/core/*": ["packages/core/src/*"],
+      "@berd/eval": ["packages/eval/src/index.ts"],
+      "@berd/eval/*": ["packages/eval/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "reference", ".berd"]
+}

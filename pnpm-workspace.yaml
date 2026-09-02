@@ -1,0 +1,6 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# reference/ is Berd's source kept for copying from. It is not a workspace
+# member, is excluded from every tsconfig, and is ignored by Vite's watcher.
