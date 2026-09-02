@@ -2,6 +2,8 @@ import {
   BookOpenIcon,
   FolderIcon,
   HomeIcon,
+  MessageSquareIcon,
+  PlusIcon,
   SettingsIcon,
   SparklesIcon,
 } from "lucide-react";
@@ -11,6 +13,9 @@ import { cn } from "@/shared/lib/cn";
 export interface SidebarProps {
   projectDir: string;
   onChooseProject: () => void;
+  onNewChat: () => void;
+  /** True when this conversation was restored from a previous run. */
+  resumed: boolean;
 }
 
 const NAV = [
@@ -25,7 +30,12 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function Sidebar({ projectDir, onChooseProject }: SidebarProps) {
+export function Sidebar({
+  projectDir,
+  onChooseProject,
+  onNewChat,
+  resumed,
+}: SidebarProps) {
   return (
     <aside className="flex w-56 shrink-0 flex-col rounded-xl bg-secondary/30 p-2">
       <nav className="flex flex-col gap-0.5 pt-8">
@@ -58,9 +68,26 @@ export function Sidebar({ projectDir, onChooseProject }: SidebarProps) {
       </button>
 
       <SectionLabel>Chats</SectionLabel>
-      <p className="px-3 text-muted-foreground text-xs leading-relaxed">
-        Not saved yet — closing the app clears this chat.
-      </p>
+      <div className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-1.5 text-sm">
+        <MessageSquareIcon className="size-4 shrink-0" />
+        <span className="truncate">Current</span>
+        {resumed && (
+          <span
+            title="Restored from your last run"
+            className="ml-auto text-muted-foreground text-xs"
+          >
+            resumed
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onNewChat}
+        className="mt-1 flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-muted-foreground text-sm transition-colors hover:bg-secondary/60 hover:text-foreground"
+      >
+        <PlusIcon className="size-4 shrink-0" />
+        New chat
+      </button>
 
       <div className="mt-auto border-border/60 border-t pt-2">
         <button

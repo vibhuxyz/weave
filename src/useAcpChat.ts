@@ -47,6 +47,7 @@ export function useAcpChat(port: number | null) {
   const [configOptions, setConfigOptions] = useState<SessionConfigOption[]>([]);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [git, setGit] = useState<GitStatus>({ branch: null, changes: [] });
+  const [resumed, setResumed] = useState(false);
   /** Pre-change config values, kept only until the agent confirms or refuses. */
   const previousConfigRef = useRef<Record<string, string>>({});
 
@@ -70,8 +71,31 @@ export function useAcpChat(port: number | null) {
     [],
   );
 
+  /** Append a user turn (used when replaying a resumed conversation). */
+  const appendUserChunk = useCallback((text: string) => {
+    setTurns((current) => {
+      const last = current.at(-1);
+      if (last?.role === "user") {
+        return [...current.slice(0, -1), { ...last, text: last.text + text }];
+      }
+      return [
+        ...current,
+        { id: crypto.randomUUID(), role: "user", text, tools: [] },
+      ];
+    });
+  }, []);
+
   const applyUpdate = useCallback(
-    (update: SessionUpdate) => {
+    (update: SessionUpdate, replay = false) => {
+      // Only replays carry user_message_chunk; live prompts are echoed
+      // optimistically in send(), so honouring both would duplicate the turn.
+      if (update.sessionUpdate === "user_message_chunk") {
+        if (replay && update.content.type === "text") {
+          appendUserChunk(update.content.text);
+        }
+        return;
+      }
+
       switch (update.sessionUpdate) {
         case "agent_message_chunk": {
           if (update.content.type !== "text") return;
@@ -111,7 +135,7 @@ export function useAcpChat(port: number | null) {
           return;
       }
     },
-    [withAssistantTurn],
+    [withAssistantTurn, appendUserChunk],
   );
 
   useEffect(() => {
@@ -149,6 +173,10 @@ export function useAcpChat(port: number | null) {
           case "ready":
             setState("ready");
             setCwd(message.cwd);
+            setResumed(message.resumed);
+            // A resumed session replays its own history, so clear first and
+            // let the replay rebuild the transcript.
+            setTurns([]);
             setConfigOptions(message.configOptions);
             setConfigValues(
               Object.fromEntries(
@@ -185,7 +213,7 @@ export function useAcpChat(port: number | null) {
             return;
           }
           case "update":
-            applyUpdate(message.update);
+            applyUpdate(message.update, message.replay === true);
             return;
           case "turn-end":
             setBusy(false);
@@ -252,6 +280,12 @@ export function useAcpChat(port: number | null) {
     socket.send(JSON.stringify({ type: "set-config", configId, value }));
   }, []);
 
+  const newChat = useCallback(() => {
+    const socket = socketRef.current;
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ type: "new-chat" }));
+  }, []);
+
   const refreshGit = useCallback(() => {
     const socket = socketRef.current;
     if (socket?.readyState === WebSocket.OPEN) {
@@ -268,9 +302,11 @@ export function useAcpChat(port: number | null) {
     configOptions,
     configValues,
     git,
+    resumed,
     send,
     cancel,
     setConfig,
     refreshGit,
+    newChat,
   };
 }

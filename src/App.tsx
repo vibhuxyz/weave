@@ -24,10 +24,12 @@ export function App() {
     configOptions,
     configValues,
     git,
+    resumed,
     send,
     cancel,
     setConfig,
     refreshGit,
+    newChat,
   } = useAcpChat(port);
 
   const [draft, setDraft] = useState("");
@@ -71,7 +73,12 @@ export function App() {
 
   return (
     <div className="flex h-dvh gap-2 bg-background p-2 text-foreground">
-      <Sidebar projectDir={project.dir} onChooseProject={choose} />
+      <Sidebar
+        projectDir={project.dir}
+        onChooseProject={choose}
+        onNewChat={newChat}
+        resumed={resumed}
+      />
 
       <main className="flex min-w-0 flex-1 flex-col rounded-xl bg-secondary/20">
         <header

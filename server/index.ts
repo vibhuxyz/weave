@@ -10,8 +10,9 @@
 
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import * as acp from "@agentclientprotocol/sdk";
@@ -25,7 +26,9 @@ export type ClientMessage =
   | { type: "prompt"; text: string }
   | { type: "cancel" }
   | { type: "set-config"; configId: string; value: string }
-  | { type: "git" };
+  | { type: "git" }
+  /** Abandon the resumed conversation and start a fresh one. */
+  | { type: "new-chat" };
 
 /** Messages we send the UI. */
 export type ServerMessage =
@@ -41,8 +44,19 @@ export type ServerMessage =
        * any ACP agent, not just this one.
        */
       configOptions: acp.SessionConfigOption[];
+      /** True when this session was resumed and its history is replaying. */
+      resumed: boolean;
     }
-  | { type: "update"; update: acp.SessionUpdate }
+  | {
+      type: "update";
+      update: acp.SessionUpdate;
+      /**
+       * Set while `loadSession` replays past turns. The UI needs it because
+       * `user_message_chunk` only shows up during replay — live prompts are
+       * echoed optimistically instead, and rendering both would duplicate.
+       */
+      replay?: boolean;
+    }
   | { type: "config-changed"; configId: string; value: string }
   | { type: "config-rejected"; configId: string; message: string }
   | { type: "git-status"; git: GitStatus }
@@ -80,6 +94,41 @@ function resolveAgentEntry(): string {
   const relative = manifest.bin?.["claude-agent-acp"];
   if (!relative) throw new Error("claude-agent-acp bin not found in manifest");
   return resolve(dirname(manifestPath), relative);
+}
+
+// ── Remembering which conversation belongs to which project ──────────────
+//
+// The agent advertises `loadSession: true`, and a *new* agent process can
+// replay a past session's full transcript. So persistence here is just a
+// sessionId — the conversation itself lives with the agent, and we never
+// maintain a transcript buffer of our own.
+
+const STATE_DIR = join(homedir(), ".my-berd-app");
+const SESSIONS_FILE = join(STATE_DIR, "sessions.json");
+
+async function readSessionMap(): Promise<Record<string, string>> {
+  try {
+    return JSON.parse(await readFile(SESSIONS_FILE, "utf8")) as Record<
+      string,
+      string
+    >;
+  } catch {
+    return {};
+  }
+}
+
+async function rememberSession(
+  projectDir: string,
+  sessionId: string,
+): Promise<void> {
+  try {
+    const map = await readSessionMap();
+    map[projectDir] = sessionId;
+    await mkdir(STATE_DIR, { recursive: true });
+    await writeFile(SESSIONS_FILE, JSON.stringify(map, null, 2));
+  } catch (error) {
+    console.warn("[sessions] could not persist:", error);
+  }
 }
 
 /** Confine every file operation to the project directory. */
@@ -267,12 +316,24 @@ async function handleConnection(
     Readable.toWeb(agent.stdout) as ReadableStream<Uint8Array>,
   );
 
+  // `loadSession` streams the past conversation back as ordinary
+  // session/update notifications. This flag tags them so the UI can tell a
+  // replayed turn from a live one.
+  let replaying = false;
+
   const connection = new acp.ClientSideConnection(
-    () => new UiClient(projectDir, send),
+    () =>
+      new UiClient(projectDir, (message) => {
+        if (message.type === "update" && replaying) {
+          send({ ...message, replay: true });
+          return;
+        }
+        send(message);
+      }),
     stream,
   );
 
-  await connection.initialize({
+  const init = await connection.initialize({
     protocolVersion: acp.PROTOCOL_VERSION,
     clientCapabilities: {
       // Without these the agent can read and suggest, but never apply a fix.
@@ -280,21 +341,59 @@ async function handleConnection(
     },
   });
 
-  const session = await connection.newSession({
-    cwd: projectDir,
-    mcpServers: [],
-  });
+  const canResume = init.agentCapabilities?.loadSession === true;
+  const remembered = (await readSessionMap())[projectDir];
 
-  const configOptions = session.configOptions ?? [];
+  let sessionId: string;
+  let configOptions: acp.SessionConfigOption[] = [];
+  let resumed = false;
+
+  if (canResume && remembered) {
+    try {
+      replaying = true;
+      const loaded = await connection.loadSession({
+        sessionId: remembered,
+        cwd: projectDir,
+        mcpServers: [],
+      });
+      sessionId = remembered;
+      configOptions = loaded.configOptions ?? [];
+      resumed = true;
+    } catch (error) {
+      // A remembered session can be gone (deleted, or a different machine).
+      // Falling back to a new one is always safe.
+      console.warn("[session] resume failed, starting fresh:", error);
+    } finally {
+      replaying = false;
+    }
+  }
+
+  if (!resumed) {
+    const created = await connection.newSession({
+      cwd: projectDir,
+      mcpServers: [],
+    });
+    sessionId = created.sessionId;
+    configOptions = created.configOptions ?? [];
+  }
+
+  // Deliberately NOT persisted yet. The agent only writes a session to disk
+  // once it has at least one turn, so remembering an id at creation time
+  // guarantees the next launch fails with "Resource not found" and silently
+  // starts over. Persist after the first completed turn instead.
+  let persisted = resumed;
+
   send({
     type: "ready",
-    sessionId: session.sessionId,
+    sessionId: sessionId!,
     cwd: projectDir,
     configOptions,
+    resumed,
   });
   console.log(
     "[session]",
-    session.sessionId,
+    sessionId!,
+    resumed ? "(resumed)" : "(new)",
     `config: ${configOptions.map((option) => option.id).join(", ") || "none"}`,
   );
 
@@ -310,7 +409,7 @@ async function handleConnection(
     }
 
     if (message.type === "cancel") {
-      void connection.cancel({ sessionId: session.sessionId });
+      void connection.cancel({ sessionId: sessionId! });
       return;
     }
 
@@ -321,10 +420,37 @@ async function handleConnection(
       return;
     }
 
+    if (message.type === "new-chat") {
+      connection
+        .newSession({ cwd: projectDir, mcpServers: [] })
+        .then((created) => {
+          sessionId = created.sessionId;
+          // Same rule as above: not resumable until it has a turn.
+          persisted = false;
+          console.log("[session]", created.sessionId, "(new chat)");
+          send({
+            type: "ready",
+            sessionId: created.sessionId,
+            cwd: projectDir,
+            configOptions: created.configOptions ?? [],
+            resumed: false,
+          });
+        })
+        .catch((error: unknown) =>
+          send({
+            type: "error",
+            message: `Could not start a new chat: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          }),
+        );
+      return;
+    }
+
     if (message.type === "set-config") {
       connection
         .setSessionConfigOption({
-          sessionId: session.sessionId,
+          sessionId: sessionId!,
           configId: message.configId,
           value: message.value,
         })
@@ -355,11 +481,18 @@ async function handleConnection(
     if (message.type === "prompt") {
       connection
         .prompt({
-          sessionId: session.sessionId,
+          sessionId: sessionId!,
           prompt: [{ type: "text", text: message.text }],
         })
         .then(async (result) => {
           send({ type: "turn-end", stopReason: result.stopReason });
+
+          // Now the session exists on the agent's disk and can be resumed.
+          if (!persisted) {
+            persisted = true;
+            await rememberSession(projectDir, sessionId!);
+          }
+
           // The agent probably just edited files; refresh Changes without
           // making the UI poll for it.
           send({ type: "git-status", git: await readGitStatus(projectDir) });
