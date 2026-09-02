@@ -5,6 +5,7 @@ import {
   MessageContent,
   MessageResponse,
 } from "@/shared/ui/ai-elements/message";
+import { ToolSteps } from "./ToolSteps";
 import { useAcpChat } from "./useAcpChat";
 import { useProject } from "./useProject";
 
@@ -81,29 +82,7 @@ export function App() {
         {turns.map((turn) => (
           <Message key={turn.id} from={turn.role}>
             <MessageContent>
-              {turn.tools.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  {turn.tools.map((tool) => (
-                    <div
-                      key={tool.id}
-                      className="flex items-center gap-2 rounded-md bg-secondary/60 px-3 py-1.5 font-mono text-xs"
-                    >
-                      <span
-                        className={
-                          tool.status === "completed"
-                            ? "text-green-500"
-                            : tool.status === "failed"
-                              ? "text-red-500"
-                              : "text-muted-foreground"
-                        }
-                      >
-                        ●
-                      </span>
-                      <span className="truncate">{tool.title}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <ToolSteps tools={turn.tools} />
               {turn.role === "assistant"
                 ? turn.text && <MessageResponse>{turn.text}</MessageResponse>
                 : turn.text}

@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SessionUpdate } from "@agentclientprotocol/sdk";
+import type {
+  SessionUpdate,
+  ToolCallStatus,
+  ToolKind,
+} from "@agentclientprotocol/sdk";
 import type { ServerMessage } from "../server/index.ts";
 
 export interface ToolEntry {
   id: string;
   title: string;
-  status: string;
+  status: ToolCallStatus;
+  /** read | edit | delete | move | search | execute | think | fetch | … */
+  kind: ToolKind;
 }
 
 export interface ChatTurn {
@@ -75,6 +81,7 @@ export function useAcpChat(port: number | null) {
                 id: update.toolCallId,
                 title: update.title,
                 status: update.status ?? "pending",
+                kind: update.kind ?? "other",
               },
             ],
           }));
@@ -106,35 +113,70 @@ export function useAcpChat(port: number | null) {
       return;
     }
 
+    // The Rust side returns as soon as the node process is SPAWNED, which is
+    // well before it has bound the port — so the first dial is usually
+    // refused. Retry until it answers rather than failing the app on a race.
+    // The same retry covers a server restart when the project changes.
+    let disposed = false;
+    let socket: WebSocket | null = null;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let attempt = 0;
+
     setState("connecting");
     setTurns([]);
-    const socket = new WebSocket(`ws://127.0.0.1:${port}`);
-    socketRef.current = socket;
 
-    socket.onmessage = (event) => {
-      const message = JSON.parse(String(event.data)) as ServerMessage;
-      switch (message.type) {
-        case "ready":
-          setState("ready");
-          setCwd(message.cwd);
-          return;
-        case "update":
-          applyUpdate(message.update);
-          return;
-        case "turn-end":
-          setBusy(false);
-          return;
-        case "error":
-          setError(message.message);
-          setBusy(false);
-          return;
-      }
+    const connect = () => {
+      if (disposed) return;
+      attempt += 1;
+      const next = new WebSocket(`ws://127.0.0.1:${port}`);
+      socket = next;
+      socketRef.current = next;
+
+      next.onopen = () => {
+        attempt = 0;
+      };
+
+      next.onmessage = (event) => {
+        const message = JSON.parse(String(event.data)) as ServerMessage;
+        switch (message.type) {
+          case "ready":
+            setState("ready");
+            setCwd(message.cwd);
+            return;
+          case "update":
+            applyUpdate(message.update);
+            return;
+          case "turn-end":
+            setBusy(false);
+            return;
+          case "error":
+            setError(message.message);
+            setBusy(false);
+            return;
+        }
+      };
+
+      // A refused connection fires error then close; only close is guaranteed,
+      // so schedule the retry there and let error stay silent.
+      next.onclose = () => {
+        if (disposed || socket !== next) return;
+        setBusy(false);
+        if (attempt <= 40) {
+          setState("connecting");
+          retry = setTimeout(connect, Math.min(250 * attempt, 1000));
+        } else {
+          setState("closed");
+        }
+      };
     };
 
-    socket.onerror = () => setState("error");
-    socket.onclose = () => setState((s) => (s === "error" ? s : "closed"));
+    connect();
 
-    return () => socket.close();
+    return () => {
+      disposed = true;
+      clearTimeout(retry);
+      socket?.close();
+    };
   }, [applyUpdate, port]);
 
   const send = useCallback((text: string) => {

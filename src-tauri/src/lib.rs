@@ -5,9 +5,11 @@
 //! Rust side spawns, supervises, and kills; the renderer only talks to it over
 //! a localhost WebSocket.
 
+use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, RunEvent, State};
@@ -44,6 +46,30 @@ impl AgentServer {
 
         *self.child.lock().unwrap() = Some(child);
         Ok(())
+    }
+
+    /// Spawning is not readiness: node needs a moment to bind the port. Poll
+    /// until it accepts a connection so the renderer is never told "ready"
+    /// before it can actually dial in.
+    fn wait_until_listening(&self, port: u16, timeout: Duration) -> Result<(), String> {
+        let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
+        let deadline = Instant::now() + timeout;
+
+        while Instant::now() < deadline {
+            if TcpStream::connect_timeout(&addr.into(), Duration::from_millis(200)).is_ok() {
+                return Ok(());
+            }
+            // Surface an early crash (bad node, syntax error) instead of
+            // silently waiting out the whole timeout.
+            if let Some(child) = self.child.lock().unwrap().as_mut() {
+                if let Ok(Some(status)) = child.try_wait() {
+                    return Err(format!("ACP server exited early: {status}"));
+                }
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        Err(format!("ACP server did not start listening on port {port}"))
     }
 
     fn stop(&self) {
@@ -104,6 +130,7 @@ fn start_agent_server(
         .ok_or_else(|| "could not resolve repo root".to_string())?;
 
     server.restart(&repo_root, &project_dir)?;
+    server.wait_until_listening(SERVER_PORT, Duration::from_secs(20))?;
 
     if let Ok(path) = settings_path(&app) {
         let settings = Settings {
