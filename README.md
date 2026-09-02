@@ -1,46 +1,140 @@
 # my-berd-app
 
-A Tauri desktop app that talks to Claude Code directly over ACP.
+An agent orchestrator with a desktop UI. Berd's interface, my own backend,
+**no Goose**.
 
-Berd's UI, my own backend, **no Goose**.
+The orchestrator runs headless. The desktop app is one consumer of it, not
+its host.
+
+```bash
+pnpm install
+pnpm tauri dev                                        # the app
+pnpm berd run --dir ./repo --prompt "fix the bug"     # no window needed
+```
 
 ---
 
-## How it runs
+## Layout
 
 ```
-Tauri window (WKWebView)          src/          React 19 + Berd's design system
-      │  ws://127.0.0.1:8137
-      ▼
-Node ACP server                   server/       spawns the agent, speaks ACP
-      │  stdio (newline-delimited JSON)
-      ▼
-claude-agent-acp                  node_modules  the agent — none of it is mine
-      │  https
-      ▼
-api.anthropic.com                               my Claude auth
+packages/
+  protocol/   types only, zero runtime deps        165 lines
+  agent/      one ACP engine: spawn, session, permissions   556
+  core/       orchestrator: runner, ledger, git    393
+  cli/        berd run | replay | runs             191
+  eval/       harness, scoring, reports             93
+apps/
+  desktop/    Tauri + React                        288 server · 170 Rust · 1,073 UI
+reference/    Berd's src, read-only, 1,822 files — copy from, never import
+.berd/        runtime output, gitignored
 ```
 
-**Rust owns exactly one thing:** spawn the Node server, wait for it to bind,
-remember which folder was picked. 170 lines. Berd's `goose_serve.rs` is 1,682,
-because Berd's Rust owns `goosed` — a whole agent host. Mine owns a node script.
-
-**The agent is not code I wrote.** `@agentclientprotocol/claude-agent-acp` is a
-standalone ACP server on npm. Spawn it, speak five protocol methods, done.
-
-### Why no Goose
-
-Berd's UI calls **113** `_goose/unstable/*` extension methods — sessions,
-archive, rename, projects, providers, config. `goosed` is not "the Goose
-agent", it's Berd's database and settings server. Reimplementing it was never
-the goal, so this app copies Berd's *design system* and speaks plain ACP:
+**Dependency direction:**
 
 ```
-initialize · newSession · loadSession · prompt · cancel
-+ setSessionConfigOption
+protocol  ←  agent  ←  core  ←  cli
+                        ↑
+                     desktop
 ```
 
-Six calls instead of 113.
+Nothing points back. `core` must never import from `apps/desktop` or
+`@tauri-apps/*`. That single rule is what keeps the eval harness runnable from
+a script at 3am, which is the only way it ever gets run often enough to
+produce numbers.
+
+Docs: [ARCHITECTURE](docs/ARCHITECTURE.md) · [LADDER](docs/LADDER.md) ·
+[FINDINGS](docs/FINDINGS.md)
+
+---
+
+## How a turn runs
+
+```
+Tauri window ──ws:8137──▶ desktop/server ──▶ @berd/core ──▶ @berd/agent
+      or                  (transport only)     (ledger)      (spawn + ACP)
+   berd CLI ─────────────────────────────────────┘                │
+                                                          stdio (ndjson)
+                                                                  ▼
+                                                        claude-agent-acp
+                                                                  │ https
+                                                                  ▼
+                                                        api.anthropic.com
+```
+
+Both entry points write the same ledger. The desktop is a **reader** over the
+event stream the CLI writes, not a second implementation of it.
+
+---
+
+## The ledger
+
+Every run appends to `.berd/runs/<runId>/events.ndjson`, one JSON object per
+line, never rewritten.
+
+```
+task.started · agent.spawned · agent.session · agent.message (raw ACP)
+permission.requested · permission.decided · file.read · file.written
+task.finished · run.finished
+```
+
+Writes are **synchronous** on purpose: an async queue drops its tail when the
+process crashes, which is exactly the run whose log matters most.
+
+`agent.message` stores the raw ACP payload verbatim. Deriving a nicer shape is
+a reader's job; throwing the original away is unrecoverable.
+
+```bash
+pnpm berd runs   --dir ./repo
+pnpm berd replay <runId> --dir ./repo
+```
+
+Replay, cost accounting, "why did agent 4 touch that file", and the eval
+harness are all readers over this one file.
+
+---
+
+## Engines
+
+`packages/agent/src/engines.ts` is the **only** place an engine is named.
+Adding one is a row plus an npm install, not an adapter.
+
+| id | package | status |
+|---|---|---|
+| `claude-code` | `@agentclientprotocol/claude-agent-acp` | installed |
+| `codex` | `@zed-industries/codex-acp` | declared |
+| `amp` | `@sourcegraph/amp` | declared |
+| `gemini` | `@google/gemini-cli --experimental-acp` | declared |
+
+Verify `binName` against each package's own manifest before trusting it — a
+package's `exports["."]` usually points at its library, while the ACP server
+is the `bin`.
+
+**Engines are agents, not models.** Claude Code, Codex, Amp and Gemini CLI each
+ship an ACP server. DeepSeek is a *model* — reach it through an agent's `model`
+setting, or write a thin ACP server for it, which is where the registry would
+plug in.
+
+---
+
+## Permissions
+
+Not cleanup — on the critical path. With one agent and a human watching,
+auto-approve was survivable. With N agents running unattended it is the only
+thing between a plan and `rm -rf`, and nobody is at the window.
+
+```ts
+type PermissionPolicy = (task, request) => { decision: "allow" | "reject"; reason: string }
+```
+
+The default, `confineToTaskDir`, rejects any tool call whose `locations` fall
+outside the task's `cwd`. Every decision is logged with its reason:
+
+```
+allow  Edit math.js — allow_always; within task cwd
+```
+
+Match on `kind` (`allow_once` / `allow_always` / `reject_*`), never
+`options[0]` — the order is the agent's choice.
 
 ---
 
@@ -48,171 +142,56 @@ Six calls instead of 113.
 
 | | |
 |---|---|
-| **Fixes bugs on disk** | Not suggestions — real writes, verified |
-| **Project picker** | Native folder dialog, remembered across launches |
-| **Conversations resume** | Quit the app mid-chat, reopen, it's still there |
+| **Headless runs** | `berd run` fixes bugs on disk with no window |
+| **Execution ledger** | Every raw ACP message, replayable |
+| **Desktop app** | Three panes, Berd's design system |
+| **Conversations resume** | Quit mid-chat, reopen, it's still there |
 | **Agent settings** | model · mode · effort · fast, read from the agent |
-| **Tool steps** | Collapsible, showing the actual command run |
-| **Git context** | Branch + changed files, refreshed after every turn |
-| **Sandboxed** | The agent cannot touch anything outside the project folder |
+| **Tool steps** | Collapsible, showing the actual command |
+| **Git context** | Branch + changed files, refreshed each turn |
+| **Path confinement** | Enforced in the policy *and* in file I/O |
 
 ### Not built
 
-Onboarding · Agents / Skills / Settings screens (rendered but disabled) ·
-multiple saved chats (one per project) · a file tree · permission prompts in
-the UI · a packaged build that doesn't need `node` on PATH.
+Multi-agent pool · worktrees · scheduler · planner · impact analysis ·
+onboarding · Agents/Skills/Settings screens (rendered, disabled) · multiple
+saved chats · file tree · packaged build that doesn't need `node` on PATH.
 
 ---
 
-## Run
+## Scripts
 
-```bash
-pnpm install
-pnpm tauri dev      # the desktop app
-```
-
-First launch asks for a project folder.
-
-| Script | |
+| | |
 |---|---|
-| `pnpm tauri dev` | the app |
-| `pnpm dev` | just the Vite page in a browser (no agent) |
-| `pnpm server` | just the ACP server; set `PROJECT_DIR` |
-| `pnpm typecheck` | `tsc --noEmit` — clean |
-| `pnpm tauri build` | a real `.app` (still needs `node` on PATH) |
+| `pnpm tauri dev` | the desktop app |
+| `pnpm dev` | Vite only, no agent |
+| `pnpm berd …` | the CLI |
+| `pnpm eval` | the harness |
+| `pnpm typecheck` | all six packages |
 
 ---
 
-## Layout
+## Two rules that keep this scalable
 
-```
-src/                  the UI
-  shared/             230 files copied from Berd, imports unchanged
-    ui/               123 components, incl. ai-elements
-    i18n/             Berd's real i18n + locale files
-    styles/globals.css  Berd's Tailwind 4 theme tokens
-  App.tsx             three-pane shell
-  useAcpChat.ts       WebSocket → transcript
-  useProject.ts       folder picker → Rust → server restart
-  ToolSteps.tsx       collapsible tool steps
-  ConfigPicker.tsx    one pill per agent setting
-  ContextPanel.tsx    Context / Changes / Files
-  Sidebar.tsx         nav, project, chats
-server/index.ts       the ACP server (528 lines)
-src-tauri/            the desktop shell (170 lines of Rust)
-reference/            full copy of Berd's src/ (1,822 files)
-```
+1. **A new version adds a file to an existing package**, not a new top-level
+   folder. If something fits none of protocol / agent / core / cli / eval /
+   desktop, that is a signal to think — not to create `packages/utils`.
 
-**~1,700 lines mine. 230 files copied.** `@/` is aliased to `src/` exactly as
-in Berd, so anything else pulled out of `reference/` keeps its imports and
-just works.
-
----
-
-## Things that were not obvious
-
-Each of these cost real debugging time. Written down so they aren't
-rediscovered.
-
-### The agent sends more than you first render
-
-Twice the fix was *stop discarding data*, not *add a feature*:
-
-- **Model list.** `newSession().models` is empty — Claude Code never populates
-  it. Everything is in `configOptions` (`model`, `mode`, `effort`, `fast`).
-  That's also why Berd's `setModel` calls `setSessionConfigOption`. Driving
-  configOptions works for any ACP agent; a hardcoded model list works for none.
-- **Tool titles.** A tool call opens with a placeholder (`"Terminal"`,
-  `"Read File"`) and is refined in `tool_call_update` (`"ls src"`,
-  `"Read src/paths.ts"`). Reading only `status` from those updates made every
-  shell step render identically.
-
-### Spawned ≠ ready
-
-`Command::spawn()` returns when the process exists, not when it is listening.
-The renderer dialled into that gap, got `ECONNREFUSED`, and gave up silently.
-Fixed on both sides: Rust polls the port before reporting success (and checks
-`try_wait()` so a crash surfaces instead of hanging for the full timeout), and
-the renderer retries on `close` — not `error`, since only `close` is guaranteed.
-
-### Persist a session only after it has a turn
-
-The agent writes a session to disk on first content. Storing the id at
-creation meant launching without chatting poisoned it, and the next launch
-failed with `Resource not found` and silently started over.
-
-### Permission options are not ordered
-
-`kind` is `allow_once | allow_always | reject_once | reject_always`. Match on
-kind, never `options[0]` — pick a reject and the agent asks forever while
-writing nothing. `clientCapabilities.fs.writeTextFile: true` is the other half;
-without it the agent can only suggest.
-
-### Some settings are model-dependent
-
-`effort` and `fast` work on Opus and are refused on Haiku, reported as a bare
-`Internal error`. Optimistic UI updates therefore need a rollback, or a pill
-will show a value the agent rejected.
-
-### Two Node quirks
-
-- `--experimental-strip-types` is strip-only: no constructor parameter
-  properties.
-- `require.resolve("@agentclientprotocol/claude-agent-acp")` gives
-  `dist/lib.js` (the library) via `exports["."]`. The ACP server is the **bin**,
-  `dist/index.js`. Read it from the manifest.
-
----
-
-## Measured, not guessed
-
-```
-server module import                  160 ms
-bind the port                           3 ms
-websocket open                         12 ms
-agent spawn + handshake + newSession  1464 ms   ← the only local cost
-prompt → first token                  1786 ms   ← Anthropic's API
-```
-
-**No Redis, no queue, no cache.** One user, one machine, no shared state, no
-repeated expensive read — there is nothing for them to do. First-token latency
-is not local; the only lever is the model pill.
-
-The profile's real finding was a correctness bug, not slowness: every reconnect
-created a new session, so conversations vanished. Fixed with `loadSession`,
-which the agent already advertised.
-
----
-
-## Seams deliberately cut
-
-- `openSessionDeepLink.ts` — Berd's dispatches through the berdctl registry,
-  which pulls in most of the app. Stubbed.
-- `shared/types/messages.ts` — two Goose DTO imports replaced with local types.
-- `shared/types/providers.ts` — deleted; nothing imported it.
-- `@tauri-apps/api` stays a dependency because a few copied components import
-  it. Harmless: `invoke()` only throws if actually called.
+2. **Everything written at runtime goes under `.berd/`.** Worktrees, event
+   logs, diffs, metrics, context cache. One gitignore line, one directory to
+   delete when state gets weird, and the same path whether the desktop or the
+   CLI is driving.
 
 ---
 
 ## History
 
 ```
+278bf8a  Move to a pnpm workspace; extract the orchestrator from the app
+5c25fb8  Update README to what actually exists
 b65e565  Show what each tool step actually did
 f56ab91  Resume conversations instead of losing them on every connect
 a650ef3  Three-pane shell, agent settings pills, git context panel
 5b61e44  Render tool calls as collapsible steps, like Berd
 9758710  V0: Berd UI + own ACP backend, no Goose
 ```
-
-## Next
-
-1. **Delete the server's auto-approve.** Permissions are decided both in
-   `UiClient.requestPermission` and by the `mode` pill. Two sources of truth;
-   the pill is the honest one.
-2. **Multiple chats per project.** The agent advertises
-   `sessionCapabilities.list`, so the Chats sidebar is a `listSessions` call
-   away.
-3. **Bundle Node** so `pnpm tauri build` produces something that runs on a
-   machine without it — Berd solves this with `node-runtime.lock.json` +
-   `managed_node.rs`.
