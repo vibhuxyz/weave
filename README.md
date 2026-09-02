@@ -1,31 +1,68 @@
 # my-berd-app
 
-Berd's UI, your own ACP backend. **No Goose.**
-
 A Tauri desktop app that talks to Claude Code directly over ACP.
+
+Berd's UI, my own backend, **no Goose**.
+
+---
 
 ## How it runs
 
 ```
-Tauri window (WKWebView)          src/          React + Berd's design system
+Tauri window (WKWebView)          src/          React 19 + Berd's design system
       │  ws://127.0.0.1:8137
       ▼
 Node ACP server                   server/       spawns the agent, speaks ACP
       │  stdio (newline-delimited JSON)
       ▼
-claude-agent-acp                  node_modules  the agent — you write none of it
+claude-agent-acp                  node_modules  the agent — none of it is mine
       │  https
       ▼
-api.anthropic.com                               your Claude auth
+api.anthropic.com                               my Claude auth
 ```
 
-Rust (`src-tauri/`) owns exactly one thing: it spawns and kills the Node
-server, and remembers which folder you picked. Same shape as Berd owning
-`goosed` — much smaller job.
+**Rust owns exactly one thing:** spawn the Node server, wait for it to bind,
+remember which folder was picked. 170 lines. Berd's `goose_serve.rs` is 1,682,
+because Berd's Rust owns `goosed` — a whole agent host. Mine owns a node script.
 
-**Why the agent is not code you wrote:** `@agentclientprotocol/claude-agent-acp`
-is a standalone ACP server on npm. You spawn it and speak 5 protocol methods.
-That is the whole "backend".
+**The agent is not code I wrote.** `@agentclientprotocol/claude-agent-acp` is a
+standalone ACP server on npm. Spawn it, speak five protocol methods, done.
+
+### Why no Goose
+
+Berd's UI calls **113** `_goose/unstable/*` extension methods — sessions,
+archive, rename, projects, providers, config. `goosed` is not "the Goose
+agent", it's Berd's database and settings server. Reimplementing it was never
+the goal, so this app copies Berd's *design system* and speaks plain ACP:
+
+```
+initialize · newSession · loadSession · prompt · cancel
++ setSessionConfigOption
+```
+
+Six calls instead of 113.
+
+---
+
+## What works
+
+| | |
+|---|---|
+| **Fixes bugs on disk** | Not suggestions — real writes, verified |
+| **Project picker** | Native folder dialog, remembered across launches |
+| **Conversations resume** | Quit the app mid-chat, reopen, it's still there |
+| **Agent settings** | model · mode · effort · fast, read from the agent |
+| **Tool steps** | Collapsible, showing the actual command run |
+| **Git context** | Branch + changed files, refreshed after every turn |
+| **Sandboxed** | The agent cannot touch anything outside the project folder |
+
+### Not built
+
+Onboarding · Agents / Skills / Settings screens (rendered but disabled) ·
+multiple saved chats (one per project) · a file tree · permission prompts in
+the UI · a packaged build that doesn't need `node` on PATH.
+
+---
 
 ## Run
 
@@ -34,75 +71,148 @@ pnpm install
 pnpm tauri dev      # the desktop app
 ```
 
-First launch asks for a project folder. Claude reads and edits files **inside
-that folder only** — `safeResolve()` in `server/index.ts` refuses paths outside it.
+First launch asks for a project folder.
 
-Other scripts:
+| Script | |
+|---|---|
+| `pnpm tauri dev` | the app |
+| `pnpm dev` | just the Vite page in a browser (no agent) |
+| `pnpm server` | just the ACP server; set `PROJECT_DIR` |
+| `pnpm typecheck` | `tsc --noEmit` — clean |
+| `pnpm tauri build` | a real `.app` (still needs `node` on PATH) |
 
-```bash
-pnpm dev            # just the Vite page in a browser (no Tauri, no agent)
-pnpm server         # just the ACP server; PROJECT_DIR=/path/to/repo
-pnpm typecheck      # tsc --noEmit — clean
-pnpm tauri build    # a real .app
-```
+---
 
 ## Layout
 
 ```
-src/              the UI
-  shared/ui/      123 components copied from Berd, imports unchanged
-  shared/i18n/    Berd's real i18n + locale files
-  shared/styles/globals.css   Berd's Tailwind 4 theme tokens
-  App.tsx         project picker + chat
-  useAcpChat.ts   WebSocket → transcript
-  useProject.ts   folder picker → Rust → server restart
-server/index.ts   the ACP server (spawn, permissions, file I/O, WebSocket)
-src-tauri/        the desktop shell (Rust; ~150 lines)
-reference/        full copy of Berd's src/ (1,822 files) — copy more from here
+src/                  the UI
+  shared/             230 files copied from Berd, imports unchanged
+    ui/               123 components, incl. ai-elements
+    i18n/             Berd's real i18n + locale files
+    styles/globals.css  Berd's Tailwind 4 theme tokens
+  App.tsx             three-pane shell
+  useAcpChat.ts       WebSocket → transcript
+  useProject.ts       folder picker → Rust → server restart
+  ToolSteps.tsx       collapsible tool steps
+  ConfigPicker.tsx    one pill per agent setting
+  ContextPanel.tsx    Context / Changes / Files
+  Sidebar.tsx         nav, project, chats
+server/index.ts       the ACP server (528 lines)
+src-tauri/            the desktop shell (170 lines of Rust)
+reference/            full copy of Berd's src/ (1,822 files)
 ```
 
-`@/` is aliased to `src/`, same as Berd, so anything you copy out of
-`reference/` keeps its original import paths and just works.
+**~1,700 lines mine. 230 files copied.** `@/` is aliased to `src/` exactly as
+in Berd, so anything else pulled out of `reference/` keeps its imports and
+just works.
 
-## The parts that matter
+---
 
-**Permissions** (`server/index.ts`). Before the agent writes a file it asks.
-We auto-approve — but by matching `kind === "allow_always" | "allow_once"`,
-never by picking `options[0]`. Pick a reject kind and the agent asks forever
-and never edits anything.
+## Things that were not obvious
 
-**File capabilities.** `clientCapabilities.fs.writeTextFile: true` in
-`initialize`. Set it false and Claude can read and suggest but never apply a fix.
+Each of these cost real debugging time. Written down so they aren't
+rediscovered.
 
-**The five update kinds** are the whole transcript contract:
-`agent_message_chunk` · `tool_call` · `tool_call_update` · `agent_thought_chunk` ·
-`plan`. V0 renders the first three.
+### The agent sends more than you first render
 
-## Verified working
+Twice the fix was *stop discarding data*, not *add a feature*:
 
-Pointed at a repo containing:
+- **Model list.** `newSession().models` is empty — Claude Code never populates
+  it. Everything is in `configOptions` (`model`, `mode`, `effort`, `fast`).
+  That's also why Berd's `setModel` calls `setSessionConfigOption`. Driving
+  configOptions works for any ACP agent; a hardcoded model list works for none.
+- **Tool titles.** A tool call opens with a placeholder (`"Terminal"`,
+  `"Read File"`) and is refined in `tool_call_update` (`"ls src"`,
+  `"Read src/paths.ts"`). Reading only `status` from those updates made every
+  shell step render identically.
 
-```js
-// BUG: add() multiplies instead of adding.
-export function add(a, b) { return a * b; }
+### Spawned ≠ ready
+
+`Command::spawn()` returns when the process exists, not when it is listening.
+The renderer dialled into that gap, got `ECONNREFUSED`, and gave up silently.
+Fixed on both sides: Rust polls the port before reporting success (and checks
+`try_wait()` so a crash surfaces instead of hanging for the full timeout), and
+the renderer retries on `close` — not `error`, since only `close` is guaranteed.
+
+### Persist a session only after it has a turn
+
+The agent writes a session to disk on first content. Storing the id at
+creation meant launching without chatting poisoned it, and the next launch
+failed with `Resource not found` and silently started over.
+
+### Permission options are not ordered
+
+`kind` is `allow_once | allow_always | reject_once | reject_always`. Match on
+kind, never `options[0]` — pick a reject and the agent asks forever while
+writing nothing. `clientCapabilities.fs.writeTextFile: true` is the other half;
+without it the agent can only suggest.
+
+### Some settings are model-dependent
+
+`effort` and `fast` work on Opus and are refused on Haiku, reported as a bare
+`Internal error`. Optimistic UI updates therefore need a rollback, or a pill
+will show a value the agent rejected.
+
+### Two Node quirks
+
+- `--experimental-strip-types` is strip-only: no constructor parameter
+  properties.
+- `require.resolve("@agentclientprotocol/claude-agent-acp")` gives
+  `dist/lib.js` (the library) via `exports["."]`. The ACP server is the **bin**,
+  `dist/index.js`. Read it from the manifest.
+
+---
+
+## Measured, not guessed
+
+```
+server module import                  160 ms
+bind the port                           3 ms
+websocket open                         12 ms
+agent spawn + handshake + newSession  1464 ms   ← the only local cost
+prompt → first token                  1786 ms   ← Anthropic's API
 ```
 
-Prompt: *"There is a bug in math.js: add() multiplies instead of adding. Fix it."*
-Result: the file on disk became `return a + b;` with the stale comment removed.
+**No Redis, no queue, no cache.** One user, one machine, no shared state, no
+repeated expensive read — there is nothing for them to do. First-token latency
+is not local; the only lever is the model pill.
+
+The profile's real finding was a correctness bug, not slowness: every reconnect
+created a new session, so conversations vanished. Fixed with `loadSession`,
+which the agent already advertised.
+
+---
 
 ## Seams deliberately cut
 
-- `openSessionDeepLink.ts` — Berd's version dispatches through the berdctl
-  registry, which pulls in most of the app. Stubbed.
+- `openSessionDeepLink.ts` — Berd's dispatches through the berdctl registry,
+  which pulls in most of the app. Stubbed.
 - `shared/types/messages.ts` — two Goose DTO imports replaced with local types.
-  There is no Goose here.
 - `shared/types/providers.ts` — deleted; nothing imported it.
 - `@tauri-apps/api` stays a dependency because a few copied components import
   it. Harmless: `invoke()` only throws if actually called.
 
-## Not built yet
+---
 
-Onboarding · session history · persistence (close the app, the chat is gone) ·
-multiple sessions · agent personas · model picker · permission prompts in the UI ·
-bundled Node for a packaged build (`pnpm tauri build` produces an app that needs
-`node` on PATH).
+## History
+
+```
+b65e565  Show what each tool step actually did
+f56ab91  Resume conversations instead of losing them on every connect
+a650ef3  Three-pane shell, agent settings pills, git context panel
+5b61e44  Render tool calls as collapsible steps, like Berd
+9758710  V0: Berd UI + own ACP backend, no Goose
+```
+
+## Next
+
+1. **Delete the server's auto-approve.** Permissions are decided both in
+   `UiClient.requestPermission` and by the `mode` pill. Two sources of truth;
+   the pill is the honest one.
+2. **Multiple chats per project.** The agent advertises
+   `sessionCapabilities.list`, so the Chats sidebar is a `listSessions` call
+   away.
+3. **Bundle Node** so `pnpm tauri build` produces something that runs on a
+   machine without it — Berd solves this with `node-runtime.lock.json` +
+   `managed_node.rs`.
