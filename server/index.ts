@@ -23,14 +23,43 @@ export const DEFAULT_PORT = 8137;
 /** Messages the UI sends us. */
 export type ClientMessage =
   | { type: "prompt"; text: string }
-  | { type: "cancel" };
+  | { type: "cancel" }
+  | { type: "set-config"; configId: string; value: string }
+  | { type: "git" };
 
 /** Messages we send the UI. */
 export type ServerMessage =
-  | { type: "ready"; sessionId: string; cwd: string }
+  | {
+      type: "ready";
+      sessionId: string;
+      cwd: string;
+      /**
+       * The agent's own settings, e.g. `model` and `mode`. Claude Code does
+       * NOT populate `newSession().models` — it advertises everything through
+       * configOptions, which is also what Berd drives (`setSessionConfigOption`
+       * with `configId: "model"`). Driving configOptions therefore works for
+       * any ACP agent, not just this one.
+       */
+      configOptions: acp.SessionConfigOption[];
+    }
   | { type: "update"; update: acp.SessionUpdate }
+  | { type: "config-changed"; configId: string; value: string }
+  | { type: "config-rejected"; configId: string; message: string }
+  | { type: "git-status"; git: GitStatus }
   | { type: "turn-end"; stopReason: string }
   | { type: "error"; message: string };
+
+export interface GitChange {
+  path: string;
+  /** Two-character porcelain code, e.g. " M", "A ", "??". */
+  code: string;
+}
+
+export interface GitStatus {
+  /** null when the project folder is not a git repo. */
+  branch: string | null;
+  changes: GitChange[];
+}
 
 /**
  * Resolve the agent's entry script from node_modules.
@@ -130,6 +159,39 @@ class UiClient implements acp.Client {
   }
 }
 
+/**
+ * Read the project's git state by shelling out to `git`.
+ *
+ * Berd does this in Rust (`commands/git.rs`, 13 `Command::new("git")` calls).
+ * Here the Node server is already the privileged process, so it does the same
+ * job without a Tauri round-trip.
+ */
+async function readGitStatus(projectDir: string): Promise<GitStatus> {
+  const run = (args: string[]) =>
+    new Promise<string | null>((done) => {
+      const child = spawn("git", args, {
+        cwd: projectDir,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      let out = "";
+      child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
+      child.on("error", () => done(null));
+      child.on("close", (code) => done(code === 0 ? out : null));
+    });
+
+  const branch = (await run(["rev-parse", "--abbrev-ref", "HEAD"]))?.trim();
+  if (!branch) return { branch: null, changes: [] };
+
+  const porcelain = (await run(["status", "--porcelain"])) ?? "";
+  const changes = porcelain
+    .split("\n")
+    .filter((line) => line.length > 3)
+    // Porcelain is fixed-width: 2 status chars, a space, then the path.
+    .map((line) => ({ code: line.slice(0, 2), path: line.slice(3) }));
+
+  return { branch, changes };
+}
+
 export interface AcpServerHandle {
   port: number;
   close(): Promise<void>;
@@ -223,8 +285,20 @@ async function handleConnection(
     mcpServers: [],
   });
 
-  send({ type: "ready", sessionId: session.sessionId, cwd: projectDir });
-  console.log("[session]", session.sessionId);
+  const configOptions = session.configOptions ?? [];
+  send({
+    type: "ready",
+    sessionId: session.sessionId,
+    cwd: projectDir,
+    configOptions,
+  });
+  console.log(
+    "[session]",
+    session.sessionId,
+    `config: ${configOptions.map((option) => option.id).join(", ") || "none"}`,
+  );
+
+  void readGitStatus(projectDir).then((git) => send({ type: "git-status", git }));
 
   socket.on("message", (raw) => {
     let message: ClientMessage;
@@ -240,13 +314,56 @@ async function handleConnection(
       return;
     }
 
+    if (message.type === "git") {
+      void readGitStatus(projectDir).then((git) =>
+        send({ type: "git-status", git }),
+      );
+      return;
+    }
+
+    if (message.type === "set-config") {
+      connection
+        .setSessionConfigOption({
+          sessionId: session.sessionId,
+          configId: message.configId,
+          value: message.value,
+        })
+        .then(() => {
+          console.log("[config]", message.configId, "→", message.value);
+          send({
+            type: "config-changed",
+            configId: message.configId,
+            value: message.value,
+          });
+        })
+        .catch((error: unknown) => {
+          const reason = error instanceof Error ? error.message : String(error);
+          console.warn("[config] rejected", message.configId, reason);
+          // Some settings only exist for some models — Claude Code advertises
+          // `effort` and `fast` always, but rejects them on Haiku. The agent
+          // reports that as a bare "Internal error", so say something useful
+          // and let the renderer roll its optimistic value back.
+          send({
+            type: "config-rejected",
+            configId: message.configId,
+            message: `"${message.configId}" is not available for the current model.`,
+          });
+        });
+      return;
+    }
+
     if (message.type === "prompt") {
       connection
         .prompt({
           sessionId: session.sessionId,
           prompt: [{ type: "text", text: message.text }],
         })
-        .then((result) => send({ type: "turn-end", stopReason: result.stopReason }))
+        .then(async (result) => {
+          send({ type: "turn-end", stopReason: result.stopReason });
+          // The agent probably just edited files; refresh Changes without
+          // making the UI poll for it.
+          send({ type: "git-status", git: await readGitStatus(projectDir) });
+        })
         .catch((error: unknown) =>
           send({
             type: "error",

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  SessionConfigOption,
   SessionUpdate,
   ToolCallStatus,
   ToolKind,
 } from "@agentclientprotocol/sdk";
-import type { ServerMessage } from "../server/index.ts";
+import type { GitStatus, ServerMessage } from "../server/index.ts";
 
 export interface ToolEntry {
   id: string;
@@ -42,6 +43,12 @@ export function useAcpChat(port: number | null) {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The agent's own settings — `model`, `mode`, whatever else it advertises. */
+  const [configOptions, setConfigOptions] = useState<SessionConfigOption[]>([]);
+  const [configValues, setConfigValues] = useState<Record<string, string>>({});
+  const [git, setGit] = useState<GitStatus>({ branch: null, changes: [] });
+  /** Pre-change config values, kept only until the agent confirms or refuses. */
+  const previousConfigRef = useRef<Record<string, string>>({});
 
   /** Append to the current assistant turn, starting one if needed. */
   const withAssistantTurn = useCallback(
@@ -142,7 +149,41 @@ export function useAcpChat(port: number | null) {
           case "ready":
             setState("ready");
             setCwd(message.cwd);
+            setConfigOptions(message.configOptions);
+            setConfigValues(
+              Object.fromEntries(
+                message.configOptions.flatMap((option) =>
+                  option.type === "select"
+                    ? [[option.id, option.currentValue]]
+                    : [],
+                ),
+              ),
+            );
             return;
+          case "git-status":
+            setGit(message.git);
+            return;
+          case "config-changed":
+            delete previousConfigRef.current[message.configId];
+            setConfigValues((current) => ({
+              ...current,
+              [message.configId]: message.value,
+            }));
+            return;
+          case "config-rejected": {
+            // Roll the optimistic value back so the pill never shows a setting
+            // the agent refused.
+            const previous = previousConfigRef.current[message.configId];
+            delete previousConfigRef.current[message.configId];
+            if (previous !== undefined) {
+              setConfigValues((current) => ({
+                ...current,
+                [message.configId]: previous,
+              }));
+            }
+            setError(message.message);
+            return;
+          }
           case "update":
             applyUpdate(message.update);
             return;
@@ -197,5 +238,39 @@ export function useAcpChat(port: number | null) {
     socketRef.current?.send(JSON.stringify({ type: "cancel" }));
   }, []);
 
-  return { state, cwd, turns, busy, error, send, cancel };
+  const setConfig = useCallback((configId: string, value: string) => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+    // Optimistic, but reversible: remember what it was so `config-rejected`
+    // can put it back. Without this the pill shows a value the agent refused.
+    setConfigValues((current) => {
+      previousConfigRef.current[configId] = current[configId] ?? "";
+      return { ...current, [configId]: value };
+    });
+    setError(null);
+    socket.send(JSON.stringify({ type: "set-config", configId, value }));
+  }, []);
+
+  const refreshGit = useCallback(() => {
+    const socket = socketRef.current;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "git" }));
+    }
+  }, []);
+
+  return {
+    state,
+    cwd,
+    turns,
+    busy,
+    error,
+    configOptions,
+    configValues,
+    git,
+    send,
+    cancel,
+    setConfig,
+    refreshGit,
+  };
 }
