@@ -103,7 +103,7 @@ export function App() {
           {turns.map((turn) => (
             <Message key={turn.id} from={turn.role}>
               <MessageContent>
-                <ToolSteps tools={turn.tools} />
+                <ToolSteps tools={turn.tools} projectDir={project.dir} />
                 {turn.role === "assistant"
                   ? turn.text && <MessageResponse>{turn.text}</MessageResponse>
                   : turn.text}

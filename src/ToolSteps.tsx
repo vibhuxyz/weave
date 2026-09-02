@@ -35,7 +35,25 @@ const KIND_ICONS: Record<ToolKind, typeof WrenchIcon> = {
   other: WrenchIcon,
 };
 
-function ToolRow({ tool }: { tool: ToolEntry }) {
+/**
+ * Refined titles carry absolute paths (`ls /Users/…/my-berd-app/src`).
+ * Inside a project view the prefix is noise, so strip it for display only.
+ */
+function shorten(title: string, projectDir: string | null): string {
+  if (!projectDir) return title;
+  return title
+    .replaceAll(projectDir + "/", "")
+    .replaceAll(projectDir, ".")
+    .trim();
+}
+
+function ToolRow({
+  tool,
+  projectDir,
+}: {
+  tool: ToolEntry;
+  projectDir: string | null;
+}) {
   const Icon = KIND_ICONS[tool.kind] ?? WrenchIcon;
   const running = tool.status === "in_progress" || tool.status === "pending";
 
@@ -54,8 +72,9 @@ function ToolRow({ tool }: { tool: ToolEntry }) {
           tool.status === "failed" && "text-destructive",
           running && "text-foreground",
         )}
+        title={tool.title}
       >
-        {tool.title}
+        {shorten(tool.title, projectDir)}
       </span>
       <ChevronRightIcon className="size-3.5 shrink-0 opacity-40" />
     </TaskItem>
@@ -69,7 +88,13 @@ function ToolRow({ tool }: { tool: ToolEntry }) {
  * A flat list is unreadable once a turn touches a dozen files — which is the
  * whole reason the terminal output was hard to follow.
  */
-export function ToolSteps({ tools }: { tools: ToolEntry[] }) {
+export function ToolSteps({
+  tools,
+  projectDir,
+}: {
+  tools: ToolEntry[];
+  projectDir: string | null;
+}) {
   if (tools.length === 0) return null;
 
   const done = tools.filter(
@@ -93,7 +118,7 @@ export function ToolSteps({ tools }: { tools: ToolEntry[] }) {
           </TaskTrigger>
           <TaskContent>
             {done.map((tool) => (
-              <ToolRow key={tool.id} tool={tool} />
+              <ToolRow key={tool.id} tool={tool} projectDir={projectDir} />
             ))}
           </TaskContent>
         </Task>
@@ -101,7 +126,7 @@ export function ToolSteps({ tools }: { tools: ToolEntry[] }) {
 
       {/* Running work is never hidden behind a collapse. */}
       {active.map((tool) => (
-        <ToolRow key={tool.id} tool={tool} />
+        <ToolRow key={tool.id} tool={tool} projectDir={projectDir} />
       ))}
     </div>
   );

@@ -119,11 +119,21 @@ export function useAcpChat(port: number | null) {
           return;
         }
         case "tool_call_update": {
+          // The agent opens a tool call with a generic placeholder title
+          // ("Terminal", "Read File") and refines it once it knows the actual
+          // command or path ("ls src", "Read src/paths.ts"). Keeping only
+          // `status` here is why every shell step rendered as "Terminal".
+          // Every field is optional per update, so fall back to what we have.
           withAssistantTurn((turn) => ({
             ...turn,
             tools: turn.tools.map((tool) =>
               tool.id === update.toolCallId
-                ? { ...tool, status: update.status ?? tool.status }
+                ? {
+                    ...tool,
+                    status: update.status ?? tool.status,
+                    title: update.title ?? tool.title,
+                    kind: update.kind ?? tool.kind,
+                  }
                 : tool,
             ),
           }));
