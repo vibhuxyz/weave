@@ -1,4 +1,5 @@
-import { relative, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, relative, resolve } from "node:path";
 import type {
   RequestPermissionRequest,
   RequestPermissionResponse,
@@ -34,10 +35,37 @@ function findAllowOption(
   return option ? { optionId: option.optionId, kind: option.kind } : null;
 }
 
+/**
+ * Resolve symlinks as far as the path actually exists.
+ *
+ * Required, not defensive. On macOS `/var` is a symlink to `/private/var`:
+ * `mkdtemp` hands back `/var/folders/…` while the agent reports the realpath
+ * `/private/var/folders/…`. Comparing those lexically rejects every write
+ * inside the task's own directory — which looked exactly like a weak model
+ * until the ledger showed the reason.
+ *
+ * A file about to be created does not exist yet, so walk up to the nearest
+ * ancestor that does and re-attach the remainder.
+ */
+function realish(path: string): string {
+  let current = resolve(path);
+  const trailing: string[] = [];
+  for (;;) {
+    try {
+      return resolve(realpathSync(current), ...trailing.reverse());
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return resolve(path);
+      trailing.push(basename(current));
+      current = parent;
+    }
+  }
+}
+
 /** Is `candidate` inside `root`? Used for both reads and writes. */
 export function isInside(root: string, candidate: string): boolean {
-  const rel = relative(resolve(root), resolve(candidate));
-  return rel !== ".." && !rel.startsWith(`..${"/"}`) && !rel.startsWith("../");
+  const rel = relative(realish(root), realish(candidate));
+  return rel === "" || (rel !== ".." && !rel.startsWith("../"));
 }
 
 /**
@@ -67,10 +95,18 @@ export const confineToTaskDir: PermissionPolicy = (task, request) => {
     };
   }
 
+  // KNOWN GAP, recorded rather than hidden: many tool calls report no
+  // `locations` at all — a shell command, for instance — so this check passes
+  // vacuously and cannot see where they write. The agent's cwd is the real
+  // boundary for those, which is why `safeResolve` exists as a second defence
+  // and why V0.2's worktrees matter: containment, not inspection.
   return {
     decision: "allow",
     optionId: allow.optionId,
-    reason: `${allow.kind}; within task cwd`,
+    reason:
+      locations.length > 0
+        ? `${allow.kind}; ${locations.length} location(s) within task cwd`
+        : `${allow.kind}; no locations reported (unverified)`,
   };
 };
 

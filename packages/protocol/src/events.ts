@@ -66,6 +66,31 @@ export type BerdEvent =
       optionId?: string;
       reason: string;
     })
+  | (BaseEvent & {
+      type: "usage";
+      /** Context window consumed / total, as the engine reports it. */
+      used: number;
+      size: number;
+      costUsd?: number;
+    })
+  | (BaseEvent & {
+      type: "task.timeout";
+      reason: "maxTurns" | "timeoutMs";
+      turns: number;
+      wallMs: number;
+    })
+  /** One eval cell: fixture x config x repeat. Written by the harness. */
+  | (BaseEvent & {
+      type: "cell.finished";
+      fixtureId: string;
+      configId: string;
+      repeat: number;
+      status: string;
+      wallMs: number;
+      turns: number;
+      filesChanged: string[];
+      costUsd?: number;
+    })
   | (BaseEvent & { type: "file.read"; path: string })
   | (BaseEvent & { type: "file.written"; path: string; bytes: number })
   | (BaseEvent & { type: "error"; message: string; where: string });

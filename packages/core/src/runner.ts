@@ -8,6 +8,7 @@ import type {
   TaskContract,
   TaskResult,
 } from "@berd/protocol";
+import { DEFAULT_RUN_CONFIG, agentConfigFrom } from "@berd/protocol";
 import { Ledger, newRunId } from "./ledger.ts";
 import { readGitStatus } from "./git.ts";
 
@@ -27,6 +28,12 @@ export interface RunTaskOutcome {
   runId: string;
   ledgerFile: string;
   sessionId: string;
+  /** Tool calls observed. The runaway signal — see RunConfig.maxTurns. */
+  turns: number;
+  /** From ACP `usage_update`, when the engine reports it. */
+  costUsd?: number;
+  contextUsed?: number;
+  contextSize?: number;
 }
 
 export function berdDirFor(cwd: string, config?: RunConfig): string {
@@ -65,6 +72,15 @@ export async function runTask(
   );
 
   let session: Awaited<ReturnType<typeof openSession>> | null = null;
+  let turns = 0;
+  let costUsd: number | undefined;
+  let contextUsed: number | undefined;
+  let contextSize: number | undefined;
+  /** Set when a cap trips, so the result reports `timeout` rather than `ok`. */
+  let stopped: "maxTurns" | "timeoutMs" | null = null;
+
+  const maxTurns = options.config?.maxTurns ?? DEFAULT_RUN_CONFIG.maxTurns;
+  const timeoutMs = options.config?.timeoutMs ?? DEFAULT_RUN_CONFIG.timeoutMs;
 
   try {
     session = await openSession({
@@ -83,10 +99,33 @@ export async function runTask(
               configOptions,
             }),
           ),
-        onUpdate: (update: SessionUpdate) =>
+        onUpdate: (update: SessionUpdate) => {
           // Raw, verbatim. Deriving a nicer shape is a reader's job; throwing
           // the original away is unrecoverable.
-          emit(ledger.append("agent.message", { taskId: task.id, update })),
+          emit(ledger.append("agent.message", { taskId: task.id, update }));
+
+          if (update.sessionUpdate === "tool_call") {
+            turns += 1;
+            if (turns > maxTurns && !stopped) {
+              stopped = "maxTurns";
+              void session?.cancel().catch(() => {});
+            }
+          }
+
+          if (update.sessionUpdate === "usage_update") {
+            contextUsed = update.used;
+            contextSize = update.size;
+            if (update.cost) costUsd = update.cost.amount;
+            emit(
+              ledger.append("usage", {
+                taskId: task.id,
+                used: update.used,
+                size: update.size,
+                costUsd: update.cost?.amount,
+              }),
+            );
+          }
+        },
         onPermission: (toolCall, opts, decision) => {
           emit(
             ledger.append("permission.requested", {
@@ -112,8 +151,8 @@ export async function runTask(
       },
     });
 
-    const wanted = options.config?.agentConfig;
-    if (wanted && Object.keys(wanted).length > 0) {
+    const wanted = options.config ? agentConfigFrom(options.config) : {};
+    if (Object.keys(wanted).length > 0) {
       const { refused } = await applyConfigOptions(
         (configId, value) => session!.setConfigOption(configId, value),
         wanted,
@@ -129,15 +168,41 @@ export async function runTask(
       }
     }
 
-    const { stopReason } = await session.prompt(task.prompt);
+    // Race the prompt against the wall clock. An unattended run with no cap
+    // means one looping agent burns budget until morning.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<{ stopReason: string }>((resolve) => {
+      timer = setTimeout(() => {
+        if (!stopped) stopped = "timeoutMs";
+        void session?.cancel().catch(() => {});
+        resolve({ stopReason: "timeout" });
+      }, timeoutMs);
+    });
+
+    const { stopReason } = await Promise.race([
+      session.prompt(task.prompt),
+      deadline,
+    ]).finally(() => clearTimeout(timer));
+
     const wallMs = Date.now() - started;
+
+    if (stopped) {
+      emit(
+        ledger.append("task.timeout", {
+          taskId: task.id,
+          reason: stopped,
+          turns,
+          wallMs,
+        }),
+      );
+    }
     const filesChanged = (await readGitStatus(task.cwd)).changes
       .map((change) => change.path)
       .filter((path) => !before.has(path));
 
     const result: TaskResult = {
       taskId: task.id,
-      status: "ok",
+      status: stopped ? "cancelled" : "ok",
       stopReason,
       wallMs,
       filesWritten: session.filesWritten(),
@@ -146,7 +211,7 @@ export async function runTask(
     emit(
       ledger.append("task.finished", {
         taskId: task.id,
-        status: "ok",
+        status: stopped ? "cancelled" : "ok",
         stopReason,
         wallMs,
       }),
@@ -157,6 +222,10 @@ export async function runTask(
       runId: ledger.runId,
       ledgerFile: ledger.file,
       sessionId: session.sessionId,
+      turns,
+      costUsd,
+      contextUsed,
+      contextSize,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -183,6 +252,10 @@ export async function runTask(
       runId: ledger.runId,
       ledgerFile: ledger.file,
       sessionId: session?.sessionId ?? "",
+      turns,
+      costUsd,
+      contextUsed,
+      contextSize,
     };
   } finally {
     session?.close();

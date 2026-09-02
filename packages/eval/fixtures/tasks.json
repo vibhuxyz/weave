@@ -1,1 +1,48 @@
-[]
+{
+  "$comment": [
+    "Fixtures for the eval matrix. `repo` and injectFiles sources are relative",
+    "to this file.",
+    "",
+    "injectFiles is the harness's answer to a repo with no test suite: the file",
+    "is copied in before the run AND again before verify, so editing it cannot",
+    "change the score. List the same paths in readOnlyPaths so the permission",
+    "policy refuses them too - two independent defences, because the policy only",
+    "sees what crosses the ACP wire and Claude Code's own Edit tool does not.",
+    "",
+    "STATUS: calc-* are PROVING fixtures. They exercise the harness, not the",
+    "agent. The 10 real fixtures against perp / fishStudio still need authoring;",
+    "see docs/LADDER.md V0.1."
+  ],
+
+  "fixtures": [
+    {
+      "id": "calc-bugfix",
+      "category": "bugfix",
+      "repo": "repos/calc",
+      "prompt": "There is a bug in src/calc.js: subtract() adds its operands instead of subtracting them. Fix it.",
+      "injectFiles": { "tests/calc.test.js": "inject/calc/tests/calc.test.js" },
+      "readOnlyPaths": ["tests/**"],
+      "verify": "node --test tests/*.test.js",
+      "expectFail": true,
+      "timeoutMs": 180000,
+      "maxTurns": 25
+    },
+    {
+      "id": "calc-noop-trap",
+      "category": "noop-trap",
+      "repo": "repos/calc-fixed",
+      "prompt": "There is a bug in src/calc.js: subtract() adds its operands instead of subtracting them. Fix it.",
+      "injectFiles": { "tests/calc.test.js": "inject/calc/tests/calc.test.js" },
+      "readOnlyPaths": ["tests/**"],
+      "verify": "node --test tests/*.test.js",
+      "expectFail": false,
+      "timeoutMs": 180000,
+      "maxTurns": 25
+    }
+  ],
+
+  "configs": [
+    { "id": "sonnet", "engine": "claude-code", "model": "sonnet" },
+    { "id": "haiku", "engine": "claude-code", "model": "haiku" }
+  ]
+}

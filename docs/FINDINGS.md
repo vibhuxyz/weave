@@ -109,6 +109,55 @@ itself and its own marker, without touching the target repo's config.
 
 ---
 
+## `/var` vs `/private/var` made a good model look bad
+
+The first eval matrix said Sonnet failed a trivial bugfix 0/4 while Haiku
+passed it. The conclusion would have been "Sonnet is worse at this". The
+ledger said otherwise:
+
+```
+touches /private/var/folders/…/repo/src/calc.js,
+outside          /var/folders/…/repo
+```
+
+On macOS `/var` is a symlink to `/private/var`. `mkdtemp` returns `/var/…`;
+the agent reports the realpath `/private/var/…`. `isInside` compared them
+lexically and rejected every write inside the task's own directory.
+
+`isInside` now resolves symlinks on both sides, walking up to the nearest
+ancestor that exists (the file being created does not yet).
+
+**Two lessons, and the second is the bigger one:**
+
+- Path containment must compare *real* paths. Lexical comparison is a bug
+  wherever symlinks exist, which on macOS is the temp directory.
+- **A benchmark's first surprising result is usually a bug in the benchmark.**
+  The number was produced by the harness, so it was evidence about the harness
+  before it was evidence about the model. Checking the ledger cost two minutes;
+  publishing "Sonnet is worse" would have cost the project its credibility.
+
+After the fix: 3/3 for both models on both fixtures.
+
+---
+
+## Permission checks pass vacuously without `locations`
+
+Related to the above, and worse. Many tool calls report no `locations` at all —
+a shell command, for instance. The policy inspects `toolCall.locations`, so for
+those it has nothing to check and allows unconditionally.
+
+That is why Haiku "passed" the broken matrix: it reached for a tool that
+reported no locations, and sailed past the check that was blocking Sonnet.
+
+The decision reason now says so explicitly (`no locations reported
+(unverified)`), so the ledger never implies a check happened that did not.
+
+**Inspection is not containment.** The real boundary for those calls is the
+agent's cwd, enforced by `safeResolve` — and by V0.2's worktrees, which is the
+actual answer.
+
+---
+
 ## Node quirks
 
 - `--experimental-strip-types` is **strip-only**: no constructor parameter

@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@berd/protocol": "workspace:*",
-    "@berd/core": "workspace:*"
+    "@berd/core": "workspace:*",
+    "@berd/eval": "workspace:*"
   },
   "devDependencies": {
     "typescript": "~5.9.3",

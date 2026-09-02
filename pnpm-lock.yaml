@@ -273,6 +273,9 @@ importers:
       '@berd/core':
         specifier: workspace:*
         version: link:../core
+      '@berd/eval':
+        specifier: workspace:*
+        version: link:../eval
       '@berd/protocol':
         specifier: workspace:*
         version: link:../protocol

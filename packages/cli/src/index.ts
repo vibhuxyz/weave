@@ -21,25 +21,39 @@ import {
   Ledger,
   SessionStore,
 } from "@berd/core";
-import type { BerdEvent, TaskContract } from "@berd/protocol";
+import type { BerdEvent, CellResult, TaskContract } from "@berd/protocol";
 
 interface Flags {
   dir: string;
   prompt?: string;
   tasks?: string;
+  fixtures?: string;
+  repeats?: number;
   resume: boolean;
   model?: string;
   json: boolean;
 }
 
+/**
+ * Where the user actually typed the command.
+ *
+ * `pnpm -F @berd/cli start` runs with cwd = packages/cli, so `--dir .` would
+ * silently mean the wrong directory. pnpm sets INIT_CWD to the invocation
+ * directory; honour it so relative paths mean what they look like.
+ */
+const userCwd = process.env.INIT_CWD ?? process.cwd();
+const fromUser = (path: string) => resolve(userCwd, path);
+
 function parseFlags(argv: string[]): Flags {
-  const flags: Flags = { dir: process.cwd(), resume: false, json: false };
+  const flags: Flags = { dir: userCwd, resume: false, json: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === "--dir") flags.dir = resolve(argv[++i] ?? ".");
+    if (arg === "--dir") flags.dir = fromUser(argv[++i] ?? ".");
     else if (arg === "--prompt") flags.prompt = argv[++i];
-    else if (arg === "--tasks") flags.tasks = resolve(argv[++i] ?? "");
+    else if (arg === "--tasks") flags.tasks = fromUser(argv[++i] ?? "");
     else if (arg === "--model") flags.model = argv[++i];
+    else if (arg === "--fixtures") flags.fixtures = fromUser(argv[++i] ?? "");
+    else if (arg === "--repeats") flags.repeats = Number(argv[++i] ?? "3");
     else if (arg === "--resume") flags.resume = true;
     else if (arg === "--json") flags.json = true;
   }
@@ -92,7 +106,7 @@ async function cmdRun(flags: Flags): Promise<number> {
       cwd: task.cwd ? resolve(task.cwd) : flags.dir,
     }));
     const { runId, results, ledgerFile } = await runTasks(tasks, {
-      agentConfig: flags.model ? { model: flags.model } : undefined,
+      model: flags.model,
     });
     console.log(`\nrun ${runId}\n${ledgerFile}`);
     if (flags.json) console.log(JSON.stringify(results, null, 2));
@@ -118,9 +132,7 @@ async function cmdRun(flags: Flags): Promise<number> {
     ledger,
     onEvent: printEvent,
     resumeSessionId: flags.resume ? await store.get(flags.dir) : null,
-    config: {
-      agentConfig: flags.model ? { model: flags.model } : undefined,
-    },
+    config: { model: flags.model },
   });
 
   // Only after a completed turn — see SessionStore's note.
@@ -147,6 +159,44 @@ async function cmdReplay(runId: string, flags: Flags): Promise<number> {
   return 0;
 }
 
+async function cmdEval(flags: Flags): Promise<number> {
+  if (!flags.fixtures) {
+    console.error("berd eval: need --fixtures <tasks.json>");
+    return 2;
+  }
+
+  const { loadFixtures, runMatrix, renderMatrix, renderSummaryJson } =
+    await import("@berd/eval");
+
+  const { fixtures, configs } = await loadFixtures(flags.fixtures);
+  const repeats = flags.repeats ?? 3;
+
+  console.log(
+    `${fixtures.length} fixtures x ${configs.length} configs x ${repeats} repeats` +
+      ` = ${fixtures.length * configs.length * repeats} cells, sequential\n`,
+  );
+
+  const cells = await runMatrix({
+    fixtures,
+    configs,
+    repeats,
+    onCell: (cell: CellResult) => {
+      const mark = cell.status === "pass" ? "pass" : cell.status.toUpperCase();
+      console.log(
+        `  ${cell.fixtureId} [${cell.configId}] #${cell.repeat}  ${mark}` +
+          `  ${(cell.wallMs / 1000).toFixed(1)}s  ${cell.turns} turns` +
+          (cell.error ? `  - ${cell.error}` : ""),
+      );
+    },
+  });
+
+  console.log("\n" + renderMatrix(cells));
+  if (flags.json) console.log(JSON.stringify(renderSummaryJson(cells), null, 2));
+
+  // Non-zero when anything did not pass, so this is usable as a CI gate.
+  return cells.every((cell) => cell.status === "pass") ? 0 : 1;
+}
+
 async function cmdRuns(flags: Flags): Promise<number> {
   const dir = join(berdDirFor(flags.dir), "runs");
   try {
@@ -169,6 +219,9 @@ async function main(): Promise<void> {
     case "replay":
       process.exit(await cmdReplay(rest[0] ?? "", parseFlags(rest.slice(1))));
       break;
+    case "eval":
+      process.exit(await cmdEval(flags));
+      break;
     case "runs":
       process.exit(await cmdRuns(flags));
       break;
@@ -178,6 +231,7 @@ async function main(): Promise<void> {
           "berd run    --dir <path> --prompt <text> [--model <id>] [--resume] [--json]",
           "berd run    --dir <path> --tasks <tasks.json>",
           "berd replay <runId> [--dir <path>] [--json]",
+          "berd eval   --fixtures <tasks.json> [--repeats <n>] [--json]",
           "berd runs   [--dir <path>]",
         ].join("\n"),
       );
