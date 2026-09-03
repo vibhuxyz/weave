@@ -31,12 +31,16 @@ export function AgentMessage({
   projectDir,
   git,
   configValues,
+  engineId,
+  engineLabel,
   running,
 }: {
   turn: ChatTurn;
   projectDir: string | null;
   git: GitStatus;
   configValues: Record<string, string>;
+  engineId: string;
+  engineLabel: string;
   running: boolean;
 }) {
   const [tab, setTab] = useState<AgentTab>("overview");
@@ -50,11 +54,15 @@ export function AgentMessage({
         git,
         status: running ? "running" : "completed",
         configValues,
+        engineId,
+        engineLabel,
         sourceEventIds: turn.sourceEventIds,
         sourceSeq: turn.sourceSeq,
       }),
     [
       configValues,
+      engineId,
+      engineLabel,
       git,
       running,
       turn.id,

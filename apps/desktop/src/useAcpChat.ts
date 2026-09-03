@@ -44,6 +44,8 @@ export function useAcpChat(port: number | null) {
   const socketRef = useRef<WebSocket | null>(null);
   const [state, setState] = useState<ConnectionState>("idle");
   const [cwd, setCwd] = useState<string | null>(null);
+  const [engineId, setEngineId] = useState<string | null>(null);
+  const [engineLabel, setEngineLabel] = useState<string | null>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,6 +172,15 @@ export function useAcpChat(port: number | null) {
   );
 
   useEffect(() => {
+    // Clear state from previous connections when port changes
+    setTurns([]);
+    setConfigOptions([]);
+    setConfigValues({});
+    setEngineId(null);
+    setEngineLabel(null);
+    setError(null);
+    setResumed(false);
+
     if (port == null) {
       setState("idle");
       return;
@@ -204,6 +215,8 @@ export function useAcpChat(port: number | null) {
           case "ready":
             setState("ready");
             setCwd(message.cwd);
+            setEngineId(message.engineId);
+            setEngineLabel(message.engineLabel);
             setResumed(message.resumed);
             // A resumed session replays its own history, so clear first and
             // let the replay rebuild the transcript.
@@ -327,6 +340,8 @@ export function useAcpChat(port: number | null) {
   return {
     state,
     cwd,
+    engineId,
+    engineLabel,
     turns,
     busy,
     error,

@@ -19,6 +19,8 @@ export function messageToBlocks(options: {
   git: GitStatus;
   status: AgentViewModel["meta"]["status"];
   configValues: Record<string, string>;
+  engineId: string;
+  engineLabel: string;
   sourceEventIds?: string[];
   sourceSeq?: number;
 }): AgentViewModel {
@@ -93,6 +95,8 @@ export function messageToBlocks(options: {
       git: options.git,
       status: options.status,
       configValues: options.configValues,
+      engineId: options.engineId,
+      engineLabel: options.engineLabel,
     }),
     rawText: options.text,
   };

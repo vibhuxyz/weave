@@ -22,8 +22,7 @@ struct AgentServer {
 }
 
 impl AgentServer {
-    /// Replace any running server with one rooted at `project_dir`.
-    fn restart(&self, repo_root: &PathBuf, project_dir: &str) -> Result<(), String> {
+    fn restart(&self, repo_root: &PathBuf, project_dir: &str, engine_id: Option<&str>) -> Result<(), String> {
         self.stop();
 
         let entry = repo_root.join("server").join("index.ts");
@@ -31,11 +30,17 @@ impl AgentServer {
             return Err(format!("ACP server not found at {}", entry.display()));
         }
 
-        let child = Command::new("node")
-            .arg("--experimental-strip-types")
+        let mut cmd = Command::new("node");
+        cmd.arg("--experimental-strip-types")
             .arg(&entry)
             .current_dir(repo_root)
-            .env("PROJECT_DIR", project_dir)
+            .env("PROJECT_DIR", project_dir);
+
+        if let Some(id) = engine_id {
+            cmd.env("ENGINE_ID", id);
+        }
+
+        let child = cmd
             .stdin(Stdio::null())
             // Inherit so the agent's own errors reach the terminal running
             // `pnpm tauri dev`. Piping without draining would deadlock it.
@@ -83,6 +88,7 @@ impl AgentServer {
 #[derive(Serialize, Deserialize, Default)]
 struct Settings {
     project_dir: Option<String>,
+    engine_id: Option<String>,
 }
 
 fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -102,12 +108,44 @@ fn read_settings(app: &tauri::AppHandle) -> Settings {
         .unwrap_or_default()
 }
 
+#[derive(Serialize)]
+struct SavedProject {
+    dir: String,
+    engine_id: Option<String>,
+}
+
 /// The folder chosen last run, if it still exists.
 #[tauri::command]
-fn get_saved_project(app: tauri::AppHandle) -> Option<String> {
-    read_settings(&app)
-        .project_dir
-        .filter(|dir| PathBuf::from(dir).is_dir())
+fn get_saved_project(app: tauri::AppHandle) -> Option<SavedProject> {
+    let settings = read_settings(&app);
+    settings.project_dir.filter(|dir| PathBuf::from(dir).is_dir()).map(|dir| SavedProject {
+        dir,
+        engine_id: settings.engine_id,
+    })
+}
+
+#[tauri::command]
+async fn install_engine(package_name: String) -> Result<(), String> {
+    let repo_root = std::env::current_dir()
+        .map_err(|e| format!("cwd failed: {e}"))?
+        .parent()
+        .map(PathBuf::from)
+        .ok_or_else(|| "could not resolve repo root".to_string())?;
+
+    let status = Command::new("pnpm")
+        .arg("-F")
+        .arg("@weave/agent")
+        .arg("add")
+        .arg(&package_name)
+        .current_dir(repo_root)
+        .status()
+        .map_err(|e| format!("failed to run pnpm: {e}"))?;
+
+    if !status.success() {
+        return Err(format!("pnpm install failed with status: {status}"));
+    }
+
+    Ok(())
 }
 
 /// Point the agent at `project_dir` and (re)start the server. Returns the port.
@@ -116,6 +154,7 @@ fn start_agent_server(
     app: tauri::AppHandle,
     server: State<'_, AgentServer>,
     project_dir: String,
+    engine_id: Option<String>,
 ) -> Result<u16, String> {
     if !PathBuf::from(&project_dir).is_dir() {
         return Err(format!("Not a folder: {project_dir}"));
@@ -129,12 +168,13 @@ fn start_agent_server(
         .map(PathBuf::from)
         .ok_or_else(|| "could not resolve repo root".to_string())?;
 
-    server.restart(&repo_root, &project_dir)?;
+    server.restart(&repo_root, &project_dir, engine_id.as_deref())?;
     server.wait_until_listening(SERVER_PORT, Duration::from_secs(20))?;
 
     if let Ok(path) = settings_path(&app) {
         let settings = Settings {
             project_dir: Some(project_dir),
+            engine_id,
         };
         if let Ok(raw) = serde_json::to_string_pretty(&settings) {
             let _ = std::fs::write(path, raw);
@@ -151,6 +191,7 @@ pub fn run() {
         .manage(AgentServer::default())
         .invoke_handler(tauri::generate_handler![
             get_saved_project,
+            install_engine,
             start_agent_server
         ])
         .build(tauri::generate_context!())

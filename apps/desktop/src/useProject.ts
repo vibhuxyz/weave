@@ -5,8 +5,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 export type ProjectState =
   | { status: "loading" }
   | { status: "none" }
-  | { status: "starting"; dir: string }
-  | { status: "running"; dir: string; port: number }
+  | { status: "starting"; dir: string; engineId?: string }
+  | { status: "running"; dir: string; port: number; engineId?: string }
   | { status: "error"; message: string };
 
 /**
@@ -19,13 +19,14 @@ export type ProjectState =
 export function useProject() {
   const [state, setState] = useState<ProjectState>({ status: "loading" });
 
-  const startWith = useCallback(async (dir: string) => {
-    setState({ status: "starting", dir });
+  const startWith = useCallback(async (dir: string, engineId?: string) => {
+    setState({ status: "starting", dir, engineId });
     try {
       const port = await invoke<number>("start_agent_server", {
         projectDir: dir,
+        engineId,
       });
-      setState({ status: "running", dir, port });
+      setState({ status: "running", dir, port, engineId });
     } catch (error) {
       setState({
         status: "error",
@@ -47,9 +48,9 @@ export function useProject() {
     let cancelled = false;
     void (async () => {
       try {
-        const saved = await invoke<string | null>("get_saved_project");
+        const saved = await invoke<{ dir: string; engine_id: string | null } | null>("get_saved_project");
         if (cancelled) return;
-        if (saved) await startWith(saved);
+        if (saved) await startWith(saved.dir, saved.engine_id ?? undefined);
         else setState({ status: "none" });
       } catch {
         if (!cancelled) setState({ status: "none" });
@@ -60,5 +61,5 @@ export function useProject() {
     };
   }, [startWith]);
 
-  return { state, choose };
+  return { state, choose, startWith };
 }

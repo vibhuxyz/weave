@@ -37,7 +37,7 @@ export interface RunConfig {
  * morning. A looping agent is the expected failure, not a rare one.
  */
 export const DEFAULT_RUN_CONFIG = {
-  engine: "claude-code",
+  engine: "antigravity",
   maxTurns: 60,
   timeoutMs: 10 * 60 * 1000,
 } satisfies RunConfig;

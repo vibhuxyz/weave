@@ -15,7 +15,7 @@
 
 import { resolve } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { confineToTaskDir, openSession, type AgentSession } from "@weave/agent";
+import { confineToTaskDir, openSession, getEngine, DEFAULT_ENGINE_ID, type AgentSession } from "@weave/agent";
 import {
   Ledger,
   SessionStore,
@@ -47,6 +47,8 @@ export type ServerMessage =
       type: "ready";
       sessionId: string;
       cwd: string;
+      engineId: string;
+      engineLabel: string;
       /**
        * The agent's own settings. Claude Code does NOT populate
        * `newSession().models` — everything is in configOptions, which is also
@@ -120,10 +122,13 @@ async function handleConnection(
   const resumeId = await store.get(projectDir);
   let persisted = false;
 
+  const engineId = process.env.ENGINE_ID || DEFAULT_ENGINE_ID;
+
   const session: AgentSession = await openSession({
     task,
     policy: confineToTaskDir,
     resumeSessionId: resumeId,
+    engineId,
     sink: {
       onSpawned: (pid, entry) =>
         ledger.append("agent.spawned", { taskId: task.id, pid, entry }),
@@ -141,6 +146,8 @@ async function handleConnection(
           type: "ready",
           sessionId,
           cwd: projectDir,
+          engineId,
+          engineLabel: getEngine(engineId).label,
           configOptions,
           resumed,
         });
@@ -235,6 +242,8 @@ async function handleConnection(
               type: "ready",
               sessionId,
               cwd: projectDir,
+              engineId,
+              engineLabel: getEngine(engineId).label,
               configOptions: session.configOptions,
               resumed: false,
             });

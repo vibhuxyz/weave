@@ -1,77 +1,10 @@
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
+import { ENGINES, DEFAULT_ENGINE_ID, type AcpEngine } from "./engines-registry.ts";
+
+export { ENGINES, DEFAULT_ENGINE_ID, type AcpEngine };
 
 const require = createRequire(import.meta.url);
-
-/**
- * An ACP engine: any process that speaks Agent Client Protocol over stdio.
- *
- * The whole point of ACP is that the client does not care which agent is on
- * the other end. Everything above this file — sessions, permissions, the
- * ledger, the runner, the UI — is engine-agnostic; this registry is the only
- * place an engine is named.
- *
- * Adding one is a row here plus the npm dependency. It is not a code change
- * anywhere else.
- */
-export interface AcpEngine {
-  /** Stable id used in configs, ledgers, and eval reports. */
-  id: string;
-  label: string;
-  /** npm package that ships the ACP server. */
-  packageName: string;
-  /** Key in that package's `bin` map. */
-  binName: string;
-  /** Extra argv after the entry script. */
-  args?: string[];
-  /** Extra env for the child process. */
-  env?: Record<string, string>;
-  /** Shown when the package is not installed. */
-  install?: string;
-}
-
-export const ENGINES: Record<string, AcpEngine> = {
-  "claude-code": {
-    id: "claude-code",
-    label: "Claude Code",
-    packageName: "@agentclientprotocol/claude-agent-acp",
-    binName: "claude-agent-acp",
-    install: "pnpm -F @weave/agent add @agentclientprotocol/claude-agent-acp",
-  },
-
-  // Declared but not installed. Each is a real ACP server; adding one means
-  // installing its package, not writing an adapter. Verify `binName` against
-  // the package's own manifest before trusting it — that is exactly the
-  // mistake that cost time with claude-agent-acp, whose exports["."] points at
-  // the library while the ACP server is the bin.
-  codex: {
-    id: "codex",
-    label: "Codex",
-    // @zed-industries/codex-acp is DEPRECATED — moved to this package. Found
-    // by probing the handshake directly: the old one refuses to install
-    // cleanly. binName is confirmed against the new package's own manifest.
-    packageName: "@agentclientprotocol/codex-acp",
-    binName: "codex-acp",
-    install: "pnpm -F @weave/agent add @agentclientprotocol/codex-acp",
-  },
-  amp: {
-    id: "amp",
-    label: "Amp",
-    packageName: "@sourcegraph/amp",
-    binName: "amp-acp",
-    install: "pnpm -F @weave/agent add @sourcegraph/amp",
-  },
-  gemini: {
-    id: "gemini",
-    label: "Gemini CLI",
-    packageName: "@google/gemini-cli",
-    binName: "gemini",
-    args: ["--experimental-acp"],
-    install: "pnpm -F @weave/agent add @google/gemini-cli",
-  },
-};
-
-export const DEFAULT_ENGINE_ID = "claude-code";
 
 export function getEngine(id: string = DEFAULT_ENGINE_ID): AcpEngine {
   const engine = ENGINES[id];

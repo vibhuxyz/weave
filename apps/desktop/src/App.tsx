@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/shared/ui/button";
 import { Message, MessageContent } from "@/shared/ui/ai-elements/message";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
+import { ENGINES, DEFAULT_ENGINE_ID } from "@weave/agent/engines-registry.ts";
 import { ConfigPicker } from "./ConfigPicker";
 import { ContextPanel } from "./ContextPanel";
 import { Sidebar } from "./Sidebar";
@@ -10,11 +20,13 @@ import { useAcpChat } from "./useAcpChat";
 import { useProject } from "./useProject";
 
 export function App() {
-  const { state: project, choose } = useProject();
+  const { state: project, choose, startWith } = useProject();
   const port = project.status === "running" ? project.port : null;
   const {
     state: connection,
     turns,
+    engineId,
+    engineLabel,
     busy,
     error,
     configOptions,
@@ -30,6 +42,23 @@ export function App() {
 
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [installingEngine, setInstallingEngine] = useState(false);
+
+  const handleInstallEngine = async (packageName: string) => {
+    setInstallingEngine(true);
+    try {
+      await invoke("install_engine", { packageName });
+      const targetEngineId = project.status === "running" ? project.engineId : engineId;
+      if ("dir" in project) {
+        void startWith(project.dir, targetEngineId || DEFAULT_ENGINE_ID);
+      }
+    } catch (e) {
+      console.error(e);
+      alert(`Failed to install: ${String(e)}`);
+    } finally {
+      setInstallingEngine(false);
+    }
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -51,7 +80,7 @@ export function App() {
           </p>
         ) : (
           <p className="max-w-md text-center text-sm text-muted-foreground">
-            Choose a project folder. Claude will read and edit files inside it.
+            Choose a project folder. The agent will read and edit files inside it.
           </p>
         )}
         <Button
@@ -84,15 +113,40 @@ export function App() {
           <span className="truncate text-muted-foreground">
             {basename(project.dir)}
           </span>
-          <span className="text-muted-foreground">
-            {ready ? "Claude Code" : connection}
-          </span>
+          <div className="flex items-center gap-3">
+            {!ready && <span className="text-muted-foreground">{connection}</span>}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer outline-none flex items-center gap-1">
+                  {engineLabel || ENGINES[(project.status === "running" ? project.engineId : null) || engineId || DEFAULT_ENGINE_ID]?.label || "Agent"}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Agent Engine</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={(project.status === "running" ? project.engineId : null) || engineId || ""}
+                  onValueChange={(id) => {
+                    const currentId = (project.status === "running" ? project.engineId : null) || engineId;
+                    if (id !== currentId) {
+                      void startWith(project.dir, id);
+                    }
+                  }}
+                >
+                  {Object.values(ENGINES).map((engine) => (
+                    <DropdownMenuRadioItem key={engine.id} value={engine.id}>
+                      {engine.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
 
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 overflow-y-auto p-6">
           {turns.length === 0 && ready && (
             <p className="mt-16 text-center text-sm text-muted-foreground">
-              Ask Claude to fix a bug in this project.
+              Ask {engineLabel || "the agent"} to fix a bug in this project.
             </p>
           )}
 
@@ -106,6 +160,8 @@ export function App() {
                       projectDir={project.dir}
                       git={git}
                       configValues={configValues}
+                      engineId={engineId!}
+                      engineLabel={engineLabel!}
                       running={busy}
                     />
                   )
@@ -116,11 +172,26 @@ export function App() {
             </Message>
           ))}
 
-          {error && (
-            <p className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">
-              {error}
-            </p>
-          )}
+          {error && (() => {
+            const match = error.match(/is not installed \((.*?)\)/);
+            return (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">
+                <p className="whitespace-pre-wrap">{error.split("\n")[0]}</p>
+                {match && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 bg-background/50 hover:bg-background/80"
+                    onClick={() => handleInstallEngine(match[1])}
+                    disabled={installingEngine}
+                  >
+                    {installingEngine ? "Installing…" : "Install"}
+                  </Button>
+                )}
+              </div>
+            );
+          })()}
           <div ref={bottomRef} />
         </div>
 
@@ -135,7 +206,7 @@ export function App() {
                   submit();
                 }
               }}
-              placeholder="Chat with Claude Code…"
+              placeholder={`Chat with ${ready && engineLabel ? engineLabel : "Agent"}…`}
               rows={2}
               disabled={!ready}
               className="w-full resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50"

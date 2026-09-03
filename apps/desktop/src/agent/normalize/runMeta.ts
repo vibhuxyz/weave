@@ -9,6 +9,8 @@ export function runMetaFromTurn(options: {
   git: GitStatus;
   status: AgentRunMeta["status"];
   configValues: Record<string, string>;
+  engineId: string;
+  engineLabel: string;
 }): AgentRunMeta {
   const filesRead = options.tools.filter((tool) => tool.kind === "read").length;
   const touchedToolFiles = options.tools.filter((tool) =>
@@ -21,8 +23,8 @@ export function runMetaFromTurn(options: {
     options.configValues["anthropic.model"];
 
   return {
-    engine: "claude-code",
-    engineLabel: "Claude Code",
+    engine: options.engineId,
+    engineLabel: options.engineLabel,
     model,
     filesRead,
     filesChanged,
