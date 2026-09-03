@@ -28,8 +28,8 @@ export interface RunConfig {
   /** Wall-clock cap for one task. Exceeding it cancels and reports `timeout`. */
   timeoutMs?: number;
 
-  /** Where runs are written. Defaults to `<cwd>/.berd`. */
-  berdDir?: string;
+  /** Where runs are written. Defaults to `<cwd>/.weave`. */
+  weaveDir?: string;
 }
 
 /**

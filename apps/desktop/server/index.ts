@@ -1,5 +1,5 @@
 /**
- * WebSocket adapter over @berd/agent + @berd/core.
+ * WebSocket adapter over @weave/agent + @weave/core.
  *
  * This file used to be the whole system (528 lines). It is now transport: it
  * owns no spawn logic, no permission decisions, and no file I/O. All of that
@@ -15,23 +15,23 @@
 
 import { resolve } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { confineToTaskDir, openSession, type AgentSession } from "@berd/agent";
+import { confineToTaskDir, openSession, type AgentSession } from "@weave/agent";
 import {
   Ledger,
   SessionStore,
-  berdDirFor,
+  weaveDirFor,
   newRunId,
   readGitStatus,
   type GitStatus,
-} from "@berd/core";
+} from "@weave/core";
 import type {
   SessionConfigOption,
   SessionUpdate,
   TaskContract,
-} from "@berd/protocol";
+} from "@weave/protocol";
 
 export const DEFAULT_PORT = 8137;
-export type { GitStatus, GitChange } from "@berd/core";
+export type { GitStatus, GitChange } from "@weave/core";
 
 /** Messages the UI sends us. */
 export type ClientMessage =
@@ -79,7 +79,7 @@ export async function startAcpServer(options: {
   const projectDir = resolve(options.projectDir);
   const port = options.port ?? DEFAULT_PORT;
   const wss = new WebSocketServer({ port, host: "127.0.0.1" });
-  const store = new SessionStore(berdDirFor(projectDir));
+  const store = new SessionStore(weaveDirFor(projectDir));
 
   console.log(`[server] ws://127.0.0.1:${port}  project: ${projectDir}`);
 
@@ -103,7 +103,7 @@ async function handleConnection(
   store: SessionStore,
 ): Promise<void> {
   const send = (message: ServerMessage) => safeSend(socket, message);
-  const ledger = new Ledger(berdDirFor(projectDir), newRunId());
+  const ledger = new Ledger(weaveDirFor(projectDir), newRunId());
   const task: TaskContract = {
     id: "desktop",
     prompt: "",

@@ -2,7 +2,7 @@
  * The execution ledger schema.
  *
  * Every run appends these, one JSON object per line, to
- * `.berd/runs/<runId>/events.ndjson`. Nothing else is the source of truth:
+ * `.weave/runs/<runId>/events.ndjson`. Nothing else is the source of truth:
  * replay, cost accounting, "why did agent 4 touch that file", and the eval
  * harness are all readers over this file.
  *
@@ -13,6 +13,8 @@
  *  - `agent.message` carries the RAW ACP payload. Deriving a nicer shape is a
  *    reader's job; throwing away the original is unrecoverable.
  */
+
+import type { VerificationRung } from "./verification.ts";
 
 export type EventSeq = number;
 
@@ -26,7 +28,7 @@ interface BaseEvent {
   taskId?: string;
 }
 
-export type BerdEvent =
+export type WeaveEvent =
   | (BaseEvent & {
       type: "run.started";
       cwd: string;
@@ -79,6 +81,39 @@ export type BerdEvent =
       turns: number;
       wallMs: number;
     })
+  /** What the ladder found in a repo, before anything ran. */
+  | (BaseEvent & {
+      type: "intake.detected";
+      cwd: string;
+      isGitRepo: boolean;
+      head: string | null;
+      available: VerificationRung[];
+      /** Rungs the project does NOT support, and why. Reads as a to-do list. */
+      missing: Array<{ rung: VerificationRung; why: string }>;
+    })
+  /**
+   * One rung, run. Emitted per rung so a failing `build` is still visible when
+   * the run is ultimately scored at `boot`.
+   */
+  | (BaseEvent & {
+      type: "verification.rung";
+      rung: VerificationRung;
+      strength: number;
+      command: string;
+      ok: boolean;
+      wallMs: number;
+      /** Tail of combined output. Truncated — the full log is the tool's own. */
+      output?: string;
+    })
+  /** The verdict: which rung actually validated the task. */
+  | (BaseEvent & {
+      type: "verification.finished";
+      ok: boolean;
+      available: VerificationRung[];
+      used: VerificationRung[];
+      /** max(rungStrength(used)), 0 when nothing ran. Never average across it. */
+      strength: number;
+    })
   /** One eval cell: fixture x config x repeat. Written by the harness. */
   | (BaseEvent & {
       type: "cell.finished";
@@ -90,9 +125,12 @@ export type BerdEvent =
       turns: number;
       filesChanged: string[];
       costUsd?: number;
+      /** Which rung scored this cell. Bucketing key for the matrix. */
+      strength: number;
+      used: VerificationRung[];
     })
   | (BaseEvent & { type: "file.read"; path: string })
   | (BaseEvent & { type: "file.written"; path: string; bytes: number })
   | (BaseEvent & { type: "error"; message: string; where: string });
 
-export type BerdEventType = BerdEvent["type"];
+export type WeaveEventType = WeaveEvent["type"];

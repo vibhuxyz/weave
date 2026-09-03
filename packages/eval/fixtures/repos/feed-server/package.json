@@ -1,0 +1,8 @@
+{
+  "name": "feed-server-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js"
+  }
+}

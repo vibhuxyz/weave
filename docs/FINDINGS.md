@@ -153,7 +153,7 @@ The decision reason now says so explicitly (`no locations reported
 (unverified)`), so the ledger never implies a check happened that did not.
 
 **Inspection is not containment.** The real boundary for those calls is the
-agent's cwd, enforced by `safeResolve` — and by V0.2's worktrees, which is the
+agent's cwd, enforced by `safeResolve` — and by MVP.1's worktrees, which is the
 actual answer.
 
 ---
@@ -199,3 +199,53 @@ reconnect created a new session, so conversations vanished silently. Fixed with
 
 **Measuring first is what stopped an optimisation from being installed to fix a
 data-loss bug.**
+
+---
+
+## A field can be documented as enforced and read by nothing
+
+Found by audit, not by debugging — which is the only reason it did not cost a
+day later. Three fields carry a doc comment describing a guarantee, and no code
+reads any of them:
+
+| Field | The comment says | The code does |
+|---|---|---|
+| `Fixture.readOnlyPaths` | "the permission policy rejects tool calls touching these" | Nothing reads it. Only restore-before-verify is live. |
+| `TaskContract.allowedPaths` | "so the policy has something to consult that is not yes" | Nothing reads it. `confineToTaskDir` checks the task cwd and nothing narrower. |
+| `Fixture.commit` | "the harness checks HEAD matches before running" | Nothing reads it — and `copyRepo` deletes `.git`, so it could not check afterwards. Fixtures are not pinned. |
+
+The `readOnlyPaths` one is the dangerous one. `tasks.json` says the anti-cheat
+story is **two independent defences** — the policy refusing the path, and the
+harness restoring the file. Only the second exists. The claim reads as true, the
+fixtures pass, and the number is still real today because restore alone happens
+to be sufficient. It stops being sufficient the moment a fixture verifies on
+something the harness does not own.
+
+**Two lessons:**
+
+- A type is a plan, not a mechanism. `grep` for the field before believing the
+  comment above it. This is the same shape as the vacuous-permission gap: a
+  check that *looks* like containment and only inspects.
+- The dangerous documentation is the kind that is *nearly* true. "Not
+  implemented" is safe; "implemented differently than described" is what gets
+  trusted and then breaks silently.
+
+Wired up in V1.1 and MVP.1. Recorded here rather than quietly fixed, because
+the failure mode — believing your own doc comment — will happen again.
+
+## `codex-acp` was pointing at a deprecated package
+
+`packages/agent/src/engines.ts` named `@zed-industries/codex-acp` for the
+`codex` row. Probed directly (spawn + a raw ACP `initialize`, no API key
+needed — that handshake is answered before any model call): the package
+refuses to resolve. `pnpm view` says why — it was replaced by
+`@agentclientprotocol/codex-acp` months ago. Fixed the row; `binName` still
+matches (`codex-acp` in both).
+
+`gemini`'s row checked out clean the same way: the binary resolves, `--experimental-acp`
+is accepted, and the process replies over the ACP wire. It failed on an
+account-tier error from Google (`IneligibleTierError`, unrelated to Weave) before
+a task could run — full engine verification needs a Gemini or Codex API key
+this environment does not have, so "an agent actually completes a task" is
+still unverified for both. The debt list in [V1](V1.md) is honest about that;
+this closes the narrower "is the registry row even a real package" half.

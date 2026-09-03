@@ -1,4 +1,4 @@
-import type { SessionConfigOption } from "@berd/protocol";
+import type { SessionConfigOption } from "@weave/protocol";
 
 /**
  * Apply agent settings (`model`, `mode`, `effort`, `fast`) and report which

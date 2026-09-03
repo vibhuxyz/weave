@@ -141,7 +141,7 @@ export function useAcpChat(port: number | null) {
         }
         default:
           // plan / agent_thought_chunk / user_message_chunk / commands —
-          // not rendered in V0.
+          // not rendered yet.
           return;
       }
     },

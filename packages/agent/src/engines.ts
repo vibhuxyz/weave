@@ -36,7 +36,7 @@ export const ENGINES: Record<string, AcpEngine> = {
     label: "Claude Code",
     packageName: "@agentclientprotocol/claude-agent-acp",
     binName: "claude-agent-acp",
-    install: "pnpm -F @berd/agent add @agentclientprotocol/claude-agent-acp",
+    install: "pnpm -F @weave/agent add @agentclientprotocol/claude-agent-acp",
   },
 
   // Declared but not installed. Each is a real ACP server; adding one means
@@ -47,16 +47,19 @@ export const ENGINES: Record<string, AcpEngine> = {
   codex: {
     id: "codex",
     label: "Codex",
-    packageName: "@zed-industries/codex-acp",
+    // @zed-industries/codex-acp is DEPRECATED — moved to this package. Found
+    // by probing the handshake directly: the old one refuses to install
+    // cleanly. binName is confirmed against the new package's own manifest.
+    packageName: "@agentclientprotocol/codex-acp",
     binName: "codex-acp",
-    install: "pnpm -F @berd/agent add @zed-industries/codex-acp",
+    install: "pnpm -F @weave/agent add @agentclientprotocol/codex-acp",
   },
   amp: {
     id: "amp",
     label: "Amp",
     packageName: "@sourcegraph/amp",
     binName: "amp-acp",
-    install: "pnpm -F @berd/agent add @sourcegraph/amp",
+    install: "pnpm -F @weave/agent add @sourcegraph/amp",
   },
   gemini: {
     id: "gemini",
@@ -64,7 +67,7 @@ export const ENGINES: Record<string, AcpEngine> = {
     packageName: "@google/gemini-cli",
     binName: "gemini",
     args: ["--experimental-acp"],
-    install: "pnpm -F @berd/agent add @google/gemini-cli",
+    install: "pnpm -F @weave/agent add @google/gemini-cli",
   },
 };
 

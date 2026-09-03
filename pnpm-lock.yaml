@@ -16,15 +16,6 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: ^0.19.0
         version: 0.19.2(zod@4.5.4)
-      '@berd/agent':
-        specifier: workspace:*
-        version: link:../../packages/agent
-      '@berd/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@berd/protocol':
-        specifier: workspace:*
-        version: link:../../packages/protocol
       '@daypicker/react':
         specifier: ^10.0.1
         version: 10.0.1(@types/react@19.2.18)(react@19.2.8)
@@ -136,6 +127,15 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2.5.4
         version: 2.5.5
+      '@weave/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@weave/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@weave/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       ai:
         specifier: ^7.0.78
         version: 7.0.90(zod@4.5.4)
@@ -257,7 +257,7 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: ^0.19.0
         version: 0.19.2(zod@4.5.4)
-      '@berd/protocol':
+      '@weave/protocol':
         specifier: workspace:*
         version: link:../protocol
     devDependencies:
@@ -270,13 +270,13 @@ importers:
 
   packages/cli:
     dependencies:
-      '@berd/core':
+      '@weave/core':
         specifier: workspace:*
         version: link:../core
-      '@berd/eval':
+      '@weave/eval':
         specifier: workspace:*
         version: link:../eval
-      '@berd/protocol':
+      '@weave/protocol':
         specifier: workspace:*
         version: link:../protocol
     devDependencies:
@@ -289,10 +289,10 @@ importers:
 
   packages/core:
     dependencies:
-      '@berd/agent':
+      '@weave/agent':
         specifier: workspace:*
         version: link:../agent
-      '@berd/protocol':
+      '@weave/protocol':
         specifier: workspace:*
         version: link:../protocol
     devDependencies:
@@ -305,10 +305,10 @@ importers:
 
   packages/eval:
     dependencies:
-      '@berd/core':
+      '@weave/core':
         specifier: workspace:*
         version: link:../core
-      '@berd/protocol':
+      '@weave/protocol':
         specifier: workspace:*
         version: link:../protocol
     devDependencies:

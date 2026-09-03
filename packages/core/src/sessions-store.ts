@@ -13,8 +13,8 @@ import { join } from "node:path";
 export class SessionStore {
   private readonly file: string;
 
-  constructor(berdDir: string) {
-    this.file = join(berdDir, "sessions.json");
+  constructor(weaveDir: string) {
+    this.file = join(weaveDir, "sessions.json");
   }
 
   private async readAll(): Promise<Record<string, string>> {

@@ -19,15 +19,15 @@
 
     "baseUrl": ".",
     "paths": {
-      "@berd/protocol": ["packages/protocol/src/index.ts"],
-      "@berd/protocol/*": ["packages/protocol/src/*"],
-      "@berd/agent": ["packages/agent/src/index.ts"],
-      "@berd/agent/*": ["packages/agent/src/*"],
-      "@berd/core": ["packages/core/src/index.ts"],
-      "@berd/core/*": ["packages/core/src/*"],
-      "@berd/eval": ["packages/eval/src/index.ts"],
-      "@berd/eval/*": ["packages/eval/src/*"]
+      "@weave/protocol": ["packages/protocol/src/index.ts"],
+      "@weave/protocol/*": ["packages/protocol/src/*"],
+      "@weave/agent": ["packages/agent/src/index.ts"],
+      "@weave/agent/*": ["packages/agent/src/*"],
+      "@weave/core": ["packages/core/src/index.ts"],
+      "@weave/core/*": ["packages/core/src/*"],
+      "@weave/eval": ["packages/eval/src/index.ts"],
+      "@weave/eval/*": ["packages/eval/src/*"]
     }
   },
-  "exclude": ["node_modules", "dist", "reference", ".berd"]
+  "exclude": ["node_modules", "dist", "reference", ".weave"]
 }

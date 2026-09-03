@@ -75,9 +75,9 @@
     "tailwind-merge": "^3.6.0",
     "vaul": "^1.1.2",
     "ws": "^8.18.0",
-    "@berd/protocol": "workspace:*",
-    "@berd/core": "workspace:*",
-    "@berd/agent": "workspace:*"
+    "@weave/protocol": "workspace:*",
+    "@weave/core": "workspace:*",
+    "@weave/agent": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

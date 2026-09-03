@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { CellResult, CellSummary } from "@berd/protocol";
+import type { CellResult, CellSummary, VerificationRung } from "@weave/protocol";
 
 export interface VerifyResult {
   ok: boolean;
@@ -57,16 +57,24 @@ function median(values: number[]): number {
 }
 
 /**
- * Collapse repeats into one summary per fixture x config.
+ * Collapse repeats into one summary per fixture x config **x verification
+ * strength**.
  *
  * Median rather than mean: one 10-minute timeout would drag a mean far enough
  * to make a config look worse than it is. min-max is reported alongside so the
  * spread stays visible instead of being hidden by the middle.
+ *
+ * Strength is part of the grouping key, not a column. That is the whole point:
+ * a repeat scored at `tests` (8) and a repeat of the same cell scored at
+ * `build` (4) — which happens when a scaffold run only half-worked — are not
+ * the same measurement, and one pass rate across both describes nothing. When
+ * every repeat lands on the same rung, which is the normal case, this groups
+ * exactly as it did before.
  */
 export function summarize(cells: CellResult[]): CellSummary[] {
   const groups = new Map<string, CellResult[]>();
   for (const cell of cells) {
-    const key = `${cell.fixtureId} ${cell.configId}`;
+    const key = `${cell.fixtureId} ${cell.configId} ${cell.verification.strength}`;
     groups.set(key, [...(groups.get(key) ?? []), cell]);
   }
 
@@ -83,9 +91,15 @@ export function summarize(cells: CellResult[]): CellSummary[] {
       }
     }
 
+    const rungs = [
+      ...new Set(group.flatMap((cell) => cell.verification.used)),
+    ] as VerificationRung[];
+
     return {
       fixtureId: group[0].fixtureId,
       configId: group[0].configId,
+      strength: group[0].verification.strength,
+      rungs,
       passed: group.filter((cell) => cell.status === "pass").length,
       total: group.length,
       medianWallMs: median(wall),

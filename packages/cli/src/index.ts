@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * berd — drive the orchestrator without a window.
+ * weave — drive the orchestrator without a window.
  *
- *   berd run --dir ./repo --prompt "fix the failing test"
- *   berd run --dir ./repo --tasks tasks.json
- *   berd replay <runId> [--dir ./repo]
- *   berd runs [--dir ./repo]
+ *   weave run --dir ./repo --prompt "fix the failing test"
+ *   weave run --dir ./repo --tasks tasks.json
+ *   weave intake --dir ./repo
+ *   weave replay <runId> [--dir ./repo]
+ *   weave runs [--dir ./repo]
  */
 
 import { resolve } from "node:path";
@@ -13,15 +14,18 @@ import { readFile } from "node:fs/promises";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  berdDirFor,
+  weaveDirFor,
   newRunId,
   readLedger,
   runTask,
   runTasks,
   Ledger,
   SessionStore,
-} from "@berd/core";
-import type { BerdEvent, CellResult, TaskContract } from "@berd/protocol";
+  intake,
+  availableRungs,
+  describeVerification,
+} from "@weave/core";
+import type { WeaveEvent, CellResult, TaskContract } from "@weave/protocol";
 
 interface Flags {
   dir: string;
@@ -32,12 +36,14 @@ interface Flags {
   resume: boolean;
   model?: string;
   json: boolean;
+  /** Skip the verification ladder after `run`. */
+  noVerify: boolean;
 }
 
 /**
  * Where the user actually typed the command.
  *
- * `pnpm -F @berd/cli start` runs with cwd = packages/cli, so `--dir .` would
+ * `pnpm -F @weave/cli start` runs with cwd = packages/cli, so `--dir .` would
  * silently mean the wrong directory. pnpm sets INIT_CWD to the invocation
  * directory; honour it so relative paths mean what they look like.
  */
@@ -45,7 +51,7 @@ const userCwd = process.env.INIT_CWD ?? process.cwd();
 const fromUser = (path: string) => resolve(userCwd, path);
 
 function parseFlags(argv: string[]): Flags {
-  const flags: Flags = { dir: userCwd, resume: false, json: false };
+  const flags: Flags = { dir: userCwd, resume: false, json: false, noVerify: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--dir") flags.dir = fromUser(argv[++i] ?? ".");
@@ -56,12 +62,13 @@ function parseFlags(argv: string[]): Flags {
     else if (arg === "--repeats") flags.repeats = Number(argv[++i] ?? "3");
     else if (arg === "--resume") flags.resume = true;
     else if (arg === "--json") flags.json = true;
+    else if (arg === "--no-verify") flags.noVerify = true;
   }
   return flags;
 }
 
 /** One line per event, so a run is readable as it happens. */
-function printEvent(event: BerdEvent): void {
+function printEvent(event: WeaveEvent): void {
   switch (event.type) {
     case "agent.session":
       console.log(
@@ -86,6 +93,17 @@ function printEvent(event: BerdEvent): void {
     case "task.finished":
       console.log(`  ${event.status} in ${event.wallMs}ms`);
       return;
+    case "intake.detected":
+      console.log(
+        `  ladder: ${event.available.length} rung(s) — ${event.available.join(", ")}`,
+      );
+      return;
+    case "verification.rung":
+      console.log(
+        `  verify ${event.ok ? "PASS" : "FAIL"}  ${event.rung} (${event.strength})` +
+          `  ${(event.wallMs / 1000).toFixed(1)}s  ${event.command}`,
+      );
+      return;
     case "error":
       console.error(`  error [${event.where}] ${event.message}`);
       return;
@@ -95,8 +113,8 @@ function printEvent(event: BerdEvent): void {
 }
 
 async function cmdRun(flags: Flags): Promise<number> {
-  const berdDir = berdDirFor(flags.dir);
-  const store = new SessionStore(berdDir);
+  const weaveDir = weaveDirFor(flags.dir);
+  const store = new SessionStore(weaveDir);
 
   if (flags.tasks) {
     const raw = await readFile(flags.tasks, "utf8");
@@ -114,7 +132,7 @@ async function cmdRun(flags: Flags): Promise<number> {
   }
 
   if (!flags.prompt) {
-    console.error("berd run: need --prompt or --tasks");
+    console.error("weave run: need --prompt or --tasks");
     return 2;
   }
 
@@ -124,7 +142,7 @@ async function cmdRun(flags: Flags): Promise<number> {
     cwd: flags.dir,
   };
 
-  const ledger = new Ledger(berdDir, newRunId());
+  const ledger = new Ledger(weaveDir, newRunId());
   console.log(`run ${ledger.runId}  ${flags.dir}`);
 
   const outcome = await runTask({
@@ -133,6 +151,7 @@ async function cmdRun(flags: Flags): Promise<number> {
     onEvent: printEvent,
     resumeSessionId: flags.resume ? await store.get(flags.dir) : null,
     config: { model: flags.model },
+    verifyAfter: !flags.noVerify,
   });
 
   // Only after a completed turn — see SessionStore's note.
@@ -141,12 +160,52 @@ async function cmdRun(flags: Flags): Promise<number> {
   }
 
   console.log(`\nledger: ${outcome.ledgerFile}`);
+  if (outcome.result.verification) {
+    // The rung, always. A result without it cannot be compared with another.
+    console.log(`verified at: ${describeVerification(outcome.result.verification)}`);
+  }
   if (flags.json) console.log(JSON.stringify(outcome.result, null, 2));
   return outcome.result.status === "ok" ? 0 : 1;
 }
 
+/**
+ * `weave intake` — what can this repo be verified with?
+ *
+ * Exists so the ladder is inspectable without running an agent. The missing
+ * rungs are printed with the reason, which turns the output into a to-do list:
+ * "no scripts.start" is a thing you can go and fix.
+ */
+async function cmdIntake(flags: Flags): Promise<number> {
+  const { renderLadder } = await import("@weave/eval");
+  const detected = await intake(flags.dir);
+
+  if (flags.json) {
+    console.log(JSON.stringify(detected, null, 2));
+    return 0;
+  }
+
+  console.log(`${flags.dir}`);
+  console.log(
+    `  git: ${detected.isGitRepo ? `${detected.branch} @ ${detected.head?.slice(0, 8)}` : "not a repo"}` +
+      `${detected.isGitRepo && !detected.clean ? " (dirty)" : ""}` +
+      `   package manager: ${detected.packageManager ?? "none"}`,
+  );
+  console.log("");
+  console.log(renderLadder(availableRungs(detected), detected.missing));
+  console.log("");
+
+  const strongest = detected.detected.reduce(
+    (best, entry) => (!best || entry.strength > best.strength ? entry : best),
+    detected.detected[0],
+  );
+  console.log(
+    `strongest available: ${strongest.rung} (${strongest.strength}) — ${strongest.why}`,
+  );
+  return 0;
+}
+
 async function cmdReplay(runId: string, flags: Flags): Promise<number> {
-  const events = await readLedger(berdDirFor(flags.dir), runId);
+  const events = await readLedger(weaveDirFor(flags.dir), runId);
   if (flags.json) {
     console.log(JSON.stringify(events, null, 2));
     return 0;
@@ -161,12 +220,12 @@ async function cmdReplay(runId: string, flags: Flags): Promise<number> {
 
 async function cmdEval(flags: Flags): Promise<number> {
   if (!flags.fixtures) {
-    console.error("berd eval: need --fixtures <tasks.json>");
+    console.error("weave eval: need --fixtures <tasks.json>");
     return 2;
   }
 
   const { loadFixtures, runMatrix, renderMatrix, renderSummaryJson } =
-    await import("@berd/eval");
+    await import("@weave/eval");
 
   const { fixtures, configs } = await loadFixtures(flags.fixtures);
   const repeats = flags.repeats ?? 3;
@@ -198,7 +257,7 @@ async function cmdEval(flags: Flags): Promise<number> {
 }
 
 async function cmdRuns(flags: Flags): Promise<number> {
-  const dir = join(berdDirFor(flags.dir), "runs");
+  const dir = join(weaveDirFor(flags.dir), "runs");
   try {
     const entries = await readdir(dir);
     for (const entry of entries.sort()) console.log(entry);
@@ -222,21 +281,25 @@ async function main(): Promise<void> {
     case "eval":
       process.exit(await cmdEval(flags));
       break;
+    case "intake":
+      process.exit(await cmdIntake(flags));
+      break;
     case "runs":
       process.exit(await cmdRuns(flags));
       break;
     default:
       console.log(
         [
-          "berd run    --dir <path> --prompt <text> [--model <id>] [--resume] [--json]",
-          "berd run    --dir <path> --tasks <tasks.json>",
-          "berd replay <runId> [--dir <path>] [--json]",
-          "berd eval   --fixtures <tasks.json> [--repeats <n>] [--json]",
-          "berd runs   [--dir <path>]",
+          "weave run    --dir <path> --prompt <text> [--model <id>] [--resume] [--no-verify] [--json]",
+          "weave run    --dir <path> --tasks <tasks.json>",
+          "weave intake --dir <path> [--json]",
+          "weave replay <runId> [--dir <path>] [--json]",
+          "weave eval   --fixtures <tasks.json> [--repeats <n>] [--json]",
+          "weave runs   [--dir <path>]",
         ].join("\n"),
       );
       process.exit(command ? 2 : 0);
-  }
+  } 
 }
 
 void main().catch((error: unknown) => {

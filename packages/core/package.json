@@ -1,5 +1,5 @@
 {
-  "name": "@berd/core",
+  "name": "@weave/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,8 +13,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@berd/protocol": "workspace:*",
-    "@berd/agent": "workspace:*"
+    "@weave/protocol": "workspace:*",
+    "@weave/agent": "workspace:*"
   },
   "devDependencies": {
     "typescript": "~5.9.3",

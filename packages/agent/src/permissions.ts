@@ -1,10 +1,12 @@
 import { realpathSync } from "node:fs";
-import { basename, dirname, relative, resolve } from "node:path";
+import { basename, dirname, relative, resolve, sep } from "node:path";
 import type {
   RequestPermissionRequest,
   RequestPermissionResponse,
-} from "@berd/protocol";
-import type { TaskContract } from "@berd/protocol";
+  ToolKind,
+} from "@weave/protocol";
+import type { TaskContract } from "@weave/protocol";
+import { firstMatch } from "./globs.ts";
 
 export type PermissionDecision =
   | { decision: "allow"; optionId: string; reason: string }
@@ -69,11 +71,52 @@ export function isInside(root: string, candidate: string): boolean {
 }
 
 /**
- * The default policy: allow anything the agent asks for **within the task's
- * cwd**, reject everything else.
+ * `candidate` as a POSIX path relative to `root`, or null when it is outside.
  *
- * `allowedPaths` narrowing lands with worktrees at V0.2; the boundary that
- * matters today is the directory, which the file-I/O handlers also enforce.
+ * Symlinks are resolved on both sides first — the same `/var` vs `/private/var`
+ * trap that `realish` exists for. Comparing an unresolved path against a
+ * resolved one silently produces `../../..` and every glob then fails to match,
+ * which would disable the deny list without any error appearing anywhere.
+ */
+export function relativeInside(root: string, candidate: string): string | null {
+  const rel = relative(realish(root), realish(candidate));
+  if (rel !== "" && (rel === ".." || rel.startsWith(".."))) return null;
+  return rel.split(sep).join("/");
+}
+
+/**
+ * Tool kinds that cannot modify anything.
+ *
+ * Everything NOT in this set is treated as a possible write, `other` included.
+ * On a deny list the conservative reading is the correct one: a new ACP tool
+ * kind should arrive blocked from the test suite, not silently allowed.
+ */
+const READ_ONLY_KINDS = new Set<ToolKind>([
+  "read",
+  "search",
+  "think",
+  "fetch",
+  "switch_mode",
+]);
+
+function mutates(kind: ToolKind | null | undefined): boolean {
+  return kind == null || !READ_ONLY_KINDS.has(kind);
+}
+
+/**
+ * The default policy: allow anything the agent asks for **within the task's
+ * cwd**, minus anything `readOnlyPaths` forbids. Reject everything else.
+ *
+ * Two boundaries, in order:
+ *
+ *   1. the task directory — the outer wall
+ *   2. `readOnlyPaths` — a deny list inside it, for files whose contents are
+ *      the measurement (a test suite) and so must not be editable by the thing
+ *      being measured
+ *
+ * `allowedPaths` narrowing is still NOT read: an allow-list is only meaningful
+ * once each task owns a worktree, so it lands at MVP.1. A deny list needs no
+ * worktree to mean something, which is why it is here now.
  */
 export const confineToTaskDir: PermissionPolicy = (task, request) => {
   const allow = findAllowOption(request);
@@ -95,11 +138,28 @@ export const confineToTaskDir: PermissionPolicy = (task, request) => {
     };
   }
 
+  // The deny list. Only applied to tool calls that could write: an agent
+  // READING the test suite is expected and useful, and blocking that would
+  // push it into guessing what the tests assert.
+  if (task.readOnlyPaths?.length && mutates(request.toolCall.kind)) {
+    for (const location of locations) {
+      const rel = relativeInside(task.cwd, location.path);
+      if (rel === null) continue;
+      const pattern = firstMatch(task.readOnlyPaths, rel);
+      if (pattern) {
+        return {
+          decision: "reject",
+          reason: `${rel} is read-only (matches "${pattern}")`,
+        };
+      }
+    }
+  }
+
   // KNOWN GAP, recorded rather than hidden: many tool calls report no
   // `locations` at all — a shell command, for instance — so this check passes
   // vacuously and cannot see where they write. The agent's cwd is the real
   // boundary for those, which is why `safeResolve` exists as a second defence
-  // and why V0.2's worktrees matter: containment, not inspection.
+  // and why MVP.1's worktrees matter: containment, not inspection.
   return {
     decision: "allow",
     optionId: allow.optionId,

@@ -6,14 +6,16 @@ import type {
   SessionConfigOption,
   SessionUpdate,
   TaskContract,
-} from "@berd/protocol";
+} from "@weave/protocol";
 import { spawnAgent, type SpawnedAgent } from "./spawn.ts";
 import {
   confineToTaskDir,
   isInside,
+  relativeInside,
   toAcpResponse,
   type PermissionPolicy,
 } from "./permissions.ts";
+import { firstMatch } from "./globs.ts";
 
 /** Everything the session emits. The runner turns these into ledger events. */
 export interface SessionSink {
@@ -66,13 +68,31 @@ class SessionClient implements acp.Client {
     this.policy = policy;
   }
 
-  /** Confine every file operation to the task directory. */
-  private safeResolve(requestedPath: string): string {
+  /**
+   * Confine every file operation to the task directory, and every WRITE to
+   * the part of it that is not read-only.
+   *
+   * This is the second of the two confinement boundaries, and it covers what
+   * the permission policy cannot: ACP-routed `readTextFile`/`writeTextFile`
+   * never produce a permission request at all. The policy covers the agent's
+   * own tools. Neither one alone is sufficient.
+   */
+  private safeResolve(requestedPath: string, mode: "read" | "write"): string {
     const absolute = isAbsolute(requestedPath)
       ? requestedPath
       : resolve(this.task.cwd, requestedPath);
     if (!isInside(this.task.cwd, absolute)) {
       throw new Error(`Refused path outside the task dir: ${requestedPath}`);
+    }
+
+    if (mode === "write" && this.task.readOnlyPaths?.length) {
+      const rel = relativeInside(this.task.cwd, absolute);
+      const pattern = rel === null ? null : firstMatch(this.task.readOnlyPaths, rel);
+      if (pattern) {
+        throw new Error(
+          `Refused write to read-only path: ${rel} (matches "${pattern}")`,
+        );
+      }
     }
     return absolute;
   }
@@ -104,7 +124,7 @@ class SessionClient implements acp.Client {
   async readTextFile(
     params: acp.ReadTextFileRequest,
   ): Promise<acp.ReadTextFileResponse> {
-    const path = this.safeResolve(params.path);
+    const path = this.safeResolve(params.path, "read");
     const text = await readFile(path, "utf8");
     this.sink.onFileRead(path);
 
@@ -119,7 +139,7 @@ class SessionClient implements acp.Client {
   async writeTextFile(
     params: acp.WriteTextFileRequest,
   ): Promise<acp.WriteTextFileResponse> {
-    const path = this.safeResolve(params.path);
+    const path = this.safeResolve(params.path, "write");
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, params.content, "utf8");
     this.written.add(path);

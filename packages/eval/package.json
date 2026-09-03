@@ -1,5 +1,5 @@
 {
-  "name": "@berd/eval",
+  "name": "@weave/eval",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -14,8 +14,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@berd/protocol": "workspace:*",
-    "@berd/core": "workspace:*"
+    "@weave/protocol": "workspace:*",
+    "@weave/core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "~5.9.3",

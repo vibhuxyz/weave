@@ -1,16 +1,18 @@
 import { join, resolve } from "node:path";
-import { openSession, type PermissionPolicy } from "@berd/agent";
-import { applyConfigOptions } from "@berd/agent";
+import { openSession, type PermissionPolicy } from "@weave/agent";
+import { applyConfigOptions } from "@weave/agent";
 import type {
-  BerdEvent,
+  WeaveEvent,
   RunConfig,
   SessionUpdate,
   TaskContract,
   TaskResult,
-} from "@berd/protocol";
-import { DEFAULT_RUN_CONFIG, agentConfigFrom } from "@berd/protocol";
+} from "@weave/protocol";
+import { DEFAULT_RUN_CONFIG, agentConfigFrom } from "@weave/protocol";
 import { Ledger, newRunId } from "./ledger.ts";
 import { readGitStatus } from "./git.ts";
+import { intake as runIntake, availableRungs } from "./intake.ts";
+import { verifyRepo } from "./verify.ts";
 
 export interface RunTaskOptions {
   task: TaskContract;
@@ -19,8 +21,19 @@ export interface RunTaskOptions {
   /** Reuse an existing ledger (multi-task runs share one). */
   ledger?: Ledger;
   resumeSessionId?: string | null;
+  /**
+   * Run the verification ladder once the turn finishes, and put the rung on
+   * the result.
+   *
+   * Off by default, and the eval harness deliberately leaves it off: the
+   * harness has to restore its read-only files from pristine BEFORE verifying,
+   * and a runner that verified first would score the agent's own edits to the
+   * test suite. Order is the whole anti-cheat story, so the caller that owns
+   * the order owns the verification.
+   */
+  verifyAfter?: boolean;
   /** Live feed for a UI. The ledger is written either way. */
-  onEvent?: (event: BerdEvent) => void;
+  onEvent?: (event: WeaveEvent) => void;
 }
 
 export interface RunTaskOutcome {
@@ -36,8 +49,8 @@ export interface RunTaskOutcome {
   contextSize?: number;
 }
 
-export function berdDirFor(cwd: string, config?: RunConfig): string {
-  return config?.berdDir ?? join(resolve(cwd), ".berd");
+export function weaveDirFor(cwd: string, config?: RunConfig): string {
+  return config?.weaveDir ?? join(resolve(cwd), ".weave");
 }
 
 /**
@@ -52,9 +65,9 @@ export async function runTask(
   options: RunTaskOptions,
 ): Promise<RunTaskOutcome> {
   const { task } = options;
-  const berdDir = berdDirFor(task.cwd, options.config);
-  const ledger = options.ledger ?? new Ledger(berdDir, newRunId());
-  const emit = (event: BerdEvent) => options.onEvent?.(event);
+  const weaveDir = weaveDirFor(task.cwd, options.config);
+  const ledger = options.ledger ?? new Ledger(weaveDir, newRunId());
+  const emit = (event: WeaveEvent) => options.onEvent?.(event);
 
   // Snapshot dirty files up front so `filesChanged` reports what THIS task
   // did, not what was already uncommitted.
@@ -200,6 +213,52 @@ export async function runTask(
       .map((change) => change.path)
       .filter((path) => !before.has(path));
 
+    // The ladder. Never refuse a repo for having no tests — detect what it
+    // supports, use the strongest rung, and record which one, because a result
+    // without its rung cannot be compared with any other result.
+    let verification;
+    if (options.verifyAfter) {
+      const detected = await runIntake(task.cwd);
+      emit(
+        ledger.append("intake.detected", {
+          taskId: task.id,
+          cwd: task.cwd,
+          isGitRepo: detected.isGitRepo,
+          head: detected.head,
+          available: availableRungs(detected),
+          missing: detected.missing,
+        }),
+      );
+
+      const outcome = await verifyRepo(task.cwd, {
+        command: task.verify,
+        rung: task.verifyRung,
+        intake: detected,
+        onRung: (run) =>
+          emit(
+            ledger.append("verification.rung", {
+              taskId: task.id,
+              rung: run.rung,
+              strength: run.strength,
+              command: run.command,
+              ok: run.ok,
+              wallMs: run.wallMs,
+              output: run.output.slice(-2000),
+            }),
+          ),
+      });
+      verification = outcome.verification;
+      emit(
+        ledger.append("verification.finished", {
+          taskId: task.id,
+          ok: outcome.ok,
+          available: outcome.verification.available,
+          used: outcome.verification.used,
+          strength: outcome.verification.strength,
+        }),
+      );
+    }
+
     const result: TaskResult = {
       taskId: task.id,
       status: stopped ? "cancelled" : "ok",
@@ -207,6 +266,7 @@ export async function runTask(
       wallMs,
       filesWritten: session.filesWritten(),
       filesChanged,
+      verification,
     };
     emit(
       ledger.append("task.finished", {
@@ -262,14 +322,14 @@ export async function runTask(
   }
 }
 
-/** Run tasks in order. The scheduler (V0.2) replaces this with a DAG. */
+/** Run tasks in order. The scheduler (MVP.1) replaces this with a DAG. */
 export async function runTasks(
   tasks: TaskContract[],
   config?: RunConfig,
   policy?: PermissionPolicy,
 ): Promise<{ runId: string; results: TaskResult[]; ledgerFile: string }> {
   const cwd = tasks[0]?.cwd ?? process.cwd();
-  const ledger = new Ledger(berdDirFor(cwd, config), newRunId());
+  const ledger = new Ledger(weaveDirFor(cwd, config), newRunId());
   const started = Date.now();
 
   ledger.append("run.started", {
