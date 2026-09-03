@@ -1,14 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/shared/ui/button";
-import {
-  Message,
-  MessageContent,
-  MessageResponse,
-} from "@/shared/ui/ai-elements/message";
+import { Message, MessageContent } from "@/shared/ui/ai-elements/message";
 import { ConfigPicker } from "./ConfigPicker";
 import { ContextPanel } from "./ContextPanel";
 import { Sidebar } from "./Sidebar";
-import { ToolSteps } from "./ToolSteps";
+import { AgentMessage } from "./agent/components/AgentMessage";
 import { basename } from "./paths";
 import { useAcpChat } from "./useAcpChat";
 import { useProject } from "./useProject";
@@ -103,10 +99,19 @@ export function App() {
           {turns.map((turn) => (
             <Message key={turn.id} from={turn.role}>
               <MessageContent>
-                <ToolSteps tools={turn.tools} projectDir={project.dir} />
-                {turn.role === "assistant"
-                  ? turn.text && <MessageResponse>{turn.text}</MessageResponse>
-                  : turn.text}
+                {turn.role === "assistant" ? (
+                  (turn.text || turn.tools.length > 0) && (
+                    <AgentMessage
+                      turn={turn}
+                      projectDir={project.dir}
+                      git={git}
+                      configValues={configValues}
+                      running={busy}
+                    />
+                  )
+                ) : (
+                  turn.text
+                )}
               </MessageContent>
             </Message>
           ))}

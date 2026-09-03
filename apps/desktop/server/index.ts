@@ -55,7 +55,12 @@ export type ServerMessage =
       configOptions: SessionConfigOption[];
       resumed: boolean;
     }
-  | { type: "update"; update: SessionUpdate; replay?: boolean }
+  | {
+      type: "update";
+      update: SessionUpdate;
+      replay?: boolean;
+      source?: { runId: string; seq: number };
+    }
   | { type: "config-changed"; configId: string; value: string }
   | { type: "config-rejected"; configId: string; message: string }
   | { type: "git-status"; git: GitStatus }
@@ -144,8 +149,13 @@ async function handleConnection(
         );
       },
       onUpdate: (update, replay) => {
-        ledger.append("agent.message", { taskId: task.id, update });
-        send({ type: "update", update, replay });
+        const event = ledger.append("agent.message", { taskId: task.id, update });
+        send({
+          type: "update",
+          update,
+          replay,
+          source: { runId: event.runId, seq: event.seq },
+        });
       },
       onPermission: (toolCall, options, decision) => {
         ledger.append("permission.requested", { taskId: task.id, toolCall, options });

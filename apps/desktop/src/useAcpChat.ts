@@ -13,6 +13,8 @@ export interface ToolEntry {
   status: ToolCallStatus;
   /** read | edit | delete | move | search | execute | think | fetch | … */
   kind: ToolKind;
+  sourceEventIds?: string[];
+  sourceSeq?: number;
 }
 
 export interface ChatTurn {
@@ -20,6 +22,8 @@ export interface ChatTurn {
   role: "user" | "assistant";
   text: string;
   tools: ToolEntry[];
+  sourceEventIds?: string[];
+  sourceSeq?: number;
 }
 
 export type ConnectionState =
@@ -86,7 +90,13 @@ export function useAcpChat(port: number | null) {
   }, []);
 
   const applyUpdate = useCallback(
-    (update: SessionUpdate, replay = false) => {
+    (
+      update: SessionUpdate,
+      replay = false,
+      source?: { runId: string; seq: number },
+    ) => {
+      const sourceEventIds = source ? [`${source.runId}:${source.seq}`] : undefined;
+
       // Only replays carry user_message_chunk; live prompts are echoed
       // optimistically in send(), so honouring both would duplicate the turn.
       if (update.sessionUpdate === "user_message_chunk") {
@@ -100,7 +110,14 @@ export function useAcpChat(port: number | null) {
         case "agent_message_chunk": {
           if (update.content.type !== "text") return;
           const chunk = update.content.text;
-          withAssistantTurn((turn) => ({ ...turn, text: turn.text + chunk }));
+          withAssistantTurn((turn) => ({
+            ...turn,
+            text: turn.text + chunk,
+            sourceEventIds: sourceEventIds
+              ? [...(turn.sourceEventIds ?? []), ...sourceEventIds]
+              : turn.sourceEventIds,
+            sourceSeq: source?.seq ?? turn.sourceSeq,
+          }));
           return;
         }
         case "tool_call": {
@@ -113,6 +130,8 @@ export function useAcpChat(port: number | null) {
                 title: update.title,
                 status: update.status ?? "pending",
                 kind: update.kind ?? "other",
+                sourceEventIds,
+                sourceSeq: source?.seq,
               },
             ],
           }));
@@ -133,6 +152,8 @@ export function useAcpChat(port: number | null) {
                     status: update.status ?? tool.status,
                     title: update.title ?? tool.title,
                     kind: update.kind ?? tool.kind,
+                    sourceEventIds: sourceEventIds ?? tool.sourceEventIds,
+                    sourceSeq: source?.seq ?? tool.sourceSeq,
                   }
                 : tool,
             ),
@@ -223,7 +244,7 @@ export function useAcpChat(port: number | null) {
             return;
           }
           case "update":
-            applyUpdate(message.update, message.replay === true);
+            applyUpdate(message.update, message.replay === true, message.source);
             return;
           case "turn-end":
             setBusy(false);
