@@ -1,7 +1,10 @@
-import { MessageResponse } from "@/shared/ui/ai-elements/message";
 import type { MarkdownBlock as MarkdownBlockModel } from "../normalize/types";
+import { Prose } from "./Prose";
 
+/**
+ * Fallback renderer for agent text the normalizer could not structure into a
+ * richer block.
+ */
 export function MarkdownBlock({ block }: { block: MarkdownBlockModel }) {
-  return <MessageResponse>{block.text}</MessageResponse>;
+  return <Prose>{block.text}</Prose>;
 }
-

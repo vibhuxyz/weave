@@ -3,6 +3,7 @@ import { FolderGitIcon, GitBranchIcon, RefreshCwIcon } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { basename, tildeHome } from "./paths";
 import type { GitStatus } from "../server/index.ts";
+import type { RunningServer } from "./useRunningServers";
 
 const TABS = ["Context", "Changes", "Files"] as const;
 type Tab = (typeof TABS)[number];
@@ -11,6 +12,8 @@ export interface ContextPanelProps {
   projectDir: string;
   git: GitStatus;
   onRefresh: () => void;
+  servers: RunningServer[];
+  onStopServer: (port: number) => void;
 }
 
 /** Porcelain codes → a short human word. */
@@ -26,11 +29,72 @@ export function ContextPanel({
   projectDir,
   git,
   onRefresh,
+  servers,
+  onStopServer,
 }: ContextPanelProps) {
   const [tab, setTab] = useState<Tab>("Context");
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col gap-4 rounded-xl bg-secondary/30 p-4 pt-8">
+    <aside className="flex w-72 shrink-0 flex-col gap-4 rounded-xl border border-border/60 bg-agent-surface-raised p-4">
+      {servers.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-xl border border-agent-accent/20 bg-agent-accent-wash p-2.5">
+          <p className="flex items-center gap-1.5 px-1 font-mono text-agent-accent text-[10px] uppercase tracking-[0.1em]">
+            Running
+            <span className="rounded-full bg-agent-accent/20 px-1.5 text-agent-accent-strong">
+              {servers.length}
+            </span>
+          </p>
+          {servers.map((s) => (
+            <div
+              key={s.port}
+              className="flex items-center gap-2.5 rounded-lg border border-agent-border bg-agent-surface-inset px-3 py-2"
+            >
+              <span
+                className={cn(
+                  "size-2 shrink-0 rounded-full",
+                  s.stopping
+                    ? "animate-pulse bg-agent-warn"
+                    : s.alive
+                      ? "animate-pulse bg-agent-success"
+                      : "bg-agent-text-faint",
+                )}
+                title={
+                  s.stopping
+                    ? "stopping"
+                    : s.alive
+                      ? "listening"
+                      : "no longer listening"
+                }
+              />
+              <div className="min-w-0 flex-1">
+                <p
+                  className="truncate text-agent-text-bright text-xs"
+                  title={s.command}
+                >
+                  {s.label}
+                </p>
+                <p className="truncate font-mono text-[11px] text-agent-text-faint">
+                  {s.project ? `${s.project} · ` : ""}:{s.port}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onStopServer(s.port)}
+                disabled={s.stopping}
+                className={cn(
+                  "shrink-0 rounded-md border px-2.5 py-1 text-xs transition-colors",
+                  s.stopping
+                    ? "border-agent-border bg-agent-surface-hover text-agent-text-faint"
+                    : "border-agent-border bg-agent-surface-hover text-agent-text hover:border-agent-critical/50 hover:bg-agent-critical-bg hover:text-agent-critical-fg",
+                )}
+              >
+                {s.stopping ? "Stopping…" : "Stop"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center gap-4 text-sm">
         {TABS.map((name) => (
           <button

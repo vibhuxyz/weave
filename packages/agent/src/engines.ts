@@ -1,12 +1,12 @@
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import { ENGINES, DEFAULT_ENGINE_ID, type AcpEngine } from "./engines-registry.ts";
+import { ENGINES, DEFAULT_ENGINE_ID, type EngineDescriptor } from "./engines-registry.ts";
 
-export { ENGINES, DEFAULT_ENGINE_ID, type AcpEngine };
+export { ENGINES, DEFAULT_ENGINE_ID, type EngineDescriptor };
 
 const require = createRequire(import.meta.url);
 
-export function getEngine(id: string = DEFAULT_ENGINE_ID): AcpEngine {
+export function getEngine(id: string = DEFAULT_ENGINE_ID): EngineDescriptor {
   const engine = ENGINES[id];
   if (!engine) {
     throw new Error(
@@ -23,7 +23,7 @@ export function getEngine(id: string = DEFAULT_ENGINE_ID): AcpEngine {
  * library entry, while the ACP server is the *bin*. Reading `bin[binName]` is
  * the only reliable way.
  */
-export function resolveEngineEntry(engine: AcpEngine): string {
+export function resolveEngineEntry(engine: EngineDescriptor): string {
   let manifestPath: string;
   try {
     manifestPath = require.resolve(`${engine.packageName}/package.json`);
@@ -47,7 +47,7 @@ export function resolveEngineEntry(engine: AcpEngine): string {
 }
 
 /** Engines whose package is actually present. */
-export function installedEngines(): AcpEngine[] {
+export function installedEngines(): EngineDescriptor[] {
   return Object.values(ENGINES).filter((engine) => {
     try {
       resolveEngineEntry(engine);

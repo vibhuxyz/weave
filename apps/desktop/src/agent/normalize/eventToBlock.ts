@@ -1,5 +1,5 @@
 import type { SessionUpdate } from "@agentclientprotocol/sdk";
-import type { AgentBlock, AgentBlockBase } from "./types";
+import { type AgentBlock, type AgentBlockBase, emptySource } from "./types";
 
 export interface SourceEventRef {
   runId?: string;
@@ -10,13 +10,15 @@ export function blockBase(
   id: string,
   source?: SourceEventRef,
 ): AgentBlockBase {
+  const sourceEventIds =
+    source?.runId && source.seq !== undefined
+      ? [`${source.runId}:${source.seq}`]
+      : undefined;
   return {
     id,
     schemaVersion: 1,
-    sourceEventIds:
-      source?.runId && source.seq !== undefined
-        ? [`${source.runId}:${source.seq}`]
-        : undefined,
+    source: emptySource(sourceEventIds, source?.seq),
+    sourceEventIds,
     sourceSeq: source?.seq,
   };
 }

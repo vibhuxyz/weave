@@ -1,5 +1,5 @@
 import type { GitStatus } from "../../../server/index.ts";
-import type { ActivityItem, AgentBlock } from "../normalize/types";
+import { emptySource, type ActivityItem, type AgentBlock } from "../normalize/types";
 import { FileChangeBlock } from "./FileChangeBlock";
 
 export type AgentTab = "overview" | "activity" | "files" | "git";
@@ -15,6 +15,7 @@ export function tabBlocks(options: {
     return options.activity.map((item) => ({
       id: `activity-block-${item.id}`,
       schemaVersion: 1,
+      source: emptySource(item.sourceEventIds, item.sourceSeq),
       sourceEventIds: item.sourceEventIds,
       sourceSeq: item.sourceSeq,
       type: "tool",
@@ -33,6 +34,7 @@ export function tabBlocks(options: {
       {
         id: "files-tab",
         schemaVersion: 1,
+        source: emptySource(),
         type: "file-change",
         files: options.git.changes.map((change) => ({
           path: change.path,
@@ -45,6 +47,7 @@ export function tabBlocks(options: {
     {
       id: "git-tab",
       schemaVersion: 1,
+      source: emptySource(),
       type: "file-change",
       files: [
         {

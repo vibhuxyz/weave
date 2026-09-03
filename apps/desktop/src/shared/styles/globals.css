@@ -588,6 +588,51 @@
   --dot-size: 1px;
   --dot-spacing: 24px;
 
+  /* ═══ Agent chat card — consolidated dark palette (used by src/agent/components/*) ═══ */
+  --agent-surface-sunken: #101015;
+  --agent-surface-base: #14141b;
+  --agent-surface-raised: #17171f;
+  --agent-surface-inset: #1b1b24;
+  --agent-surface-hover: #22222d;
+  --agent-code-bg: #0d0e13;
+  --agent-code-header-bg: #15151d;
+  --agent-code-border: #2b2b36;
+  --agent-border: rgba(255, 255, 255, 0.1);
+  --agent-border-strong: rgba(255, 255, 255, 0.16);
+  --agent-border-subtle: rgba(255, 255, 255, 0.06);
+  --agent-chip-bg: #24232d;
+  --agent-chip-border: #383341;
+  --agent-text: #d7d1dc;
+  --agent-text-bright: #ececf1;
+  --agent-text-strong: #ded8e4;
+  --agent-text-muted: #a8a2b3;
+  --agent-text-faint: #8b8794;
+  --agent-accent: #f0845d;
+  --agent-accent-strong: #ff7a66;
+  --agent-accent-fg: #1b1110;
+  --agent-accent-wash: rgba(240, 132, 93, 0.1);
+  --agent-critical: #ff6f6f;
+  --agent-critical-fg: #ff8b8b;
+  --agent-critical-bg: #2a151a;
+  --agent-high: #f3a341;
+  --agent-high-fg: #f7b862;
+  --agent-high-bg: #251b12;
+  --agent-medium: #e6cc4b;
+  --agent-medium-fg: #eadc78;
+  --agent-medium-bg: #242012;
+  --agent-low: #61a8ff;
+  --agent-low-fg: #8fc0ff;
+  --agent-low-bg: #121d2a;
+  --agent-info: #8a8695;
+  --agent-info-fg: #b7b1c2;
+  --agent-info-bg: #1b1b24;
+  --agent-success: #74e0a3;
+  --agent-success-bg: rgba(116, 224, 163, 0.09);
+  --agent-warn: #f3a341;
+  --agent-warn-bg: rgba(243, 163, 65, 0.09);
+  --agent-running: #8fc0ff;
+  --agent-running-bg: rgba(143, 192, 255, 0.09);
+
   /* Shadows — 4-tier hierarchy. Dark block doubles intensity. */
   --shadow-mini: 0 2px 8px rgba(76, 76, 76, 0.15);
   --shadow-mini-inset: 0 1px 4px rgba(76, 76, 76, 0.1) inset;
@@ -963,6 +1008,51 @@
 
   --dot-color-base: rgba(255, 255, 255, 0.12);
 
+  /* ═══ Agent chat card — consolidated dark palette (used by src/agent/components/*) ═══ */
+  --agent-surface-sunken: #101015;
+  --agent-surface-base: #14141b;
+  --agent-surface-raised: #17171f;
+  --agent-surface-inset: #1b1b24;
+  --agent-surface-hover: #22222d;
+  --agent-code-bg: #0d0e13;
+  --agent-code-header-bg: #15151d;
+  --agent-code-border: #2b2b36;
+  --agent-border: rgba(255, 255, 255, 0.1);
+  --agent-border-strong: rgba(255, 255, 255, 0.16);
+  --agent-border-subtle: rgba(255, 255, 255, 0.06);
+  --agent-chip-bg: #24232d;
+  --agent-chip-border: #383341;
+  --agent-text: #d7d1dc;
+  --agent-text-bright: #ececf1;
+  --agent-text-strong: #ded8e4;
+  --agent-text-muted: #a8a2b3;
+  --agent-text-faint: #8b8794;
+  --agent-accent: #f0845d;
+  --agent-accent-strong: #ff7a66;
+  --agent-accent-fg: #1b1110;
+  --agent-accent-wash: rgba(240, 132, 93, 0.1);
+  --agent-critical: #ff6f6f;
+  --agent-critical-fg: #ff8b8b;
+  --agent-critical-bg: #2a151a;
+  --agent-high: #f3a341;
+  --agent-high-fg: #f7b862;
+  --agent-high-bg: #251b12;
+  --agent-medium: #e6cc4b;
+  --agent-medium-fg: #eadc78;
+  --agent-medium-bg: #242012;
+  --agent-low: #61a8ff;
+  --agent-low-fg: #8fc0ff;
+  --agent-low-bg: #121d2a;
+  --agent-info: #8a8695;
+  --agent-info-fg: #b7b1c2;
+  --agent-info-bg: #1b1b24;
+  --agent-success: #74e0a3;
+  --agent-success-bg: rgba(116, 224, 163, 0.09);
+  --agent-warn: #f3a341;
+  --agent-warn-bg: rgba(243, 163, 65, 0.09);
+  --agent-running: #8fc0ff;
+  --agent-running-bg: rgba(143, 192, 255, 0.09);
+
   /* Shadows — doubled intensity over dark surfaces */
   --shadow-mini: 0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-mini-inset: 0 1px 4px rgba(0, 0, 0, 0.5) inset;
@@ -1125,6 +1215,51 @@
   --color-skill-pill-fg: var(--skill-pill-fg);
 
   --color-placeholder-composer: var(--text-placeholder-composer);
+
+  /* Agent chat card palette (see :root / .dark --agent-*) */
+  --color-agent-surface-sunken: var(--agent-surface-sunken);
+  --color-agent-surface-base: var(--agent-surface-base);
+  --color-agent-surface-raised: var(--agent-surface-raised);
+  --color-agent-surface-inset: var(--agent-surface-inset);
+  --color-agent-surface-hover: var(--agent-surface-hover);
+  --color-agent-code-bg: var(--agent-code-bg);
+  --color-agent-code-header-bg: var(--agent-code-header-bg);
+  --color-agent-code-border: var(--agent-code-border);
+  --color-agent-border: var(--agent-border);
+  --color-agent-border-strong: var(--agent-border-strong);
+  --color-agent-border-subtle: var(--agent-border-subtle);
+  --color-agent-chip-bg: var(--agent-chip-bg);
+  --color-agent-chip-border: var(--agent-chip-border);
+  --color-agent-text: var(--agent-text);
+  --color-agent-text-bright: var(--agent-text-bright);
+  --color-agent-text-strong: var(--agent-text-strong);
+  --color-agent-text-muted: var(--agent-text-muted);
+  --color-agent-text-faint: var(--agent-text-faint);
+  --color-agent-accent: var(--agent-accent);
+  --color-agent-accent-strong: var(--agent-accent-strong);
+  --color-agent-accent-fg: var(--agent-accent-fg);
+  --color-agent-accent-wash: var(--agent-accent-wash);
+  --color-agent-critical: var(--agent-critical);
+  --color-agent-critical-fg: var(--agent-critical-fg);
+  --color-agent-critical-bg: var(--agent-critical-bg);
+  --color-agent-high: var(--agent-high);
+  --color-agent-high-fg: var(--agent-high-fg);
+  --color-agent-high-bg: var(--agent-high-bg);
+  --color-agent-medium: var(--agent-medium);
+  --color-agent-medium-fg: var(--agent-medium-fg);
+  --color-agent-medium-bg: var(--agent-medium-bg);
+  --color-agent-low: var(--agent-low);
+  --color-agent-low-fg: var(--agent-low-fg);
+  --color-agent-low-bg: var(--agent-low-bg);
+  --color-agent-info: var(--agent-info);
+  --color-agent-info-fg: var(--agent-info-fg);
+  --color-agent-info-bg: var(--agent-info-bg);
+  --color-agent-success: var(--agent-success);
+  --color-agent-success-bg: var(--agent-success-bg);
+  --color-agent-warn: var(--agent-warn);
+  --color-agent-warn-bg: var(--agent-warn-bg);
+  --color-agent-running: var(--agent-running);
+  --color-agent-running-bg: var(--agent-running-bg);
 
   /* Goose status extensions */
   --color-success: var(--success);
@@ -1623,14 +1758,14 @@
 .bg-dot-grid {
   background-color: color-mix(
     in oklch,
-    var(--project-tint, transparent) 25%,
+    var(--project-tint, transparent) 9%,
     var(--canvas-base)
   );
   background-image: radial-gradient(
     circle,
     color-mix(
         in oklch,
-        var(--project-tint, transparent) 25%,
+        var(--project-tint, transparent) 22%,
         var(--dot-color-base)
       )
       var(--dot-size),

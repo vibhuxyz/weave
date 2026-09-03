@@ -5,7 +5,13 @@ import type {
   ToolCallStatus,
   ToolKind,
 } from "@agentclientprotocol/sdk";
-import type { GitStatus, ServerMessage } from "../server/index.ts";
+import type {
+  ConversationMeta,
+  GitStatus,
+  ServerMessage,
+} from "../server/index.ts";
+
+export type { ConversationMeta };
 
 export interface ToolEntry {
   id: string;
@@ -13,14 +19,35 @@ export interface ToolEntry {
   status: ToolCallStatus;
   /** read | edit | delete | move | search | execute | think | fetch | … */
   kind: ToolKind;
+  /** Terminal / tool output text, accumulated from `content` on each update. */
+  output?: string;
+  /** Epoch ms when the call first appeared, and when it finished. For timers. */
+  startedAt?: number;
+  endedAt?: number;
   sourceEventIds?: string[];
   sourceSeq?: number;
+}
+
+const TERMINAL_STATUS = new Set<ToolCallStatus>(["completed", "failed"]);
+
+/** Pull plain-text output out of an ACP tool call's `content` array. */
+function toolText(content: unknown): string | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const parts: string[] = [];
+  for (const item of content) {
+    if (item?.type === "content" && item.content?.type === "text") {
+      parts.push(item.content.text);
+    }
+  }
+  return parts.length > 0 ? parts.join("") : undefined;
 }
 
 export interface ChatTurn {
   id: string;
   role: "user" | "assistant";
   text: string;
+  /** The agent's reasoning stream (`agent_thought_chunk`), shown collapsed. */
+  thought: string;
   tools: ToolEntry[];
   sourceEventIds?: string[];
   sourceSeq?: number;
@@ -54,6 +81,8 @@ export function useAcpChat(port: number | null) {
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [git, setGit] = useState<GitStatus>({ branch: null, changes: [] });
   const [resumed, setResumed] = useState(false);
+  const [chats, setChats] = useState<ConversationMeta[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   /** Pre-change config values, kept only until the agent confirms or refuses. */
   const previousConfigRef = useRef<Record<string, string>>({});
 
@@ -69,6 +98,7 @@ export function useAcpChat(port: number | null) {
           id: crypto.randomUUID(),
           role: "assistant",
           text: "",
+          thought: "",
           tools: [],
         };
         return [...current, mutate(fresh)];
@@ -86,7 +116,7 @@ export function useAcpChat(port: number | null) {
       }
       return [
         ...current,
-        { id: crypto.randomUUID(), role: "user", text, tools: [] },
+        { id: crypto.randomUUID(), role: "user", text, thought: "", tools: [] },
       ];
     });
   }, []);
@@ -122,7 +152,22 @@ export function useAcpChat(port: number | null) {
           }));
           return;
         }
+        case "agent_thought_chunk": {
+          if (update.content.type !== "text") return;
+          const chunk = update.content.text;
+          withAssistantTurn((turn) => ({
+            ...turn,
+            thought: turn.thought + chunk,
+            sourceEventIds: sourceEventIds
+              ? [...(turn.sourceEventIds ?? []), ...sourceEventIds]
+              : turn.sourceEventIds,
+            sourceSeq: source?.seq ?? turn.sourceSeq,
+          }));
+          return;
+        }
         case "tool_call": {
+          const startStatus = update.status ?? "pending";
+          const now = replay ? undefined : Date.now();
           withAssistantTurn((turn) => ({
             ...turn,
             tools: [
@@ -130,8 +175,11 @@ export function useAcpChat(port: number | null) {
               {
                 id: update.toolCallId,
                 title: update.title,
-                status: update.status ?? "pending",
+                status: startStatus,
                 kind: update.kind ?? "other",
+                output: toolText(update.content),
+                startedAt: now,
+                endedAt: TERMINAL_STATUS.has(startStatus) ? now : undefined,
                 sourceEventIds,
                 sourceSeq: source?.seq,
               },
@@ -147,24 +195,30 @@ export function useAcpChat(port: number | null) {
           // Every field is optional per update, so fall back to what we have.
           withAssistantTurn((turn) => ({
             ...turn,
-            tools: turn.tools.map((tool) =>
-              tool.id === update.toolCallId
-                ? {
-                    ...tool,
-                    status: update.status ?? tool.status,
-                    title: update.title ?? tool.title,
-                    kind: update.kind ?? tool.kind,
-                    sourceEventIds: sourceEventIds ?? tool.sourceEventIds,
-                    sourceSeq: source?.seq ?? tool.sourceSeq,
-                  }
-                : tool,
-            ),
+            tools: turn.tools.map((tool) => {
+              if (tool.id !== update.toolCallId) return tool;
+              const nextStatus = update.status ?? tool.status;
+              const nowEnded =
+                TERMINAL_STATUS.has(nextStatus) && !TERMINAL_STATUS.has(tool.status);
+              return {
+                ...tool,
+                status: nextStatus,
+                title: update.title ?? tool.title,
+                kind: update.kind ?? tool.kind,
+                // Updates carry the full content each time; keep the last
+                // non-empty snapshot so a status-only update never wipes it.
+                output: toolText(update.content) ?? tool.output,
+                startedAt: tool.startedAt ?? (replay ? undefined : Date.now()),
+                endedAt: nowEnded ? Date.now() : tool.endedAt,
+                sourceEventIds: sourceEventIds ?? tool.sourceEventIds,
+                sourceSeq: source?.seq ?? tool.sourceSeq,
+              };
+            }),
           }));
           return;
         }
         default:
-          // plan / agent_thought_chunk / user_message_chunk / commands —
-          // not rendered yet.
+          // plan / user_message_chunk / commands — not rendered yet.
           return;
       }
     },
@@ -180,6 +234,8 @@ export function useAcpChat(port: number | null) {
     setEngineLabel(null);
     setError(null);
     setResumed(false);
+    setChats([]);
+    setActiveSessionId(null);
 
     if (port == null) {
       setState("idle");
@@ -218,9 +274,10 @@ export function useAcpChat(port: number | null) {
             setEngineId(message.engineId);
             setEngineLabel(message.engineLabel);
             setResumed(message.resumed);
-            // A resumed session replays its own history, so clear first and
-            // let the replay rebuild the transcript.
-            setTurns([]);
+            setActiveSessionId(message.sessionId);
+            // A fresh chat starts empty; a resumed one is wiped by the
+            // preceding `reset` and rebuilt by the replay that follows.
+            if (!message.resumed) setTurns([]);
             setConfigOptions(message.configOptions);
             setConfigValues(
               Object.fromEntries(
@@ -262,6 +319,14 @@ export function useAcpChat(port: number | null) {
           case "turn-end":
             setBusy(false);
             return;
+          case "chats":
+            setChats(message.chats);
+            if (message.activeSessionId)
+              setActiveSessionId(message.activeSessionId);
+            return;
+          case "reset":
+            setTurns([]);
+            return;
           case "error":
             setError(message.message);
             setBusy(false);
@@ -301,7 +366,7 @@ export function useAcpChat(port: number | null) {
     setBusy(true);
     setTurns((current) => [
       ...current,
-      { id: crypto.randomUUID(), role: "user", text: trimmed, tools: [] },
+      { id: crypto.randomUUID(), role: "user", text: trimmed, thought: "", tools: [] },
     ]);
     socket.send(JSON.stringify({ type: "prompt", text: trimmed }));
   }, []);
@@ -327,8 +392,21 @@ export function useAcpChat(port: number | null) {
   const newChat = useCallback(() => {
     const socket = socketRef.current;
     if (socket?.readyState !== WebSocket.OPEN) return;
+    setBusy(false);
     socket.send(JSON.stringify({ type: "new-chat" }));
   }, []);
+
+  const openChat = useCallback(
+    (sessionId: string) => {
+      const socket = socketRef.current;
+      if (socket?.readyState !== WebSocket.OPEN) return;
+      if (sessionId === activeSessionId) return;
+      setBusy(false);
+      setError(null);
+      socket.send(JSON.stringify({ type: "open-chat", sessionId }));
+    },
+    [activeSessionId],
+  );
 
   const refreshGit = useCallback(() => {
     const socket = socketRef.current;
@@ -349,10 +427,13 @@ export function useAcpChat(port: number | null) {
     configValues,
     git,
     resumed,
+    chats,
+    activeSessionId,
     send,
     cancel,
     setConfig,
     refreshGit,
     newChat,
+    openChat,
   };
 }

@@ -2,7 +2,7 @@ import type { ErrorBlock as ErrorBlockModel } from "../normalize/types";
 
 export function ErrorBlock({ block }: { block: ErrorBlockModel }) {
   return (
-    <section className="rounded-lg border border-[#ff6f6f]/50 bg-[#2a151a] p-4 text-[#ff8b8b] text-sm">
+    <section className="rounded-lg border border-agent-critical/50 bg-agent-critical-bg p-4 text-agent-critical-fg text-sm">
       {block.message}
     </section>
   );

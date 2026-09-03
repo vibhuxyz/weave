@@ -51,6 +51,12 @@ export interface AgentSession {
   cancel(): Promise<void>;
   setConfigOption(configId: string, value: string): Promise<void>;
   newSession(): Promise<string>;
+  /**
+   * Switch this live connection to an existing session id and replay its
+   * transcript. Returns false when the agent cannot load it (unsupported, or
+   * the id is gone) — the caller keeps the current session in that case.
+   */
+  resumeSession(id: string): Promise<boolean>;
   filesWritten(): string[];
   close(): void;
 }
@@ -181,8 +187,9 @@ export async function openSession(
   let sessionId = "";
   let configOptions: SessionConfigOption[] = [];
   let resumed = false;
+  const canLoadSession = init.agentCapabilities?.loadSession === true;
 
-  if (init.agentCapabilities?.loadSession === true && options.resumeSessionId) {
+  if (canLoadSession && options.resumeSessionId) {
     try {
       client.replaying = true;
       const loaded = await connection.loadSession({
@@ -214,9 +221,18 @@ export async function openSession(
 
   return {
     engineId: spawned.engine.id,
-    sessionId,
-    resumed,
-    configOptions,
+    // Getters: `newSession()` / `resumeSession()` reassign the closure vars,
+    // and callers (the server's session store) must see the current values,
+    // not the snapshot taken when this object was built.
+    get sessionId() {
+      return sessionId;
+    },
+    get resumed() {
+      return resumed;
+    },
+    get configOptions() {
+      return configOptions;
+    },
     async prompt(text: string) {
       const result = await connection.prompt({
         sessionId,
@@ -236,7 +252,27 @@ export async function openSession(
         mcpServers: [],
       });
       sessionId = created.sessionId;
+      resumed = false;
       return sessionId;
+    },
+    async resumeSession(id: string) {
+      if (!canLoadSession) return false;
+      try {
+        client.replaying = true;
+        const loaded = await connection.loadSession({
+          sessionId: id,
+          cwd: task.cwd,
+          mcpServers: [],
+        });
+        sessionId = id;
+        configOptions = loaded.configOptions ?? configOptions;
+        resumed = true;
+        return true;
+      } catch {
+        return false;
+      } finally {
+        client.replaying = false;
+      }
     },
     filesWritten: () => [...client.written],
     close() {

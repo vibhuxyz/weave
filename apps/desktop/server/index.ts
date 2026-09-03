@@ -19,9 +19,12 @@ import { confineToTaskDir, openSession, getEngine, DEFAULT_ENGINE_ID, type Agent
 import {
   Ledger,
   SessionStore,
+  ConversationStore,
+  titleFromPrompt,
   weaveDirFor,
   newRunId,
   readGitStatus,
+  type ConversationMeta,
   type GitStatus,
 } from "@weave/core";
 import type {
@@ -31,7 +34,7 @@ import type {
 } from "@weave/protocol";
 
 export const DEFAULT_PORT = 8137;
-export type { GitStatus, GitChange } from "@weave/core";
+export type { GitStatus, GitChange, ConversationMeta } from "@weave/core";
 
 /** Messages the UI sends us. */
 export type ClientMessage =
@@ -39,7 +42,8 @@ export type ClientMessage =
   | { type: "cancel" }
   | { type: "set-config"; configId: string; value: string }
   | { type: "git" }
-  | { type: "new-chat" };
+  | { type: "new-chat" }
+  | { type: "open-chat"; sessionId: string };
 
 /** Messages we send the UI. */
 export type ServerMessage =
@@ -67,7 +71,11 @@ export type ServerMessage =
   | { type: "config-rejected"; configId: string; message: string }
   | { type: "git-status"; git: GitStatus }
   | { type: "turn-end"; stopReason: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  /** The chat list for this project, newest activity first. */
+  | { type: "chats"; chats: ConversationMeta[]; activeSessionId: string | null }
+  /** Wipe the transcript — sent right before a different chat replays. */
+  | { type: "reset" };
 
 export interface AcpServerHandle {
   port: number;
@@ -119,8 +127,18 @@ async function handleConnection(
 
   ledger.append("run.started", { cwd: projectDir, config: { via: "desktop" } });
 
+  const conversations = new ConversationStore(weaveDirFor(projectDir));
   const resumeId = await store.get(projectDir);
   let persisted = false;
+
+  const sendChats = async () =>
+    send({
+      type: "chats",
+      chats: (await conversations.list()).sort(
+        (a, b) => b.updatedAt - a.updatedAt,
+      ),
+      activeSessionId: session.sessionId,
+    });
 
   const engineId = process.env.ENGINE_ID || DEFAULT_ENGINE_ID;
 
@@ -187,6 +205,8 @@ async function handleConnection(
     `config: ${session.configOptions.map((option) => option.id).join(", ") || "none"}`,
   );
 
+  void sendChats();
+
   // Prompts queue: the UI can only send one at a time, but a queued send
   // during a turn must not interleave two ACP prompts on one session.
   let pending: Promise<unknown> = Promise.resolve();
@@ -234,10 +254,11 @@ async function handleConnection(
         return;
 
       case "new-chat":
-        session
-          .newSession()
-          .then((sessionId) => {
+        pending = pending
+          .then(() => session.newSession())
+          .then(async (sessionId) => {
             persisted = false;
+            send({ type: "reset" });
             send({
               type: "ready",
               sessionId,
@@ -247,6 +268,7 @@ async function handleConnection(
               configOptions: session.configOptions,
               resumed: false,
             });
+            await sendChats();
           })
           .catch((error: unknown) =>
             send({
@@ -258,9 +280,47 @@ async function handleConnection(
           );
         return;
 
-      case "prompt":
+      case "open-chat": {
+        const wanted = message.sessionId;
+        if (wanted === session.sessionId) return;
         pending = pending
-          .then(() => session.prompt(message.text))
+          .then(async () => {
+            send({ type: "reset" });
+            const ok = await session.resumeSession(wanted);
+            if (!ok) {
+              send({ type: "error", message: "Could not open that chat." });
+              await sendChats();
+              return;
+            }
+            persisted = true;
+            await store.set(projectDir, session.sessionId);
+            send({
+              type: "ready",
+              sessionId: session.sessionId,
+              cwd: projectDir,
+              engineId,
+              engineLabel: getEngine(engineId).label,
+              configOptions: session.configOptions,
+              resumed: true,
+            });
+            await sendChats();
+            send({ type: "git-status", git: await readGitStatus(projectDir) });
+          })
+          .catch((error: unknown) =>
+            send({
+              type: "error",
+              message: `Could not open that chat: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            }),
+          );
+        return;
+      }
+
+      case "prompt": {
+        const promptText = message.text;
+        pending = pending
+          .then(() => session.prompt(promptText))
           .then(async ({ stopReason }) => {
             send({ type: "turn-end", stopReason });
             ledger.append("task.finished", {
@@ -275,6 +335,13 @@ async function handleConnection(
               persisted = true;
               await store.set(projectDir, session.sessionId);
             }
+            // Title is filled from the first prompt; later turns only bump
+            // `updatedAt` so the chat floats to the top of the list.
+            await conversations.record(
+              session.sessionId,
+              titleFromPrompt(promptText),
+            );
+            await sendChats();
 
             send({ type: "git-status", git: await readGitStatus(projectDir) });
           })
@@ -284,6 +351,7 @@ async function handleConnection(
             send({ type: "error", message: text });
           });
         return;
+      }
     }
   });
 

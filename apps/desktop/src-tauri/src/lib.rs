@@ -148,6 +148,56 @@ async fn install_engine(package_name: String) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Serialize)]
+struct PortInfo {
+    pid: u32,
+    command: String,
+}
+
+/// Who is listening on `port` (first PID), if anyone. Used to show what a
+/// "Stop" will actually kill before doing it.
+#[tauri::command]
+fn port_info(port: u16) -> Option<PortInfo> {
+    let out = Command::new("lsof")
+        .args(["-nP", "-sTCP:LISTEN", "-t"])
+        .arg(format!("-iTCP:{port}"))
+        .output()
+        .ok()?;
+    let pid: u32 = String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    let comm = Command::new("ps")
+        .args(["-o", "command=", "-p"])
+        .arg(pid.to_string())
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unknown".to_string());
+    Some(PortInfo { pid, command: comm })
+}
+
+/// Kill whatever is listening on `port` (SIGTERM). The renderer confirms with
+/// the user first, using `port_info`.
+#[tauri::command]
+fn kill_port(port: u16) -> Result<(), String> {
+    let info = port_info(port).ok_or_else(|| format!("nothing listening on :{port}"))?;
+    #[cfg(unix)]
+    {
+        let ok = Command::new("kill")
+            .arg(info.pid.to_string())
+            .status()
+            .map_err(|e| format!("kill failed: {e}"))?
+            .success();
+        if !ok {
+            return Err(format!("kill {} exited non-zero", info.pid));
+        }
+    }
+    Ok(())
+}
+
 /// Point the agent at `project_dir` and (re)start the server. Returns the port.
 #[tauri::command]
 fn start_agent_server(
@@ -192,7 +242,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_saved_project,
             install_engine,
-            start_agent_server
+            start_agent_server,
+            port_info,
+            kill_port
         ])
         .build(tauri::generate_context!())
         .expect("error building the app")
