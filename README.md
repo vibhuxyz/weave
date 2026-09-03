@@ -8,9 +8,12 @@ its host.
 
 ```bash
 pnpm install
-pnpm tauri dev                                        # the app
+pnpm dev                                              # the whole stack
 pnpm berd run --dir ./repo --prompt "fix the bug"     # no window needed
 ```
+
+`pnpm dev` frees ports 5180/8137 first, then starts Tauri — which starts Vite,
+which starts the Rust shell, which spawns the Node ACP server and the agent.
 
 ---
 
@@ -163,11 +166,12 @@ saved chats · file tree · packaged build that doesn't need `node` on PATH.
 
 | | |
 |---|---|
-| `pnpm tauri dev` | the desktop app |
-| `pnpm dev` | Vite only, no agent |
-| `pnpm berd …` | the CLI |
-| `pnpm eval` | the harness |
+| `pnpm dev` | **everything** — clears stale ports, then the full stack |
+| `pnpm dev:web` | Vite only, in a browser, no agent |
+| `pnpm dev:server` | the ACP server alone (`PROJECT_DIR=/path`) |
+| `pnpm berd …` | the CLI: `run` · `eval` · `replay` · `runs` |
 | `pnpm typecheck` | all six packages |
+| `pnpm build` · `pnpm tauri build` | bundle / `.app` |
 
 ---
 

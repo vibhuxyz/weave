@@ -8,12 +8,13 @@
   },
   "packageManager": "pnpm@10.33.0",
   "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "pnpm -F desktop dev",
+    "dev:server": "pnpm -F desktop server",
     "tauri": "pnpm -F desktop tauri",
-    "dev": "pnpm -F desktop dev",
     "build": "pnpm -F desktop build",
-    "server": "pnpm -F desktop server",
     "berd": "pnpm -F @berd/cli start",
-    "eval": "pnpm -F @berd/eval start",
+    "eval": "pnpm -F @berd/cli start eval",
     "typecheck": "pnpm -r typecheck"
   },
   "pnpm": {
