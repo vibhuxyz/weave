@@ -62,15 +62,17 @@ function ToolRow({
       <Icon
         className={cn(
           "size-3.5 shrink-0",
-          tool.status === "failed" && "text-destructive",
-          running && "animate-pulse",
+          tool.status === "failed" && "text-[#ff8b8b]",
+          running && "animate-pulse text-white",
+          !running && tool.status !== "failed" && "text-[#a8a2b3]",
         )}
       />
       <span
         className={cn(
           "truncate",
-          tool.status === "failed" && "text-destructive",
-          running && "text-foreground",
+          tool.status === "failed" && "text-[#ff8b8b]",
+          running && "text-white",
+          !running && tool.status !== "failed" && "text-[#a8a2b3]",
         )}
         title={tool.title}
       >
@@ -109,7 +111,7 @@ export function ToolSteps({
       {done.length > 0 && (
         <Task defaultOpen={false}>
           <TaskTrigger title="">
-            <div className="flex cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
+            <div className="flex cursor-pointer items-center gap-2 text-[#a8a2b3] text-sm transition-colors hover:text-white">
               <span>
                 {done.length} previous step{done.length === 1 ? "" : "s"}
               </span>
