@@ -46,11 +46,24 @@ export interface ChatTurn {
   id: string;
   role: "user" | "assistant";
   text: string;
+  /** Names of agents @-mentioned on this prompt, for the pills on the bubble. */
+  mentions?: string[];
   /** The agent's reasoning stream (`agent_thought_chunk`), shown collapsed. */
   thought: string;
   tools: ToolEntry[];
   sourceEventIds?: string[];
   sourceSeq?: number;
+}
+
+/**
+ * Strip the `<system>…</system>` preamble the composer prepends for @-mentioned
+ * and standing agents, so a replayed user turn reads as what the person typed.
+ */
+function stripSystemPreamble(text: string): string {
+  const end = text.indexOf("\n</system>\n\n");
+  return text.startsWith("<system>\n") && end !== -1
+    ? text.slice(end + "\n</system>\n\n".length)
+    : text;
 }
 
 export type ConnectionState =
@@ -83,8 +96,14 @@ export function useAcpChat(port: number | null) {
   const [resumed, setResumed] = useState(false);
   const [chats, setChats] = useState<ConversationMeta[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [engines, setEngines] = useState<
+    { id: string; label: string; installed: boolean }[]
+  >([]);
   /** Pre-change config values, kept only until the agent confirms or refuses. */
   const previousConfigRef = useRef<Record<string, string>>({});
+  /** `@file` mention results, and the query they answer (drops stale replies). */
+  const [fileMatches, setFileMatches] = useState<string[]>([]);
+  const fileQueryRef = useRef<string>("");
 
   /** Append to the current assistant turn, starting one if needed. */
   const withAssistantTurn = useCallback(
@@ -111,12 +130,15 @@ export function useAcpChat(port: number | null) {
   const appendUserChunk = useCallback((text: string) => {
     setTurns((current) => {
       const last = current.at(-1);
+      const merged =
+        last?.role === "user" ? last.text + text : text;
+      const turn = { text: stripSystemPreamble(merged) };
       if (last?.role === "user") {
-        return [...current.slice(0, -1), { ...last, text: last.text + text }];
+        return [...current.slice(0, -1), { ...last, ...turn }];
       }
       return [
         ...current,
-        { id: crypto.randomUUID(), role: "user", text, thought: "", tools: [] },
+        { id: crypto.randomUUID(), role: "user", thought: "", tools: [], ...turn },
       ];
     });
   }, []);
@@ -324,6 +346,14 @@ export function useAcpChat(port: number | null) {
             if (message.activeSessionId)
               setActiveSessionId(message.activeSessionId);
             return;
+          case "engines":
+            setEngines(message.engines);
+            return;
+          case "files":
+            if (message.query === fileQueryRef.current) {
+              setFileMatches(message.files);
+            }
+            return;
           case "reset":
             setTurns([]);
             return;
@@ -357,22 +387,64 @@ export function useAcpChat(port: number | null) {
     };
   }, [applyUpdate, port]);
 
-  const send = useCallback((text: string) => {
-    const trimmed = text.trim();
-    const socket = socketRef.current;
-    if (!trimmed || !socket || socket.readyState !== WebSocket.OPEN) return;
+  const send = useCallback(
+    (text: string, opts?: { persona?: string; mentions?: string[] }) => {
+      const trimmed = text.trim();
+      const socket = socketRef.current;
+      if (!trimmed || !socket || socket.readyState !== WebSocket.OPEN) return;
 
-    setError(null);
-    setBusy(true);
-    setTurns((current) => [
-      ...current,
-      { id: crypto.randomUUID(), role: "user", text: trimmed, thought: "", tools: [] },
-    ]);
-    socket.send(JSON.stringify({ type: "prompt", text: trimmed }));
-  }, []);
+      setError(null);
+      setBusy(true);
+      setTurns((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          text: trimmed,
+          mentions: opts?.mentions?.length ? opts.mentions : undefined,
+          thought: "",
+          tools: [],
+        },
+      ]);
+      socket.send(
+        JSON.stringify({
+          type: "prompt",
+          text: trimmed,
+          persona: opts?.persona,
+        }),
+      );
+    },
+    [],
+  );
 
   const cancel = useCallback(() => {
     socketRef.current?.send(JSON.stringify({ type: "cancel" }));
+  }, []);
+
+  /** Ask the server for project paths matching `query` (for `@file`). */
+  const requestFiles = useCallback((query: string) => {
+    fileQueryRef.current = query;
+    const socket = socketRef.current;
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ type: "list-files", query }));
+  }, []);
+
+  const clearFileMatches = useCallback(() => {
+    fileQueryRef.current = "";
+    setFileMatches([]);
+  }, []);
+
+  /**
+   * Rebind this conversation to a different engine binary. The server starts a
+   * fresh session on the new engine and carries the transcript forward — the
+   * chat continues, the engine changes. No Rust restart.
+   */
+  const switchEngine = useCallback((nextEngineId: string) => {
+    const socket = socketRef.current;
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    setBusy(false);
+    setError(null);
+    socket.send(JSON.stringify({ type: "switch-engine", engineId: nextEngineId }));
   }, []);
 
   const setConfig = useCallback((configId: string, value: string) => {
@@ -389,23 +461,27 @@ export function useAcpChat(port: number | null) {
     socket.send(JSON.stringify({ type: "set-config", configId, value }));
   }, []);
 
-  const newChat = useCallback(() => {
+  const newChat = useCallback((instructions?: string) => {
     const socket = socketRef.current;
     if (socket?.readyState !== WebSocket.OPEN) return;
     setBusy(false);
-    socket.send(JSON.stringify({ type: "new-chat" }));
+    socket.send(
+      JSON.stringify({
+        type: "new-chat",
+        instructions: instructions?.trim() || undefined,
+      }),
+    );
   }, []);
 
   const openChat = useCallback(
     (sessionId: string) => {
       const socket = socketRef.current;
       if (socket?.readyState !== WebSocket.OPEN) return;
-      if (sessionId === activeSessionId) return;
       setBusy(false);
       setError(null);
       socket.send(JSON.stringify({ type: "open-chat", sessionId }));
     },
-    [activeSessionId],
+    [],
   );
 
   const refreshGit = useCallback(() => {
@@ -427,9 +503,14 @@ export function useAcpChat(port: number | null) {
     configValues,
     git,
     resumed,
+    engines,
     chats,
     activeSessionId,
     send,
+    switchEngine,
+    fileMatches,
+    requestFiles,
+    clearFileMatches,
     cancel,
     setConfig,
     refreshGit,

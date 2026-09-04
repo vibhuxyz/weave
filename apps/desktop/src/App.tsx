@@ -28,12 +28,21 @@ import { ConfigPicker } from "./ConfigPicker";
 import { ContextPanel } from "./ContextPanel";
 import { Sidebar } from "./Sidebar";
 import { CreateProjectDialog, toneColor } from "./CreateProjectDialog";
+import { AgentsView } from "./agents/AgentsView";
+import { AgentAvatar } from "./agents/AgentAvatar";
+import {
+  useAgents,
+  formatPersonaSystemPrompt,
+  type Agent,
+} from "./useAgents";
 import { AgentMessage } from "./agent/components/AgentMessage";
 import { ThinkingBlock } from "./agent/components/ThinkingBlock";
+import { UserMessage } from "./UserMessage";
+import { HomeView } from "./home/canvas/ui/HomeView";
 import { basename } from "./paths";
 import { useAcpChat } from "./useAcpChat";
 import { useProject } from "./useProject";
-import { useProjects } from "./useProjects";
+import { useProjects, type ProjectEntry } from "./useProjects";
 import { useRunningServers } from "./useRunningServers";
 
 export function App() {
@@ -49,9 +58,14 @@ export function App() {
     configOptions,
     configValues,
     git,
+    engines,
     chats,
     activeSessionId,
     send,
+    switchEngine,
+    fileMatches,
+    requestFiles,
+    clearFileMatches,
     cancel,
     setConfig,
     refreshGit,
@@ -59,9 +73,45 @@ export function App() {
     openChat,
   } = useAcpChat(port);
 
-  const { projects, remember } = useProjects();
+  const { projects, remember, setProjectAgents, forget } = useProjects();
+  const { agents } = useAgents();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<
+    ProjectEntry | null
+  >(null);
   const [previewTint, setPreviewTint] = useState<string>();
+  // Manual agents the user turned on for the next new chat.
+  const [manualActive, setManualActive] = useState<string[]>([]);
+
+  const activeProjectEntry =
+    project.status === "running"
+      ? projects.find((p) => p.dir === project.dir)
+      : undefined;
+  const [view, setView] = usePersistedState<"home" | "chat" | "agents">(
+    "berd:view",
+    "home",
+    // Legacy "chat" (pre-home-split) starts at home rather than a blank
+    // transcript; "agents" is preserved.
+    (v, d) => (v === "home" || v === "agents" ? v : d),
+  );
+
+  // Opening or starting a chat always drops the Agents view so the transcript
+  // is actually visible.
+  const startNewChat = useCallback(() => {
+    setView("chat");
+    newChat();
+    setManualActive([]);
+  }, [newChat, setView]);
+  const openChatAndShow = useCallback(
+    (sessionId: string) => {
+      setView("chat");
+      // Already the active chat with its transcript loaded — just show it.
+      if (sessionId === activeSessionId && turns.length > 0) return;
+      openChat(sessionId);
+    },
+    [openChat, setView, activeSessionId, turns.length],
+  );
+
   const { servers, stop: stopServer } = useRunningServers(
     turns,
     project.status === "running" ? project.dir : undefined,
@@ -73,6 +123,46 @@ export function App() {
       remember(project.dir, project.engineId);
     }
   }, [project, remember]);
+
+  // A model a chosen agent asked for, applied once its config options arrive.
+  const pendingAgentModel = useRef<string | null>(null);
+
+  const handleChatWithAgent = useCallback(
+    (agent: Agent) => {
+      setView("chat");
+      pendingAgentModel.current = agent.model ?? null;
+      const running = project.status === "running";
+      const currentEngine = running ? project.engineId : undefined;
+      // The picked agent rides every prompt of the new chat.
+      setManualActive([agent.id]);
+      if (agent.engineId && agent.engineId !== currentEngine && running) {
+        void startWith(project.dir, agent.engineId);
+        setTimeout(() => newChat(), 400);
+      } else {
+        newChat();
+      }
+    },
+    [project, startWith, newChat, setView],
+  );
+
+  useEffect(() => {
+    const want = pendingAgentModel.current;
+    if (!want) return;
+    const modelOpt = configOptions.find(
+      (o) => o.type === "select" && (o.category === "model" || /model/i.test(o.id)),
+    );
+    if (modelOpt && modelOpt.type === "select") {
+      const flat = modelOpt.options.flatMap((e) =>
+        "group" in e ? e.options : [e],
+      );
+      const match = flat.find(
+        (v) =>
+          v.value === want || v.name.toLowerCase() === want.toLowerCase(),
+      );
+      if (match) setConfig(modelOpt.id, match.value);
+      pendingAgentModel.current = null;
+    }
+  }, [configOptions, setConfig]);
 
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -161,9 +251,91 @@ export function App() {
     }
   }, [turns]);
 
+  // @-mentioned agents applied to the *next* message only.
+  const [mentioned, setMentioned] = useState<Agent[]>([]);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  // A query with a "/" or "." is a path — `@src/App.tsx` — so the menu shows
+  // files instead of agents.
+  const fileMode = mentionQuery !== null && /[./]/.test(mentionQuery);
+  const mentionMatches =
+    mentionQuery === null || fileMode
+      ? []
+      : agents
+          .filter(
+            (a) =>
+              !mentioned.some((m) => m.id === a.id) &&
+              a.name.toLowerCase().includes(mentionQuery.toLowerCase()),
+          )
+          .slice(0, 6);
+
+  useEffect(() => {
+    if (fileMode && mentionQuery !== null) requestFiles(mentionQuery);
+    else clearFileMatches();
+  }, [fileMode, mentionQuery, requestFiles, clearFileMatches]);
+
+  const onDraftChange = (value: string) => {
+    setDraft(value);
+    const caret = textareaRef.current?.selectionStart ?? value.length;
+    const m = /(?:^|\s)@([\w./-]*)$/.exec(value.slice(0, caret));
+    setMentionQuery(m ? m[1] : null);
+    setMentionIndex(0);
+  };
+
+  const editPrompt = (text: string) => {
+    onDraftChange(text);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      el?.focus();
+      el?.setSelectionRange(text.length, text.length);
+    });
+  };
+
+  const pickMention = (agent: Agent) => {
+    const el = textareaRef.current;
+    const caret = el?.selectionStart ?? draft.length;
+    const before = draft
+      .slice(0, caret)
+      .replace(/(?:^|\s)@([\w./-]*)$/, (full) => full.replace(/@[\w./-]*$/, ""));
+    setDraft(before + draft.slice(caret));
+    setMentioned((cur) => [...cur, agent]);
+    setMentionQuery(null);
+    requestAnimationFrame(() => el?.focus());
+  };
+
+  // A file mention is literal text the agent should see — `@src/App.tsx` — not
+  // a pill. Swap the partial query for the full path and keep typing.
+  const pickFile = (path: string) => {
+    const el = textareaRef.current;
+    const caret = el?.selectionStart ?? draft.length;
+    const before = draft
+      .slice(0, caret)
+      .replace(/@([\w./-]*)$/, `@${path} `);
+    const next = before + draft.slice(caret);
+    setDraft(next);
+    setMentionQuery(null);
+    clearFileMatches();
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(before.length, before.length);
+    });
+  };
+
   const submit = () => {
-    send(draft);
+    // Standing agents (`always` + manually toggled) plus this message's
+    // @-mentions ride every prompt, so the persona can't drift over a chat.
+    // The server merges this with the skills catalog into one <system> block.
+    const persona = formatPersonaSystemPrompt(activeProjectEntry?.agents, agents, [
+      ...manualActive,
+      ...mentioned.map((a) => a.id),
+    ]);
+    send(draft, {
+      persona,
+      mentions: mentioned.map((a) => a.name),
+    });
     setDraft("");
+    setMentioned([]);
+    setMentionQuery(null);
     resetComposerHeight();
   };
 
@@ -257,12 +429,17 @@ export function App() {
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Agent Engine</DropdownMenuLabel>
               <DropdownMenuRadioGroup
-                value={(project.status === "running" ? project.engineId : null) || engineId || ""}
+                value={engineId || (project.status === "running" ? project.engineId : null) || ""}
                 onValueChange={(id) => {
-                  const currentId = (project.status === "running" ? project.engineId : null) || engineId;
-                  if (id !== currentId) {
-                    void startWith(project.dir, id);
-                  }
+                  const currentId =
+                    engineId ||
+                    (project.status === "running" ? project.engineId : null);
+                  if (id === currentId) return;
+                  // Switch inside the running session when we can — no server
+                  // restart, the conversation carries forward. Fall back to a
+                  // cold start only when nothing is connected yet.
+                  if (ready) switchEngine(id);
+                  else void startWith(project.dir, id);
                 }}
               >
                 {Object.values(ENGINES).map((engine) => (
@@ -279,6 +456,7 @@ export function App() {
           <button
             type="button"
             className={iconBtn}
+            disabled={view !== "chat"}
             onClick={() => setContextOpen((v) => !v)}
             aria-label={contextOpen ? "Hide context panel" : "Show context panel"}
           >
@@ -312,11 +490,27 @@ export function App() {
                 const entry = projects.find((p) => p.dir === dir);
                 if (dir !== project.dir) void startWith(dir, entry?.engineId);
               }}
-              onAddProject={() => setCreateOpen(true)}
+              onAddProject={() => {
+                setEditingProject(null);
+                setCreateOpen(true);
+              }}
+              onEditProject={(entry) => {
+                setEditingProject(entry);
+                setCreateOpen(true);
+              }}
+              onRemoveProject={(dir) => {
+                forget(dir);
+                if (dir === project.dir) {
+                  const next = projects.find((p) => p.dir !== dir);
+                  if (next) void startWith(next.dir, next.engineId);
+                }
+              }}
               chats={chats}
               activeSessionId={activeSessionId}
-              onSelectChat={openChat}
-              onNewChat={newChat}
+              onSelectChat={openChatAndShow}
+              onNewChat={startNewChat}
+              view={view}
+              onViewChange={setView}
             />
           </div>
           {sidebarOpen && (
@@ -332,6 +526,13 @@ export function App() {
         </div>
 
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-agent-surface-base">
+        {view === "agents" ? (
+          <AgentsView onChat={handleChatWithAgent} engines={engines} />
+        ) : (
+        <>
+        {view === "home" ? (
+          <HomeView onOpenAgent={(id) => { const a = agents.find((x) => x.id === id); if (a) handleChatWithAgent(a); }} />
+        ) : (
         <div
           ref={scrollRef}
           onScroll={onTranscriptScroll}
@@ -339,10 +540,9 @@ export function App() {
         >
           {turns.length === 0 && ready && (
             <p className="mt-16 text-center text-sm text-muted-foreground">
-              Ask {engineLabel || "the agent"} to fix a bug in this project.
+              Send a message to start this chat.
             </p>
           )}
-
           {turns.map((turn) => (
             <Message key={turn.id} from={turn.role}>
               <MessageContent>
@@ -390,7 +590,11 @@ export function App() {
                     )}
                   </>
                 ) : (
-                  turn.text
+                  <UserMessage
+                    text={turn.text}
+                    mentions={turn.mentions}
+                    onEdit={editPrompt}
+                  />
                 )}
               </MessageContent>
             </Message>
@@ -426,6 +630,7 @@ export function App() {
           })()}
           <div ref={bottomRef} />
         </div>
+        )}
 
         {!atBottom && turns.length > 0 && (
           <div className="pointer-events-none absolute inset-x-0 bottom-32 z-10 flex justify-center">
@@ -440,13 +645,150 @@ export function App() {
           </div>
         )}
 
-        <div className="mx-auto w-full max-w-5xl px-6 pb-6">
-          <div className="flex flex-col gap-2.5 rounded-composer bg-surface-chat-composer p-3 [-webkit-backdrop-filter:var(--backdrop-composer-glass)] [backdrop-filter:var(--backdrop-composer-glass)]">
+        <div className="relative z-10 mx-auto mt-auto w-full max-w-5xl px-6 pb-6">
+          <div className="relative flex flex-col gap-2.5 rounded-composer bg-surface-chat-composer p-3 [-webkit-backdrop-filter:var(--backdrop-composer-glass)] [backdrop-filter:var(--backdrop-composer-glass)]">
+            {mentionMatches.length > 0 && (
+              <div className="absolute bottom-full left-0 z-20 mb-2 w-80 overflow-hidden rounded-2xl border border-agent-border bg-agent-surface-raised p-2 shadow-[0_20px_56px_rgba(0,0,0,0.5)]">
+                <div className="flex items-center gap-1 px-1 pb-2 text-sm">
+                  <span className="rounded-full bg-agent-surface-hover px-3 py-1 text-agent-text-bright">
+                    Agents <span className="text-agent-text-faint">@</span>
+                  </span>
+                  <span className="px-2 py-1 text-agent-text-faint">
+                    Files @
+                  </span>
+                  <span className="px-2 py-1 text-agent-text-faint">
+                    Skills /
+                  </span>
+                </div>
+                {mentionMatches.map((a, i) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onMouseEnter={() => setMentionIndex(i)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      pickMention(a);
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-sm",
+                      i === mentionIndex && "bg-agent-surface-hover",
+                    )}
+                  >
+                    <AgentAvatar
+                      name={a.name}
+                      tint={a.tint}
+                      icon={a.icon}
+                      size="sm"
+                      className="size-7 shrink-0"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-agent-text-bright">
+                      {a.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {fileMode && fileMatches.length > 0 && (
+              <div className="absolute bottom-full left-0 z-20 mb-2 w-96 overflow-hidden rounded-2xl border border-agent-border bg-agent-surface-raised p-2 shadow-[0_20px_56px_rgba(0,0,0,0.5)]">
+                <div className="px-2 pb-2 text-xs text-agent-text-faint">
+                  Files matching “{mentionQuery}”
+                </div>
+                {fileMatches.map((path, i) => (
+                  <button
+                    key={path}
+                    type="button"
+                    onMouseEnter={() => setMentionIndex(i)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      pickFile(path);
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left font-mono text-xs",
+                      i === mentionIndex && "bg-agent-surface-hover",
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-agent-text-bright">
+                      {path}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {mentioned.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {mentioned.map((a) => (
+                  <span
+                    key={a.id}
+                    className="flex items-center gap-1 rounded-full bg-agent-accent-wash px-2 py-0.5 text-agent-accent text-xs"
+                  >
+                    @{a.name}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMentioned((cur) => cur.filter((m) => m.id !== a.id))
+                      }
+                      className="hover:text-foreground"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <textarea
               ref={textareaRef}
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => onDraftChange(event.target.value)}
               onKeyDown={(event) => {
+                if (fileMode && fileMatches.length > 0) {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setMentionIndex((i) => (i + 1) % fileMatches.length);
+                    return;
+                  }
+                  if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setMentionIndex(
+                      (i) => (i - 1 + fileMatches.length) % fileMatches.length,
+                    );
+                    return;
+                  }
+                  if (event.key === "Enter" || event.key === "Tab") {
+                    event.preventDefault();
+                    pickFile(fileMatches[mentionIndex] ?? fileMatches[0]);
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    setMentionQuery(null);
+                    clearFileMatches();
+                    return;
+                  }
+                }
+                if (mentionMatches.length > 0) {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setMentionIndex((i) => (i + 1) % mentionMatches.length);
+                    return;
+                  }
+                  if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setMentionIndex(
+                      (i) => (i - 1 + mentionMatches.length) % mentionMatches.length,
+                    );
+                    return;
+                  }
+                  if (event.key === "Enter" || event.key === "Tab") {
+                    event.preventDefault();
+                    pickMention(
+                      mentionMatches[mentionIndex] ?? mentionMatches[0],
+                    );
+                    return;
+                  }
+                }
+                if (event.key === "Escape" && mentionQuery !== null) {
+                  setMentionQuery(null);
+                  return;
+                }
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   submit();
@@ -493,12 +835,16 @@ export function App() {
             </div>
           </div>
         </div>
+        </>
+        )}
         </main>
 
         <div
           className={cn(
             "shrink-0 self-start overflow-hidden transition-[width,opacity] duration-200 ease-out",
-            contextOpen ? "w-72 opacity-100" : "w-0 opacity-0",
+            contextOpen && view === "chat"
+              ? "w-72 opacity-100"
+              : "w-0 opacity-0",
           )}
         >
           <div className="w-72">
@@ -508,6 +854,19 @@ export function App() {
               onRefresh={refreshGit}
               servers={servers}
               onStopServer={stopServer}
+              agents={agents}
+              projectAgents={activeProjectEntry?.agents ?? []}
+              onProjectAgentsChange={(next) =>
+                setProjectAgents(project.dir, next)
+              }
+              manualActive={manualActive}
+              onToggleManual={(id) =>
+                setManualActive((cur) =>
+                  cur.includes(id)
+                    ? cur.filter((x) => x !== id)
+                    : [...cur, id],
+                )
+              }
             />
           </div>
         </div>
@@ -515,11 +874,15 @@ export function App() {
 
       <CreateProjectDialog
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(o) => {
+          setCreateOpen(o);
+          if (!o) setEditingProject(null);
+        }}
+        editing={editingProject}
         onPreviewTint={setPreviewTint}
         onCreate={({ dir, ...meta }) => {
-          remember(dir, undefined, meta);
-          if (dir !== project.dir) void startWith(dir);
+          remember(dir, editingProject?.engineId, meta);
+          if (!editingProject && dir !== project.dir) void startWith(dir);
         }}
       />
     </div>
