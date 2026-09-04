@@ -21,6 +21,16 @@ interface PortInfo {
   command: string;
 }
 
+/**
+ * macOS squats on well-known ports for its own services — 5000 and 7000 are
+ * AirPlay Receiver (Control Center) — so a dev server that failed to bind its
+ * port (or hasn't started yet) can show *that* as the listener instead. It is
+ * never the server the agent started, so it should never read as "running".
+ */
+function isSystemProcess(command: string): boolean {
+  return command.startsWith("/System/") || command.startsWith("/usr/libexec/");
+}
+
 const SERVER_CMD =
   /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|preview)|next\s+(?:dev|start)|vite\b|nodemon\b|remix\s+dev|astro\s+dev|ng\s+serve|rails\s+s(?:erver)?\b|flask\s+run|uvicorn\b|gunicorn\b|php\s+-S|http-server\b|\bserve\b|node\s+\S*(?:server|app|index|main)\S*\.[mc]?[jt]s|start\b.*\bserver\b|run\b.*\b(?:dev|server)\b)/i;
 
@@ -122,7 +132,10 @@ export function useRunningServers(turns: ChatTurn[], projectDir?: string) {
             const info = await invoke<PortInfo | null>("port_info", {
               port: s.port,
             });
-            return [s.port, info != null] as const;
+            return [
+              s.port,
+              info != null && !isSystemProcess(info.command),
+            ] as const;
           } catch {
             return [s.port, false] as const;
           }

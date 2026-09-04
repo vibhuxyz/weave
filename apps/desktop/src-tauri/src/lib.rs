@@ -179,6 +179,14 @@ fn port_info(port: u16) -> Option<PortInfo> {
     Some(PortInfo { pid, command: comm })
 }
 
+/// macOS squats on well-known ports for its own services — 5000 and 7000 are
+/// AirPlay Receiver (Control Center), which is why a freshly started dev
+/// server on 5000 can show *that* as the listener instead of `node`. Never
+/// let "Stop" touch anything under `/System/` or `/usr/libexec/`.
+fn is_system_process(command: &str) -> bool {
+    command.starts_with("/System/") || command.starts_with("/usr/libexec/")
+}
+
 /// The whole `pid ppid` table, read once per kill so ancestor/descendant
 /// walks don't each pay their own `ps` call.
 #[cfg(unix)]
@@ -250,6 +258,14 @@ fn ancestors_until(table: &[(u32, u32)], pid: u32, protected: &[u32], max_hops: 
 #[tauri::command]
 fn kill_port(port: u16, server: State<'_, AgentServer>) -> Result<(), String> {
     let info = port_info(port).ok_or_else(|| format!("nothing listening on :{port}"))?;
+    if is_system_process(&info.command) {
+        return Err(format!(
+            "Port {port} is held by macOS itself ({}), not a dev server — likely AirPlay \
+             Receiver. Turn that off in System Settings \u{2192} General \u{2192} AirDrop & \
+             Handoff, or have the server use a different port.",
+            info.command
+        ));
+    }
 
     #[cfg(unix)]
     {
