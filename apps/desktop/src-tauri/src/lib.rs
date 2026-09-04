@@ -179,20 +179,107 @@ fn port_info(port: u16) -> Option<PortInfo> {
     Some(PortInfo { pid, command: comm })
 }
 
-/// Kill whatever is listening on `port` (SIGTERM). The renderer confirms with
-/// the user first, using `port_info`.
+/// The whole `pid ppid` table, read once per kill so ancestor/descendant
+/// walks don't each pay their own `ps` call.
+#[cfg(unix)]
+fn process_table() -> Vec<(u32, u32)> {
+    let out = match Command::new("ps").args(["-Ao", "pid=,ppid="]).output() {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let pid: u32 = parts.next()?.parse().ok()?;
+            let ppid: u32 = parts.next()?.parse().ok()?;
+            Some((pid, ppid))
+        })
+        .collect()
+}
+
+/// `root` plus every process below it in the tree.
+#[cfg(unix)]
+fn descendants(table: &[(u32, u32)], root: u32) -> Vec<u32> {
+    let mut tree = vec![root];
+    let mut frontier = vec![root];
+    while let Some(parent) = frontier.pop() {
+        for &(pid, ppid) in table {
+            if ppid == parent && !tree.contains(&pid) {
+                tree.push(pid);
+                frontier.push(pid);
+            }
+        }
+    }
+    tree
+}
+
+/// Walk upward from `pid`'s parent, stopping (without including) the first
+/// process in `protected`, pid 1, or after `max_hops` — whichever comes
+/// first. `protected` is this app's own process and everything under it, so
+/// the walk can never reach past the shell/package-manager layer into our
+/// own ACP server or Tauri itself.
+#[cfg(unix)]
+fn ancestors_until(table: &[(u32, u32)], pid: u32, protected: &[u32], max_hops: u32) -> Vec<u32> {
+    let mut chain = Vec::new();
+    let mut current = pid;
+    for _ in 0..max_hops {
+        let Some(&(_, ppid)) = table.iter().find(|&&(p, _)| p == current) else {
+            break;
+        };
+        if ppid <= 1 || protected.contains(&ppid) {
+            break;
+        }
+        chain.push(ppid);
+        current = ppid;
+    }
+    chain
+}
+
+/// Kill whatever is listening on `port`, and the supervisor that respawns it.
+///
+/// The PID `port_info` reports is usually a worker under something that
+/// restarts it on exit — `npm run dev`, `nodemon`, `ts-node-dev`, `node
+/// --watch` — so SIGTERM-ing only that PID looked like Stop did nothing: the
+/// supervisor relaunched a replacement on the same port before the next
+/// check. This walks the process tree both ways from that PID (its own
+/// descendants, and its ancestors up to but excluding this app's own
+/// process) and takes the whole thing down, SIGKILL-ing any survivor.
+///
+/// The renderer confirms with the user first, using `port_info`.
 #[tauri::command]
-fn kill_port(port: u16) -> Result<(), String> {
+fn kill_port(port: u16, server: State<'_, AgentServer>) -> Result<(), String> {
     let info = port_info(port).ok_or_else(|| format!("nothing listening on :{port}"))?;
+
     #[cfg(unix)]
     {
-        let ok = Command::new("kill")
-            .arg(info.pid.to_string())
-            .status()
-            .map_err(|e| format!("kill failed: {e}"))?
-            .success();
-        if !ok {
-            return Err(format!("kill {} exited non-zero", info.pid));
+        // Just the two PIDs, not their subtrees: `ancestors_until` only needs
+        // to know where to stop climbing. This app's own subtree includes
+        // the dev server we're trying to kill, so walking *its* descendants
+        // here would mark our actual target "protected" and no-op the kill.
+        let own_pid = std::process::id();
+        let server_pid = server.child.lock().unwrap().as_ref().map(|c| c.id());
+        let protected: Vec<u32> = std::iter::once(own_pid).chain(server_pid).collect();
+        let table = process_table();
+
+        let mut targets = descendants(&table, info.pid);
+        for pid in ancestors_until(&table, info.pid, &protected, 12) {
+            if !targets.contains(&pid) {
+                targets.push(pid);
+            }
+        }
+        targets.retain(|pid| !protected.contains(pid));
+
+        for pid in &targets {
+            let _ = Command::new("kill").arg(pid.to_string()).status();
+        }
+
+        std::thread::sleep(Duration::from_millis(300));
+
+        if port_info(port).is_some() {
+            for pid in &targets {
+                let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
+            }
         }
     }
     Ok(())
@@ -238,6 +325,7 @@ fn start_agent_server(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(AgentServer::default())
         .invoke_handler(tauri::generate_handler![
             get_saved_project,
