@@ -59,9 +59,7 @@ export function TestRunBlock({ block }: { block: TestRunBlockModel }) {
   const failingAtMount = block.steps.some(
     (s) => s.status === "failed" || s.badgeTone === "crit",
   );
-  const [listOpen, setListOpen] = useState(
-    failingAtMount || block.steps.length <= 6,
-  );
+  const [listOpen, setListOpen] = useState(failingAtMount);
 
   const visibleSteps =
     problemsOnly && failing > 0

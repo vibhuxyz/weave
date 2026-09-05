@@ -27,14 +27,34 @@ import pollies13 from "./assets/characters/pollies-13.png";
 import pollies17 from "./assets/characters/pollies-17.png";
 import pollies21 from "./assets/characters/pollies-21.png";
 
+/**
+ * The built-in agents get their character assigned, not hashed. With 18
+ * characters and six built-ins the DJB2 hash collides — `builtin:builder` and
+ * `builtin:reviewer` both landed on gloopies-4 — which reads as a bug on any
+ * screen showing them side by side, most visibly the onboarding
+ * recommendations. User-created agents still hash, where a collision between
+ * two agents the user named themselves is unremarkable.
+ */
+const CHARACTER_BY_SEED: Record<string, string> = {
+  "builtin:builder": gloopies1,
+  "builtin:debugger": gloopies10,
+  "builtin:reviewer": gloopies4,
+  "builtin:generalist": gloopies7,
+  "builtin:craftsman": gloopies13,
+  "builtin:committer": gloopies16,
+};
+
 export const CHARACTERS: readonly string[] = [
   fuzzies1, fuzzies4, fuzzies7, fuzzies10, fuzzies13, fuzzies16,
   gloopies1, gloopies4, gloopies7, gloopies10, gloopies13, gloopies16,
   pollies1, pollies5, pollies9, pollies13, pollies17, pollies21,
 ];
 
-/** DJB2 over the seed, modulo the character set — stable per agent. */
+/** An assigned character when the seed has one, else DJB2 over the seed. */
 export function resolveCharacter(seed: string): string {
+  const assigned = CHARACTER_BY_SEED[seed];
+  if (assigned) return assigned;
+
   let hash = 5381;
   for (let i = 0; i < seed.length; i += 1) {
     hash = ((hash << 5) + hash + seed.charCodeAt(i)) | 0;

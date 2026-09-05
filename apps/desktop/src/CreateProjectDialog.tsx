@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useId,
   useRef,
   useState,
   type CSSProperties,
@@ -20,6 +19,7 @@ import { basename, tildeHome } from "./paths";
 import type { ProjectAgent, ProjectEntry, ProjectMeta } from "./useProjects";
 import { useAgents } from "./useAgents";
 import { ProjectAgentsPicker } from "./agents/ProjectAgentsPicker";
+import { ProjectArtifactPreview } from "./features/projects/artifact/ProjectArtifactPreview";
 
 /** berd's pill-tone palette (names resolve to `bg-pill-*` / `--color-pill-*`). */
 export const PROJECT_TONES = [
@@ -52,7 +52,7 @@ const TONE_BG: Record<ProjectTone, string> = {
 };
 
 export const FIELD =
-  "w-full rounded-lg border border-white/5 bg-black/25 px-3.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-white/15";
+  "w-full rounded-xl border border-white/5 bg-black/25 px-3.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-white/15";
 export const LABEL = "text-muted-foreground text-xs";
 
 export interface CreateProjectInput extends ProjectMeta {
@@ -149,9 +149,19 @@ export function CreateProjectDialog({
         </div>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-7 pb-5">
-          {/* Hero — tinted hexagon + swatch pill */}
-          <div className="relative flex h-[280px] flex-col items-center justify-center gap-6">
-            <HexArtifact tint={tint} />
+          {/* Hero — tinted 3D artifact + swatch pill */}
+          <div className="relative flex h-[320px] flex-col items-center justify-center gap-6">
+            <div className="relative size-56">
+              <div
+                className="absolute inset-0 -z-10 blur-3xl"
+                style={{
+                  background: `radial-gradient(circle, color-mix(in oklch, ${tint} 45%, transparent), transparent 70%)`,
+                }}
+              />
+              <ProjectArtifactPreview
+                input={{ name: name || "New Project", color: tint, projectId: dir }}
+              />
+            </div>
             <SwatchPill tone={tone} onChange={setTone} />
           </div>
 
@@ -159,7 +169,7 @@ export function CreateProjectDialog({
           <div className="space-y-2">
             <p className={LABEL}>Icon</p>
             <div className="flex items-center gap-2">
-              <div className="flex size-10 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black/30">
+              <div className="flex size-10 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black/30">
                 {icon ? (
                   <img src={icon} alt="" className="size-full object-cover" />
                 ) : (
@@ -170,6 +180,7 @@ export function CreateProjectDialog({
                 type="button"
                 variant="subtle"
                 size="sm"
+                className="rounded-xl"
                 leftIcon={<UploadIcon className="size-3.5" />}
                 onClick={() => fileRef.current?.click()}
               >
@@ -258,74 +269,18 @@ export function CreateProjectDialog({
           >
             Cancel
           </Button>
-          <Button type="button" size="sm" disabled={!canCreate} onClick={submit}>
+          <Button
+            type="button"
+            size="sm"
+            disabled={!canCreate}
+            onClick={submit}
+            className="rounded-full px-5"
+          >
             {editing ? "Save changes" : "Create project"}
           </Button>
         </div>
       </SheetContent>
     </Sheet>
-  );
-}
-
-/**
- * A rounded hexagon filled with the project tint. berd renders a WebGL marble
- * artifact here; this is a lightweight SVG stand-in — radial gradient plus a
- * fractal-noise displacement for an organic, swirled surface.
- */
-function HexArtifact({ tint }: { tint: string }) {
-  const uid = useId().replace(/:/g, "");
-  const points = "100,20 170,60 170,140 100,180 30,140 30,60";
-  return (
-    <div className="relative">
-      <div
-        className="absolute inset-0 -z-10 blur-3xl"
-        style={{
-          background: `radial-gradient(circle, color-mix(in oklch, ${tint} 45%, transparent), transparent 70%)`,
-        }}
-      />
-      <svg viewBox="0 0 200 200" className="size-44">
-        <defs>
-          <radialGradient id={`g-${uid}`} cx="38%" cy="30%" r="80%">
-            <stop offset="0%" stopColor={tint} />
-            <stop offset="45%" stopColor={tint} />
-            <stop
-              offset="100%"
-              stopColor={`color-mix(in oklch, ${tint} 45%, #000)`}
-            />
-          </radialGradient>
-          <filter id={`m-${uid}`}>
-            <feTurbulence
-              type="fractalNoise"
-              baseFrequency="0.011 0.02"
-              numOctaves="3"
-              seed="11"
-              result="n"
-            />
-            <feDisplacementMap in="SourceGraphic" in2="n" scale="16" />
-          </filter>
-          <clipPath id={`c-${uid}`}>
-            <polygon points={points} />
-          </clipPath>
-        </defs>
-        <polygon
-          points={points}
-          fill={`url(#g-${uid})`}
-          stroke={`url(#g-${uid})`}
-          strokeWidth="18"
-          strokeLinejoin="round"
-        />
-        <g clipPath={`url(#c-${uid})`} opacity="0.5">
-          <rect
-            x="-20"
-            y="-20"
-            width="240"
-            height="240"
-            fill={`url(#g-${uid})`}
-            filter={`url(#m-${uid})`}
-          />
-        </g>
-      </svg>
-    </div>
   );
 }
 

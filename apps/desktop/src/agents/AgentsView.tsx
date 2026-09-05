@@ -53,7 +53,7 @@ export function AgentsView({
         <button
           type="button"
           onClick={openCreate}
-          className="flex aspect-square w-full items-center justify-center rounded-xl bg-card/60 text-muted-foreground transition-colors hover:bg-card hover:text-foreground dark:bg-background/25"
+          className="flex aspect-square w-full items-center justify-center rounded-xl border border-border/50 border-dashed text-muted-foreground transition-colors hover:border-border hover:text-foreground"
         >
           <PlusIcon className="size-8 stroke-[1.25]" />
         </button>

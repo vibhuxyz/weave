@@ -1,5 +1,6 @@
 import {
   BookOpenIcon,
+  ChevronDownIcon,
   FolderIcon,
   HomeIcon,
   MessageSquareIcon,
@@ -10,6 +11,8 @@ import {
   SparklesIcon,
   Trash2Icon,
 } from "lucide-react";
+import { DefaultProjectGlyphIcon } from "@/features/projects/ui/DefaultProjectGlyphIcon";
+import { useState } from "react";
 import { basename, tildeHome } from "./paths";
 import { cn } from "@/shared/lib/cn";
 import {
@@ -60,16 +63,44 @@ function ago(ts: number): string {
 function SectionLabel({
   children,
   action,
+  collapsed,
+  onToggleCollapsed,
 }: {
   children: React.ReactNode;
   action?: React.ReactNode;
+  /** Omit both collapse props for a plain, non-collapsible heading. */
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }) {
+  const collapsible = onToggleCollapsed !== undefined;
   return (
-    <div className="flex items-center justify-between px-3 pt-5 pb-1.5">
-      <p className="text-muted-foreground text-xs uppercase tracking-wide">
-        {children}
-      </p>
-      {action}
+    // `group` so the section's add button stays hidden until the row is
+    // hovered or the button itself takes focus — the heading reads as a label,
+    // not a toolbar, which is how it looks at rest.
+    <div className="group flex items-center justify-between px-3 pt-5 pb-1.5">
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-expanded={!collapsed}
+          className="-ml-1 flex items-center gap-1 rounded text-muted-foreground text-sm transition-colors hover:text-foreground"
+        >
+          <ChevronDownIcon
+            className={cn(
+              "size-3.5 transition-transform",
+              collapsed && "-rotate-90",
+            )}
+          />
+          {children}
+        </button>
+      ) : (
+        <p className="text-muted-foreground text-sm">{children}</p>
+      )}
+      {action ? (
+        <span className="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          {action}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -88,6 +119,8 @@ export function Sidebar({
   view,
   onViewChange,
 }: SidebarProps) {
+  const [chatsCollapsed, setChatsCollapsed] = useState(false);
+
   return (
     <aside className="flex max-h-full w-full shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-agent-surface-raised p-2">
       <nav className="flex flex-col gap-0.5 pt-2">
@@ -138,8 +171,8 @@ export function Sidebar({
             onClick={onAddProject}
             className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-muted-foreground text-sm hover:bg-secondary/60 hover:text-foreground"
           >
-            <FolderIcon className="size-4 shrink-0" />
-            Open a project
+            <DefaultProjectGlyphIcon className="size-4 shrink-0" />
+            Create a project
           </button>
         )}
         {projects.map((entry) => {
@@ -217,6 +250,8 @@ export function Sidebar({
       </div>
 
       <SectionLabel
+        collapsed={chatsCollapsed}
+        onToggleCollapsed={() => setChatsCollapsed((open) => !open)}
         action={
           <button
             type="button"
@@ -231,7 +266,10 @@ export function Sidebar({
         Chats
       </SectionLabel>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
+      <div
+        hidden={chatsCollapsed}
+        className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto"
+      >
         {chats.length === 0 && (
           <button
             type="button"

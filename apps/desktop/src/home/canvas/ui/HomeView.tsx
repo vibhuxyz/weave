@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef } from "react";
 import type { Agent } from "@/useAgents";
 import { useAgents } from "@/useAgents";
 import { GreeterWidget } from "@/features/onboarding/GreeterWidget";
-import { StarterTaskChecklist } from "@/features/onboarding/StarterTaskChecklist";
 import { useHomeWidgetStore } from "../stores/homeWidgetStore";
 import { widgetSizeForInstance } from "../widgets/catalog";
 import type { WidgetMutationHandlers } from "../widgets/types";
@@ -12,9 +11,13 @@ import { WidgetCanvas } from "./WidgetCanvas";
  * Lean replacement for upstream `HomeView` — upstream pulls in telemetry,
  * onboarding, skills, projects and TopBarActions. This wires Berd's widget
  * store to `WidgetCanvas` and seeds a first-run layout. Pinning and the
- * widget picker land in later phases; onboarding now lands here as fixed
- * overlays (`GreeterWidget`, `StarterTaskChecklist`) rather than new canvas
+ * widget picker land in later phases; onboarding now lands here as a fixed
+ * overlay (`GreeterWidget`) rather than new canvas
  * widget types — see their own doc comments for why.
+ *
+ * The starter-task checklist that used to sit here is gone: the onboarding
+ * flow now walks the same ground (engine, agents, project), so a second
+ * to-do list covering it on first launch was redundant.
  */
 
 const AGENT_RING_RADIUS = 320;
@@ -121,10 +124,6 @@ export function HomeView({
         recenterTarget={recenterTarget}
         onOpenAgent={onOpenAgent}
         onTagAgentInComposer={onOpenAgent}
-      />
-      <StarterTaskChecklist
-        onCreateProject={onCreateProject}
-        onStartChat={onStartChat}
       />
       <GreeterWidget />
     </div>

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { BoxIcon, UploadIcon } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/shared/ui/sheet";
 import { Button } from "@/shared/ui/button";
-import { Textarea } from "@/shared/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -121,7 +120,7 @@ export function AgentDialog({
           <div className="space-y-2">
             <p className={LABEL}>Icon</p>
             <div className="flex items-center gap-2">
-              <div className="flex size-10 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black/30">
+              <div className="flex size-10 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black/30">
                 {icon ? (
                   <img src={icon} alt="" className="size-full object-cover" />
                 ) : (
@@ -132,6 +131,7 @@ export function AgentDialog({
                 type="button"
                 variant="subtle"
                 size="sm"
+                className="rounded-xl"
                 leftIcon={<UploadIcon className="size-3.5" />}
                 onClick={() => fileRef.current?.click()}
               >
@@ -142,6 +142,7 @@ export function AgentDialog({
                   type="button"
                   variant="ghost"
                   size="sm"
+                  className="rounded-xl"
                   onClick={() => setIcon(undefined)}
                 >
                   Clear
@@ -213,31 +214,39 @@ export function AgentDialog({
             <p className={LABEL}>
               Agent instructions <span className="text-destructive">*</span>
             </p>
-            <Textarea
-              variant="code"
-              rows={8}
+            <textarea
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               placeholder="You are …  Describe how this agent should behave."
-              className="resize-none"
+              rows={8}
+              className={cn(FIELD, "resize-none py-3 leading-relaxed font-mono text-xs")}
             />
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-col gap-1.5 px-7 pt-2 pb-6">
-          <Button
-            type="button"
-            className="w-full"
-            disabled={!canSave}
-            onClick={submit}
-          >
-            {editing ? "Save changes" : "Create agent"}
-          </Button>
+        <div className="flex shrink-0 items-center justify-end gap-3 px-7 pt-2 pb-6">
           {!canSave && (
-            <p aria-live="polite" className="text-center text-muted-foreground text-xs">
+            <p aria-live="polite" className="mr-auto text-muted-foreground text-xs">
               Required: name, instructions.
             </p>
           )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={!canSave}
+            onClick={submit}
+            className="rounded-full px-5"
+          >
+            {editing ? "Save changes" : "Create agent"}
+          </Button>
         </div>
       </SheetContent>
     </Sheet>

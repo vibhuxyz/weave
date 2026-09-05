@@ -61,6 +61,19 @@ function extractPorts(text: string): number[] {
 
 type DetectedServer = Omit<RunningServer, "alive" | "stopping">;
 
+const KNOWN_SERVICES: Record<number, string> = {
+  27017: "MongoDB",
+  27018: "MongoDB",
+  6379: "Redis",
+  5432: "PostgreSQL",
+  3306: "MySQL",
+  9200: "Elasticsearch",
+  11211: "Memcached",
+  15672: "RabbitMQ",
+  5672: "RabbitMQ",
+  9092: "Kafka",
+};
+
 /** Servers the agent has started this session, keyed by port. */
 function detect(turns: ChatTurn[], fallbackProject?: string): DetectedServer[] {
   const byPort = new Map<number, DetectedServer>();
@@ -88,13 +101,14 @@ function detect(turns: ChatTurn[], fallbackProject?: string): DetectedServer[] {
       : fallbackProject;
 
     for (const port of extractPorts(haystack)) {
+      const known = KNOWN_SERVICES[port];
       const cmd =
         /"CommandLine":\s*"([^"]+)"/.exec(serverTool?.output ?? "")?.[1] ??
         serverTool?.title ??
         "server";
       byPort.set(port, {
         port,
-        label: serverTool?.title || `Server on :${port}`,
+        label: known || serverTool?.title || `Server on :${port}`,
         command: cmd,
         project,
       });

@@ -7,6 +7,7 @@ import {
   PanelLeftIcon,
   PanelRightIcon,
   SearchIcon,
+  ActivityIcon,
 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { JumpToLatestButton } from "@/shared/ui/jump-to-latest-button";
@@ -44,6 +45,30 @@ import { useAcpChat } from "./useAcpChat";
 import { useProject } from "./useProject";
 import { useProjects, type ProjectEntry } from "./useProjects";
 import { useRunningServers } from "./useRunningServers";
+import { UsageLimitIsland, useQuotaStore } from "./features/quota/UsageLimitIsland";
+
+function QuotaButton({ engineId }: { engineId: string | null | undefined }) {
+  const isQuotaOpen = useQuotaStore((s) => s.isOpen);
+  return (
+    <button
+      type="button"
+      className={cn(
+        "flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent",
+        isQuotaOpen && "bg-secondary/60 text-foreground"
+      )}
+      onClick={() => {
+        if (isQuotaOpen) {
+          useQuotaStore.getState().hideQuota();
+        } else {
+          useQuotaStore.getState().showQuota(engineId || "");
+        }
+      }}
+      aria-label="View Usage Limits"
+    >
+      <ActivityIcon className="size-4" />
+    </button>
+  );
+}
 
 export function App() {
   const { state: project, choose, startWith } = useProject();
@@ -386,6 +411,7 @@ export function App() {
       className="bg-dot-grid flex h-dvh flex-col text-foreground"
       style={{ "--project-tint": projectTint } as CSSProperties}
     >
+      <UsageLimitIsland />
       {/* ── Top bar: window drag surface + shell chrome ───────────────── */}
       <header
         data-tauri-drag-region
@@ -450,6 +476,7 @@ export function App() {
             </DropdownMenuContent>
           </DropdownMenu>
           )}
+          {activeDir && <QuotaButton engineId={engineId || (project.status === "running" ? project.engineId : null)} />}
           <button type="button" className={iconBtn} disabled aria-label="Search">
             <SearchIcon className="size-4" />
           </button>
@@ -525,7 +552,10 @@ export function App() {
           )}
         </div>
 
-        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-agent-surface-base">
+        {/* Full-bleed on the shell's dot grid. The panel used to be a raised
+            card, which boxed Home's canvas and the Agents grid inside a second
+            surface — the sidebar is the only chrome that should read as one. */}
+        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         {view === "agents" ? (
           <AgentsView onChat={handleChatWithAgent} engines={engines} />
         ) : (
@@ -543,7 +573,7 @@ export function App() {
         <div
           ref={scrollRef}
           onScroll={onTranscriptScroll}
-          className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 overflow-y-auto p-6"
+          className="mx-auto flex w-full flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] py-6"
         >
           {turns.length === 0 && ready && (
             <p className="mt-16 text-center text-sm text-muted-foreground">
@@ -652,7 +682,17 @@ export function App() {
           </div>
         )}
 
-        <div className="relative z-10 mx-auto mt-auto w-full max-w-5xl px-6 pb-6">
+        <div
+          className={cn(
+            "relative z-10 mt-auto w-full px-6 pb-6",
+            // Home is a canvas, not a transcript: the composer sits out of the
+            // way in the corner. A chat keeps the wide centred column so the
+            // input lines up with the messages above it.
+            view === "home"
+              ? "ml-auto max-w-md"
+              : "mx-auto max-w-5xl",
+          )}
+        >
           <div className="relative flex flex-col gap-2.5 rounded-composer bg-surface-chat-composer p-3 [-webkit-backdrop-filter:var(--backdrop-composer-glass)] [backdrop-filter:var(--backdrop-composer-glass)]">
             {mentionMatches.length > 0 && (
               <div className="absolute bottom-full left-0 z-20 mb-2 w-80 overflow-hidden rounded-2xl border border-agent-border bg-agent-surface-raised p-2 shadow-[0_20px_56px_rgba(0,0,0,0.5)]">

@@ -267,6 +267,32 @@ fn kill_port(port: u16, server: State<'_, AgentServer>) -> Result<(), String> {
         ));
     }
 
+    // Check if a Docker container is holding this port.
+    let is_docker_proxy = info.command.contains("com.docker")
+        || info.command.contains("orbstack")
+        || info.command.contains("OrbStack")
+        || info.command.contains("docker-proxy")
+        || info.command.contains("vpnkit");
+
+    if is_docker_proxy {
+        if let Ok(out) = Command::new("docker")
+            .args(["ps", "--format", "{{.ID}}\t{{.Ports}}"])
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            for line in stdout.lines() {
+                let mut parts = line.split('\t');
+                if let (Some(id), Some(ports)) = (parts.next(), parts.next()) {
+                    if ports.contains(&format!(":{port}->")) || ports.contains(&format!(":{port}/")) {
+                        let _ = Command::new("docker").args(["rm", "-f", id]).status();
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        return Err(format!("Port {port} is held by a container proxy, but no matching Docker container was found to stop."));
+    }
+
     #[cfg(unix)]
     {
         // Just the two PIDs, not their subtrees: `ancestors_until` only needs

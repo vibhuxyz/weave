@@ -473,15 +473,15 @@
   },
   "privacy": {
     "telemetry": {
-      "description": "Help improve Berd by sharing usage events, like which features are used. Chat content is never sent.",
+      "description": "Help improve Weave by sharing usage events, like which features are used. Chat content is never sent.",
       "label": "Share usage data",
       "learnMore": "Learn more",
       "saveError": "Couldn't update the usage data setting. Try again.",
       "usageDialog": {
         "collectBody": "Usage events, such as features used, errors, and performance, tied to a random installation ID.",
         "collectTitle": "What we collect",
-        "intro": "We use a random installation ID, not your identity, to see how Berd is used and fix what’s broken.",
-        "notCollectBody": "Your name, email, or account. Berd has no login, so there’s nothing to tie data to.",
+        "intro": "We use a random installation ID, not your identity, to see how Weave is used and fix what’s broken.",
+        "notCollectBody": "Your name, email, or account. Weave has no login, so there’s nothing to tie data to.",
         "notCollectTitle": "What we don’t collect",
         "title": "Sharing usage data"
       }

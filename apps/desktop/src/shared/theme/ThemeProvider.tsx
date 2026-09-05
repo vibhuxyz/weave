@@ -46,15 +46,19 @@ function readSystemThemePreference() {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
+/**
+ * Weave is dark-only. Nothing in the UI calls `setThemeMode`, so the stored
+ * mode and the system preference were only ever able to flip the app to light
+ * by accident — on a machine set to light, every screen rendered in a palette
+ * no one designs against. Resolution is pinned here rather than by deleting
+ * the provider so the light path stays one line away if a theme switcher ever
+ * ships; `themeMode` is still tracked and persisted for that day.
+ */
 function getResolvedMode(
-  themeMode: ThemeMode,
-  systemPrefersDark: boolean,
+  _themeMode: ThemeMode,
+  _systemPrefersDark: boolean,
 ): "light" | "dark" {
-  if (themeMode === "light" || themeMode === "dark") {
-    return themeMode;
-  }
-
-  return systemPrefersDark ? "dark" : "light";
+  return "dark";
 }
 
 function normalizeHexColor(color: string | null): string | null {
