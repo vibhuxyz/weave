@@ -51,6 +51,9 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-opener": "^2.5.4",
+    "@weave/agent": "workspace:*",
+    "@weave/core": "workspace:*",
+    "@weave/protocol": "workspace:*",
     "ai": "^7.0.78",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -75,9 +78,7 @@
     "tailwind-merge": "^3.6.0",
     "vaul": "^1.1.2",
     "ws": "^8.18.0",
-    "@weave/protocol": "workspace:*",
-    "@weave/core": "workspace:*",
-    "@weave/agent": "workspace:*"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

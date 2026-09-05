@@ -48,6 +48,11 @@ import { useRunningServers } from "./useRunningServers";
 export function App() {
   const { state: project, choose, startWith } = useProject();
   const port = project.status === "running" ? project.port : null;
+  // Ported from Berd's onboarding gate: Home never requires a project — it's
+  // seeded and browsable on its own. Chat and the project-scoped chrome
+  // (header title, sidebar's active row, context panel) fall back to "no
+  // project yet" instead of blocking the whole app behind a folder picker.
+  const activeDir = project.status === "running" ? project.dir : undefined;
   const {
     state: connection,
     turns,
@@ -96,12 +101,17 @@ export function App() {
   );
 
   // Opening or starting a chat always drops the Agents view so the transcript
-  // is actually visible.
+  // is actually visible. Neither has anything to run against without a
+  // project — send the user to the folder picker instead of a dead chat.
   const startNewChat = useCallback(() => {
+    if (project.status !== "running") {
+      void choose();
+      return;
+    }
     setView("chat");
     newChat();
     setManualActive([]);
-  }, [newChat, setView]);
+  }, [project, choose, newChat, setView]);
   const openChatAndShow = useCallback(
     (sessionId: string) => {
       setView("chat");
@@ -129,20 +139,26 @@ export function App() {
 
   const handleChatWithAgent = useCallback(
     (agent: Agent) => {
+      const running = project.status === "running";
+      if (!running) {
+        // No project to run the agent against yet — same deferral as
+        // `startNewChat`.
+        void choose();
+        return;
+      }
       setView("chat");
       pendingAgentModel.current = agent.model ?? null;
-      const running = project.status === "running";
-      const currentEngine = running ? project.engineId : undefined;
+      const currentEngine = project.engineId;
       // The picked agent rides every prompt of the new chat.
       setManualActive([agent.id]);
-      if (agent.engineId && agent.engineId !== currentEngine && running) {
+      if (agent.engineId && agent.engineId !== currentEngine) {
         void startWith(project.dir, agent.engineId);
         setTimeout(() => newChat(), 400);
       } else {
         newChat();
       }
     },
-    [project, startWith, newChat, setView],
+    [project, choose, startWith, newChat, setView],
   );
 
   useEffect(() => {
@@ -339,33 +355,10 @@ export function App() {
     resetComposerHeight();
   };
 
-  // ── No project yet: the whole app is the picker ──────────────────────
-  if (project.status !== "running") {
-    return (
-      <div
-        data-app-shell-root="true"
-        className="bg-dot-grid flex h-dvh flex-col items-center justify-center gap-4 text-foreground"
-      >
-        <h1 className="text-lg font-medium">my-berd-app</h1>
-        {project.status === "error" ? (
-          <p className="max-w-md text-center text-sm text-destructive">
-            {project.message}
-          </p>
-        ) : (
-          <p className="max-w-md text-center text-sm text-muted-foreground">
-            Choose a project folder. The agent will read and edit files inside it.
-          </p>
-        )}
-        <Button
-          type="button"
-          onClick={choose}
-          disabled={project.status === "loading" || project.status === "starting"}
-        >
-          {project.status === "starting" ? "Starting agent…" : "Open project"}
-        </Button>
-      </div>
-    );
-  }
+  // Home doesn't need a project — ported from Berd, which never gates on
+  // one either (see the onboarding port's step 7). A project is only
+  // required once the user actually tries to chat; `startNewChat` and
+  // `handleChatWithAgent` send them to `choose()` at that point instead.
 
   const ready = connection === "ready";
 
@@ -384,7 +377,7 @@ export function App() {
   // active project's saved colour (berd behaviour).
   const projectTint =
     previewTint ??
-    toneColor(projects.find((p) => p.dir === project.dir)?.tint) ??
+    toneColor(projects.find((p) => p.dir === activeDir)?.tint) ??
     "transparent";
 
   return (
@@ -416,10 +409,16 @@ export function App() {
           </button>
         </div>
         <span className="min-w-0 flex-1 truncate text-[length:var(--text-app-top-bar-title)] text-foreground">
-          {basename(project.dir)}
+          {activeDir ? basename(activeDir) : "Weave"}
         </span>
         <div className="flex shrink-0 items-center gap-2 text-xs">
-          {!ready && <span className="text-muted-foreground">{connection}</span>}
+          {activeDir && !ready && (
+            <span className="text-muted-foreground">{connection}</span>
+          )}
+          {project.status === "error" && (
+            <span className="text-destructive">{project.message}</span>
+          )}
+          {activeDir && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-muted-foreground outline-none transition-colors hover:bg-secondary/60 hover:text-foreground">
@@ -439,7 +438,7 @@ export function App() {
                   // restart, the conversation carries forward. Fall back to a
                   // cold start only when nothing is connected yet.
                   if (ready) switchEngine(id);
-                  else void startWith(project.dir, id);
+                  else void startWith(activeDir, id);
                 }}
               >
                 {Object.values(ENGINES).map((engine) => (
@@ -450,6 +449,7 @@ export function App() {
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+          )}
           <button type="button" className={iconBtn} disabled aria-label="Search">
             <SearchIcon className="size-4" />
           </button>
@@ -485,10 +485,10 @@ export function App() {
           >
             <Sidebar
               projects={projects}
-              activeProjectDir={project.dir}
+              activeProjectDir={activeDir}
               onSelectProject={(dir) => {
                 const entry = projects.find((p) => p.dir === dir);
-                if (dir !== project.dir) void startWith(dir, entry?.engineId);
+                if (dir !== activeDir) void startWith(dir, entry?.engineId);
               }}
               onAddProject={() => {
                 setEditingProject(null);
@@ -500,7 +500,7 @@ export function App() {
               }}
               onRemoveProject={(dir) => {
                 forget(dir);
-                if (dir === project.dir) {
+                if (dir === activeDir) {
                   const next = projects.find((p) => p.dir !== dir);
                   if (next) void startWith(next.dir, next.engineId);
                 }
@@ -531,7 +531,14 @@ export function App() {
         ) : (
         <>
         {view === "home" ? (
-          <HomeView onOpenAgent={(id) => { const a = agents.find((x) => x.id === id); if (a) handleChatWithAgent(a); }} />
+          <HomeView
+            onOpenAgent={(id) => { const a = agents.find((x) => x.id === id); if (a) handleChatWithAgent(a); }}
+            onCreateProject={() => {
+              setEditingProject(null);
+              setCreateOpen(true);
+            }}
+            onStartChat={startNewChat}
+          />
         ) : (
         <div
           ref={scrollRef}
@@ -563,7 +570,7 @@ export function App() {
                     {(turn.text || turn.tools.length > 0) && (
                       <AgentMessage
                       turn={turn}
-                      projectDir={project.dir}
+                      projectDir={activeDir ?? ""}
                       git={git}
                       configValues={configValues}
                       engineId={engineId!}
@@ -849,16 +856,16 @@ export function App() {
         >
           <div className="w-72">
             <ContextPanel
-              projectDir={project.dir}
+              projectDir={activeDir ?? ""}
               git={git}
               onRefresh={refreshGit}
               servers={servers}
               onStopServer={stopServer}
               agents={agents}
               projectAgents={activeProjectEntry?.agents ?? []}
-              onProjectAgentsChange={(next) =>
-                setProjectAgents(project.dir, next)
-              }
+              onProjectAgentsChange={(next) => {
+                if (activeDir) setProjectAgents(activeDir, next);
+              }}
               manualActive={manualActive}
               onToggleManual={(id) =>
                 setManualActive((cur) =>
@@ -882,7 +889,7 @@ export function App() {
         onPreviewTint={setPreviewTint}
         onCreate={({ dir, ...meta }) => {
           remember(dir, editingProject?.engineId, meta);
-          if (!editingProject && dir !== project.dir) void startWith(dir);
+          if (!editingProject && dir !== activeDir) void startWith(dir);
         }}
       />
     </div>

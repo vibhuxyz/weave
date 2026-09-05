@@ -4,6 +4,10 @@ import { cn } from "@/shared/lib/cn";
 import { basename, tildeHome } from "./paths";
 import type { GitStatus } from "../server/index.ts";
 import type { RunningServer } from "./useRunningServers";
+import type { ProjectAgent } from "./useProjects";
+import type { Agent } from "./useAgents";
+import { ProjectAgentsPicker } from "./agents/ProjectAgentsPicker";
+import { AgentAvatar } from "./agents/AgentAvatar";
 
 const TABS = ["Context", "Changes", "Files"] as const;
 type Tab = (typeof TABS)[number];
@@ -14,6 +18,11 @@ export interface ContextPanelProps {
   onRefresh: () => void;
   servers: RunningServer[];
   onStopServer: (port: number) => void;
+  agents: Agent[];
+  projectAgents: ProjectAgent[];
+  onProjectAgentsChange: (next: ProjectAgent[]) => void;
+  manualActive: string[];
+  onToggleManual: (id: string) => void;
 }
 
 /** Porcelain codes → a short human word. */
@@ -31,8 +40,20 @@ export function ContextPanel({
   onRefresh,
   servers,
   onStopServer,
+  agents,
+  projectAgents,
+  onProjectAgentsChange,
+  manualActive,
+  onToggleManual,
 }: ContextPanelProps) {
   const [tab, setTab] = useState<Tab>("Context");
+  const [editAgents, setEditAgents] = useState(false);
+
+  const attached = projectAgents
+    .map((pa) => ({ pa, agent: agents.find((a) => a.id === pa.id) }))
+    .filter((x): x is { pa: ProjectAgent; agent: Agent } => !!x.agent);
+  const manualAgents = attached.filter((x) => x.pa.mode === "manual");
+  const alwaysAgents = attached.filter((x) => x.pa.mode === "always");
 
   return (
     <aside className="flex w-72 shrink-0 flex-col gap-4 rounded-xl border border-border/60 bg-agent-surface-raised p-4">
@@ -149,6 +170,89 @@ export function ContextPanel({
               {git.branch ?? "not a git repo"}
             </span>
           </div>
+
+          {/* Standing agents */}
+          <div className="flex items-center justify-between">
+            <p className="text-muted-foreground text-xs">Agents</p>
+            <button
+              type="button"
+              onClick={() => setEditAgents((v) => !v)}
+              className="text-muted-foreground text-xs transition-colors hover:text-foreground"
+            >
+              {editAgents ? "Done" : "Edit"}
+            </button>
+          </div>
+
+          {editAgents ? (
+            <ProjectAgentsPicker
+              agents={agents}
+              value={projectAgents}
+              onChange={onProjectAgentsChange}
+              compact
+            />
+          ) : attached.length === 0 ? (
+            <p className="text-muted-foreground text-xs">
+              No agents on this project.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {alwaysAgents.map(({ agent }) => (
+                <div
+                  key={agent.id}
+                  className="flex items-center gap-2 rounded-lg bg-secondary/70 px-2.5 py-1.5"
+                >
+                  <AgentAvatar
+                    name={agent.name}
+                    tint={agent.tint}
+                    icon={agent.icon}
+                    size="sm"
+                    className="size-6 shrink-0"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-xs">
+                    {agent.name}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    always
+                  </span>
+                </div>
+              ))}
+              {manualAgents.map(({ agent }) => {
+                const on = manualActive.includes(agent.id);
+                return (
+                  <button
+                    key={agent.id}
+                    type="button"
+                    onClick={() => onToggleManual(agent.id)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors",
+                      on
+                        ? "bg-agent-accent-wash text-foreground"
+                        : "bg-secondary/70 text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <AgentAvatar
+                      name={agent.name}
+                      tint={agent.tint}
+                      icon={agent.icon}
+                      size="sm"
+                      className="size-6 shrink-0"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-xs">
+                      {agent.name}
+                    </span>
+                    <span
+                      className={cn(
+                        "shrink-0 text-[10px]",
+                        on ? "text-agent-accent" : "text-muted-foreground",
+                      )}
+                    >
+                      {on ? "on · next chat" : "manual"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

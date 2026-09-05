@@ -17,7 +17,9 @@ import { Sheet, SheetContent, SheetTitle } from "@/shared/ui/sheet";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
 import { basename, tildeHome } from "./paths";
-import type { ProjectMeta } from "./useProjects";
+import type { ProjectAgent, ProjectEntry, ProjectMeta } from "./useProjects";
+import { useAgents } from "./useAgents";
+import { ProjectAgentsPicker } from "./agents/ProjectAgentsPicker";
 
 /** berd's pill-tone palette (names resolve to `bg-pill-*` / `--color-pill-*`). */
 export const PROJECT_TONES = [
@@ -49,9 +51,9 @@ const TONE_BG: Record<ProjectTone, string> = {
   peach: "bg-pill-peach",
 };
 
-const FIELD =
+export const FIELD =
   "w-full rounded-lg border border-white/5 bg-black/25 px-3.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-white/15";
-const LABEL = "text-muted-foreground text-xs";
+export const LABEL = "text-muted-foreground text-xs";
 
 export interface CreateProjectInput extends ProjectMeta {
   dir: string;
@@ -62,30 +64,35 @@ export function CreateProjectDialog({
   onOpenChange,
   onCreate,
   onPreviewTint,
+  editing,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreate: (input: CreateProjectInput) => void;
   /** Live-preview the picked colour on the workspace behind the sheet. */
   onPreviewTint?: (color: string | undefined) => void;
+  /** An existing project to edit; null to create. */
+  editing?: ProjectEntry | null;
 }) {
+  const { agents } = useAgents();
   const [dir, setDir] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [tone, setTone] = useState<ProjectTone>("blue");
   const [icon, setIcon] = useState<string | undefined>();
   const [notes, setNotes] = useState("");
+  const [projectAgents, setProjectAgents] = useState<ProjectAgent[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const tint = toneColor(tone)!;
 
   useEffect(() => {
-    if (isOpen) {
-      setDir(null);
-      setName("");
-      setTone("blue");
-      setIcon(undefined);
-      setNotes("");
-    }
-  }, [isOpen]);
+    if (!isOpen) return;
+    setDir(editing?.dir ?? null);
+    setName(editing?.name ?? (editing ? basename(editing.dir) : ""));
+    setTone((editing?.tint as ProjectTone) ?? "blue");
+    setIcon(editing?.icon);
+    setNotes(editing?.notes ?? "");
+    setProjectAgents(editing?.agents ?? []);
+  }, [isOpen, editing]);
 
   // Preview the selection on the workspace while the sheet is open.
   useEffect(() => {
@@ -117,6 +124,7 @@ export function CreateProjectDialog({
       tint: tone,
       icon,
       notes: notes.trim() || undefined,
+      agents: projectAgents.length ? projectAgents : undefined,
     });
     onOpenChange(false);
   };
@@ -136,7 +144,7 @@ export function CreateProjectDialog({
       >
         <div className="flex items-center px-7 pt-5 pb-2">
           <SheetTitle className="text-sm font-normal text-foreground">
-            Create a project
+            {editing ? "Edit project" : "Create a project"}
           </SheetTitle>
         </div>
 
@@ -200,7 +208,11 @@ export function CreateProjectDialog({
             <button
               type="button"
               onClick={chooseFolder}
-              className={cn(FIELD, "flex h-11 items-center gap-2.5 text-left")}
+              disabled={!!editing}
+              className={cn(
+                FIELD,
+                "flex h-11 items-center gap-2.5 text-left disabled:opacity-60",
+              )}
             >
               <FolderPlusIcon className="size-3.5 shrink-0 text-muted-foreground" />
               <span
@@ -225,6 +237,16 @@ export function CreateProjectDialog({
               className={cn(FIELD, "resize-none py-3 leading-relaxed")}
             />
           </div>
+
+          {/* Standing agents */}
+          <div className="space-y-2">
+            <p className={LABEL}>Agents to follow on this project</p>
+            <ProjectAgentsPicker
+              agents={agents}
+              value={projectAgents}
+              onChange={setProjectAgents}
+            />
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center justify-end gap-3 px-7 pt-2 pb-6">
@@ -237,7 +259,7 @@ export function CreateProjectDialog({
             Cancel
           </Button>
           <Button type="button" size="sm" disabled={!canCreate} onClick={submit}>
-            Create project
+            {editing ? "Save changes" : "Create project"}
           </Button>
         </div>
       </SheetContent>
@@ -308,7 +330,7 @@ function HexArtifact({ tint }: { tint: string }) {
 }
 
 /** Copied from berd's ColorPicker `variant="swatches"`. */
-function SwatchPill({
+export function SwatchPill({
   tone,
   onChange,
 }: {

@@ -1,6 +1,12 @@
 import { useCallback } from "react";
 import { usePersistedState } from "@/shared/hooks/usePersistedState";
 
+/** An agent attached to a project. `always` = injected into every new chat. */
+export interface ProjectAgent {
+  id: string;
+  mode: "always" | "manual";
+}
+
 export interface ProjectEntry {
   dir: string;
   engineId?: string;
@@ -12,6 +18,8 @@ export interface ProjectEntry {
   icon?: string;
   /** "What should the agent know about this project?" — not yet fed to the agent. */
   notes?: string;
+  /** Standing agents for this project (their instructions steer new chats). */
+  agents?: ProjectAgent[];
 }
 
 export interface ProjectMeta {
@@ -19,6 +27,7 @@ export interface ProjectMeta {
   tint?: string;
   icon?: string;
   notes?: string;
+  agents?: ProjectAgent[];
 }
 
 /**
@@ -59,5 +68,15 @@ export function useProjects() {
     [setProjects],
   );
 
-  return { projects, remember, forget };
+  const setProjectAgents = useCallback(
+    (dir: string, agents: ProjectAgent[]) =>
+      setProjects((current) =>
+        current.map((entry) =>
+          entry.dir === dir ? { ...entry, agents } : entry,
+        ),
+      ),
+    [setProjects],
+  );
+
+  return { projects, remember, forget, setProjectAgents };
 }

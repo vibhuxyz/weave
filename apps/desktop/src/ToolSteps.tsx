@@ -1,17 +1,20 @@
 import { useEffect, useState } from "react";
 import type { ToolKind } from "@agentclientprotocol/sdk";
 import {
+  CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   FileTextIcon,
   GlobeIcon,
   LightbulbIcon,
+  Loader2Icon,
   PencilIcon,
   SearchIcon,
   SettingsIcon,
   TerminalIcon,
   Trash2Icon,
   WrenchIcon,
+  XIcon,
 } from "lucide-react";
 import {
   Task,
@@ -19,6 +22,7 @@ import {
   TaskItem,
   TaskTrigger,
 } from "@/shared/ui/ai-elements/task";
+import { Shimmer } from "@/shared/ui/ai-elements/shimmer";
 import { cn } from "@/shared/lib/cn";
 import type { ToolEntry } from "./useAcpChat";
 
@@ -35,6 +39,25 @@ const KIND_ICONS: Record<ToolKind, typeof WrenchIcon> = {
   switch_mode: SettingsIcon,
   other: WrenchIcon,
 };
+
+/** Swap a leading past-tense verb in an ACP title for its present-tense form. */
+const TITLE_VERB_SWAP: Array<[RegExp, string]> = [
+  [/^Read /, "Reading "],
+  [/^Edit /, "Editing "],
+  [/^Write /, "Creating "],
+  [/^Wrote /, "Creating "],
+  [/^Search(ed)? /, "Searching "],
+  [/^Delete[d]? /, "Deleting "],
+  [/^Ran /, "Running "],
+  [/^Fetch(ed)? /, "Fetching "],
+];
+
+function activeTitle(title: string): string {
+  for (const [re, replacement] of TITLE_VERB_SWAP) {
+    if (re.test(title)) return title.replace(re, replacement);
+  }
+  return title;
+}
 
 /** A running command past this many seconds is probably stuck — nudge the user. */
 const SLOW_AFTER_S = 60;
@@ -129,14 +152,19 @@ function ToolRow({
       )}
     >
       <TaskItem className={cn("flex items-center gap-2", highlight && "px-2.5 py-2")}>
-        <Icon
-          className={cn(
-            "size-3.5 shrink-0",
-            failed && "text-agent-critical-fg",
-            running && "animate-pulse text-agent-text-bright",
-            !running && !failed && "text-agent-text-muted",
-          )}
-        />
+        {running ? (
+          <span className="relative flex size-3.5 shrink-0 items-center justify-center">
+            <Loader2Icon className="absolute size-3.5 animate-spin text-agent-accent" />
+            <Icon className="size-2.5 text-agent-accent" />
+          </span>
+        ) : failed ? (
+          <XIcon className="size-3.5 shrink-0 text-agent-critical-fg" />
+        ) : (
+          <span className="relative flex size-3.5 shrink-0 items-center justify-center">
+            <Icon className="size-3.5 text-agent-text-muted" />
+            <CheckIcon className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-agent-surface-base text-agent-success" />
+          </span>
+        )}
         <button
           type="button"
           disabled={!hasLog}
@@ -144,7 +172,13 @@ function ToolRow({
           className={cn("flex min-w-0 flex-1 items-center gap-1.5 text-left", tone)}
           title={tool.title}
         >
-          <span className="truncate">{shorten(tool.title, projectDir)}</span>
+          {running ? (
+            <Shimmer className="min-w-0 truncate">
+              {shorten(activeTitle(tool.title), projectDir)}
+            </Shimmer>
+          ) : (
+            <span className="truncate">{shorten(tool.title, projectDir)}</span>
+          )}
           <ChevronRightIcon
             className={cn(
               "size-3.5 shrink-0 transition-transform",

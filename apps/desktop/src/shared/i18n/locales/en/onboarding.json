@@ -3,16 +3,16 @@
     "goBack": "Go back"
   },
   "welcome": {
-    "title": "Welcome to Berd.",
+    "title": "Welcome to Weave.",
     "subtitle": "Your place for doing.",
     "getStarted": "Let’s go",
-    "usageConsent": "Share anonymous usage data to help improve Berd.",
+    "usageConsent": "Share anonymous usage data to help improve Weave.",
     "learnMore": "Learn more"
   },
   "workTypes": {
-    "title": "What type of work will you use Berd for?",
+    "title": "What type of work will you use Weave for?",
     "descriptionLine1": "Pick one or more options and we’ll recommend",
-    "descriptionLine2": "some Berd agents for you to set up.",
+    "descriptionLine2": "some Weave agents for you to set up.",
     "next": "Next",
     "items": {
       "engineering": {
@@ -52,7 +52,7 @@
     "waitingForRuntime": "Getting ready…",
     "keep": "Keep ’em",
     "skip": "Skip for now",
-    "runtimeUnavailable": "Berd couldn’t finish starting, so agents can’t be added yet.",
+    "runtimeUnavailable": "Weave couldn’t finish starting, so agents can’t be added yet.",
     "retryRuntime": "Try again",
     "genericError": "Some agents could not be adopted. Try again.",
     "adoptionError": "Couldn’t adopt {{names}}. The other agents were kept; try again for the rest.",
@@ -77,7 +77,7 @@
     "partialAdoptionWarning": "Some agents were kept, but {{names}} could not be added. You can continue and try again later."
   },
   "harness": {
-    "title": "Choose a provider to power Berd",
+    "title": "Choose a provider to power Weave",
     "description": "Start with one now, or connect a provider later in Settings.",
     "finish": "Finish",
     "install": "Install",
@@ -86,12 +86,58 @@
   },
   "setup": {
     "readyTitle": "{{provider}} is ready",
-    "readyDescription": "Your provider is connected and ready to use in Berd.",
+    "readyDescription": "Your provider is connected and ready to use in Weave.",
     "finishOnboarding": "Finish onboarding",
     "installationComplete": "Installation complete",
     "installing": "Installing your",
     "installingDescription": "We’ll let you know when {{provider}} is ready to use.",
     "finish": "Finish",
     "skip": "Skip for now"
+  },
+  "greeter": {
+    "title": "Welcome!",
+    "body": "I'm Weave. I'm here to help you get stuff done.",
+    "action": "Take a tour",
+    "dismiss": "Dismiss"
+  },
+  "tour": {
+    "next": "Next",
+    "done": "Done",
+    "skip": "Skip",
+    "steps": [
+      {
+        "title": "Your canvas, your home",
+        "body": "Pin what matters, find it fast. Home is where you keep the stuff you don't want to dig for — pin a chat or an agent."
+      },
+      {
+        "title": "All your engines in one place",
+        "body": "Whichever coding engine you use — Claude Code, Codex, Gemini CLI, and more — you can chat with it here, and switch anytime."
+      },
+      {
+        "title": "Ask Weave anything",
+        "body": "Start a chat, describe what you want, and watch Weave read and edit files in your project directly."
+      },
+      {
+        "title": "Agents have joined the chat",
+        "body": "An agent is a specialist you talk to directly. @mention one in a chat and it works with you like a teammate, not a tool."
+      },
+      {
+        "title": "Point Weave at a file",
+        "body": "Type @ in the composer to mention a specific file, so Weave knows exactly what you mean without you spelling it out."
+      }
+    ]
+  },
+  "starterTasks": {
+    "title": "Get started",
+    "connectEngine": "Connect a coding engine",
+    "startChat": "Start a chat",
+    "createProject": "Open your first project",
+    "addWidget": "Add a widget",
+    "taskDetails": {
+      "connectEngine": "Pick which coding engine powers your chats — Claude Code, Codex, Gemini, and more, in Settings.",
+      "startChat": "Send your first message and watch Weave work in your project.",
+      "createProject": "Point Weave at a folder on disk. It reads and edits files inside it.",
+      "addWidget": "Pin a clock, note, or agent onto your Home canvas."
+    }
   }
 }

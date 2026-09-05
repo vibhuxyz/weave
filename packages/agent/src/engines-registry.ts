@@ -73,6 +73,13 @@ export const ENGINES: Record<string, EngineDescriptor> = {
     packageName: "agy-acp",
     binName: "agy-acp",
     provider: "google",
+    // agy-acp runs shell commands in its own sandbox (sandbox = true by
+    // default), which denies things like `node -v` even after Berd's own
+    // permission policy has approved the ACP request. `confineToTaskDir` is
+    // already the real boundary — it confines every write to the project dir —
+    // so this drops a redundant gate, not a necessary one.
+    // TODO: gate this behind a per-project trust decision instead of always-on.
+    args: ["--no-sandbox"],
     install: "pnpm -F @weave/agent add agy-acp",
     capabilities: FULL_CAPABILITIES,
   },

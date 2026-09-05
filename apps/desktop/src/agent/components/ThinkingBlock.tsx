@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckIcon, ChevronRight } from "lucide-react";
 import { BerdLoaderInline } from "@/shared/ui/berd-loader-inline";
 import { Shimmer } from "@/shared/ui/ai-elements/shimmer";
@@ -8,6 +8,10 @@ import { cn } from "@/shared/lib/cn";
  * The agent's live activity line. Gemini's thought stream is a sequence of
  * `**Bold Title**` sections — we surface those titles as a progress list (the
  * last one is what it's doing now) instead of dumping the raw reasoning.
+ *
+ * While streaming we also show how long the turn has been running and, if the
+ * stream goes quiet, how long since the last update — so a wedged engine reads
+ * as "no update for 2m" instead of a silent, indistinguishable "Thinking…".
  */
 export function ThinkingBlock({
   text,
@@ -19,10 +23,12 @@ export function ThinkingBlock({
   const [open, setOpen] = useState(false);
   const hasText = text.trim().length > 0;
   const steps = extractSteps(text);
-  const current = steps.at(-1);
+  const current = steps.at(-1) ?? lastLine(text);
 
-  const label =
-    current ?? (streaming ? "Thinking…" : "Thought for a moment");
+  const { elapsed, sinceChange } = useActivityClock(text, streaming);
+  const stale = streaming && sinceChange >= 20;
+
+  const label = current ?? (streaming ? "Thinking…" : "Thought for a moment");
 
   return (
     <div className="dark w-full rounded-xl border border-agent-border bg-agent-surface-base text-agent-text">
@@ -41,6 +47,18 @@ export function ThinkingBlock({
         ) : (
           <span className="min-w-0 flex-1 truncate text-agent-text-faint">
             {label}
+          </span>
+        )}
+        {streaming && elapsed >= 1 && (
+          <span
+            className={cn(
+              "shrink-0 font-mono text-[10px] tabular-nums",
+              stale ? "text-agent-warn" : "text-agent-text-faint",
+            )}
+          >
+            {stale
+              ? `no update for ${formatDuration(sinceChange)}`
+              : formatDuration(elapsed)}
           </span>
         )}
         {steps.length > 1 && (
@@ -96,6 +114,41 @@ export function ThinkingBlock({
   );
 }
 
+/**
+ * Seconds since the turn started, and seconds since `text` last changed.
+ * Ticks once a second while `streaming`; frozen once the turn ends.
+ */
+function useActivityClock(text: string, streaming: boolean) {
+  const startedAt = useRef(Date.now());
+  const lastChangeAt = useRef(Date.now());
+  const prevText = useRef(text);
+  const [now, setNow] = useState(Date.now());
+
+  if (text !== prevText.current) {
+    prevText.current = text;
+    lastChangeAt.current = Date.now();
+  }
+
+  useEffect(() => {
+    if (!streaming) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [streaming]);
+
+  const ref = streaming ? now : lastChangeAt.current;
+  return {
+    elapsed: Math.floor((ref - startedAt.current) / 1000),
+    sinceChange: Math.floor((now - lastChangeAt.current) / 1000),
+  };
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s.toString().padStart(2, "0")}s`;
+}
+
 /** Pull the `**Bold Title**` section headers out of a thought stream. */
 function extractSteps(text: string): string[] {
   const steps: string[] = [];
@@ -107,4 +160,13 @@ function extractSteps(text: string): string[] {
     }
   }
   return steps;
+}
+
+/** Last non-empty line, markdown emphasis stripped — a fallback activity line. */
+function lastLine(text: string): string | undefined {
+  const lines = text
+    .split("\n")
+    .map((l) => l.replace(/[*_`#>]/g, "").trim())
+    .filter(Boolean);
+  return lines.at(-1);
 }

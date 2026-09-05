@@ -3,30 +3,45 @@ import {
   FolderIcon,
   HomeIcon,
   MessageSquareIcon,
+  MoreHorizontalIcon,
+  PencilIcon,
   PlusIcon,
   SettingsIcon,
   SparklesIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { basename, tildeHome } from "./paths";
 import { cn } from "@/shared/lib/cn";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
 import type { ConversationMeta } from "./useAcpChat";
 import type { ProjectEntry } from "./useProjects";
 
+export type SidebarView = "home" | "chat" | "agents";
+
 export interface SidebarProps {
   projects: ProjectEntry[];
-  activeProjectDir: string;
+  activeProjectDir: string | undefined;
   onSelectProject: (dir: string) => void;
   onAddProject: () => void;
+  onEditProject: (entry: ProjectEntry) => void;
+  onRemoveProject: (dir: string) => void;
   chats: ConversationMeta[];
   activeSessionId: string | null;
   onSelectChat: (sessionId: string) => void;
   onNewChat: () => void;
+  view: SidebarView;
+  onViewChange: (view: SidebarView) => void;
 }
 
 const NAV = [
-  { id: "home", label: "Home", icon: HomeIcon },
-  { id: "agents", label: "Agents", icon: SparklesIcon },
-  { id: "skills", label: "Skills", icon: BookOpenIcon },
+  { id: "home", label: "Home", icon: HomeIcon, view: "home" as const },
+  { id: "agents", label: "Agents", icon: SparklesIcon, view: "agents" as const },
+  { id: "skills", label: "Skills", icon: BookOpenIcon, view: null },
 ] as const;
 
 /** Compact "how long ago" — 5m, 16h, 3d, 2w. */
@@ -64,30 +79,41 @@ export function Sidebar({
   activeProjectDir,
   onSelectProject,
   onAddProject,
+  onEditProject,
+  onRemoveProject,
   chats,
   activeSessionId,
   onSelectChat,
   onNewChat,
+  view,
+  onViewChange,
 }: SidebarProps) {
   return (
     <aside className="flex max-h-full w-full shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-agent-surface-raised p-2">
       <nav className="flex flex-col gap-0.5 pt-2">
-        {NAV.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            // Not wired yet — these screens do not exist. Shown so the shell
-            // matches Berd's, and disabled so it cannot lie about what works.
-            disabled
-            className={cn(
-              "flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm",
-              "text-foreground/90 disabled:opacity-40",
-            )}
-          >
-            <Icon className="size-4" />
-            {label}
-          </button>
-        ))}
+        {NAV.map(({ id, label, icon: Icon, view: navView }) => {
+          const active = navView !== null && navView === view;
+          return (
+            <button
+              key={id}
+              type="button"
+              // "Skills" has no screen yet — stays disabled.
+              disabled={navView === null}
+              onClick={navView ? () => onViewChange(navView) : undefined}
+              className={cn(
+                "flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm transition-colors",
+                navView === null && "text-foreground/90 disabled:opacity-40",
+                navView !== null &&
+                  (active
+                    ? "bg-secondary text-foreground"
+                    : "text-foreground/80 hover:bg-secondary/60 hover:text-foreground"),
+              )}
+            >
+              <Icon className="size-4" />
+              {label}
+            </button>
+          );
+        })}
       </nav>
 
       <SectionLabel
@@ -119,40 +145,73 @@ export function Sidebar({
         {projects.map((entry) => {
           const active = entry.dir === activeProjectDir;
           return (
-            <button
+            <div
               key={entry.dir}
-              type="button"
-              onClick={() => onSelectProject(entry.dir)}
               className={cn(
-                "flex flex-col rounded-lg px-3 py-1.5 text-left text-sm transition-colors",
+                "group relative rounded-lg transition-colors",
                 active
                   ? "bg-secondary"
-                  : "text-foreground/80 hover:bg-secondary/60 hover:text-foreground",
+                  : "hover:bg-secondary/60",
               )}
             >
-              <span className="flex items-center gap-2.5">
-                {entry.icon ? (
-                  <img
-                    src={entry.icon}
-                    alt=""
-                    className="size-4 shrink-0 rounded-[4px] object-cover"
-                  />
-                ) : (
-                  <FolderIcon
-                    className="size-4 shrink-0"
-                    style={entry.tint ? { color: entry.tint } : undefined}
-                  />
+              <button
+                type="button"
+                onClick={() => onSelectProject(entry.dir)}
+                className={cn(
+                  "flex w-full flex-col rounded-lg px-3 py-1.5 pr-9 text-left text-sm transition-colors",
+                  active
+                    ? "text-foreground"
+                    : "text-foreground/80 group-hover:text-foreground",
                 )}
-                <span className="truncate">
-                  {entry.name || basename(entry.dir)}
+              >
+                <span className="flex items-center gap-2.5">
+                  {entry.icon ? (
+                    <img
+                      src={entry.icon}
+                      alt=""
+                      className="size-4 shrink-0 rounded-[4px] object-cover"
+                    />
+                  ) : (
+                    <FolderIcon
+                      className="size-4 shrink-0"
+                      style={entry.tint ? { color: entry.tint } : undefined}
+                    />
+                  )}
+                  <span className="truncate">
+                    {entry.name || basename(entry.dir)}
+                  </span>
                 </span>
-              </span>
-              {active && (
-                <span className="truncate pl-[26px] text-muted-foreground text-xs">
-                  {tildeHome(entry.dir)}
-                </span>
-              )}
-            </button>
+                {active && (
+                  <span className="truncate pl-[26px] text-muted-foreground text-xs">
+                    {tildeHome(entry.dir)}
+                  </span>
+                )}
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={`${entry.name || basename(entry.dir)} options`}
+                    className="absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-black/20 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                  >
+                    <MoreHorizontalIcon className="size-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onEditProject(entry)}>
+                    <PencilIcon className="size-3.5" />
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => onRemoveProject(entry.dir)}
+                  >
+                    <Trash2Icon className="size-3.5" />
+                    Remove from workspace
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           );
         })}
       </div>
