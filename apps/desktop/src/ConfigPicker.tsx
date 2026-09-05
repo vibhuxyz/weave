@@ -15,6 +15,8 @@ export interface ConfigPickerProps {
   value: string | undefined;
   onSelect: (configId: string, value: string) => void;
   disabled?: boolean;
+  allOptions?: SessionConfigOption[];
+  allValues?: Record<string, string>;
 }
 
 /**
@@ -30,6 +32,8 @@ export function ConfigPicker({
   value,
   onSelect,
   disabled,
+  allOptions,
+  allValues,
 }: ConfigPickerProps) {
   // Booleans need a switch, not a menu — out of scope for now.
   if (option.type !== "select") return null;
@@ -84,6 +88,45 @@ export function ConfigPicker({
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
+
+        {option.id === "mode" && allOptions && (
+          <div className="mt-1 border-t border-border p-1">
+            <div className="flex gap-1">
+              {["effort", "fast"].map((childId) => {
+                const childOpt = allOptions.find((o: SessionConfigOption) => o.id === childId);
+                if (!childOpt || childOpt.type !== "select") return null;
+                
+                const childFlat = childOpt.options.flatMap((e: any) =>
+                  "group" in e ? e.options : [e]
+                );
+                const currentVal = allValues?.[childId];
+                const activeIndex = childFlat.findIndex((e: any) => e.value === currentVal);
+                const activeEntry = activeIndex >= 0 ? childFlat[activeIndex] : childFlat[0];
+                const isActive = activeEntry.name.toLowerCase() !== "off" && activeEntry.name.toLowerCase() !== "false";
+
+                return (
+                  <button
+                    key={childId}
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const nextIndex = (Math.max(0, activeIndex) + 1) % childFlat.length;
+                      onSelect(childId, childFlat[nextIndex].value);
+                    }}
+                    className={cn(
+                      "flex flex-1 items-center justify-center gap-1.5 rounded-sm px-2 py-1.5 text-xs font-medium transition-colors",
+                      isActive
+                        ? "bg-accent text-foreground"
+                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground focus-visible:bg-accent focus:outline-none"
+                    )}
+                  >
+                    {childOpt.name}: {activeEntry.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

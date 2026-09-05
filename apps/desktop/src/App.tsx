@@ -26,6 +26,8 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { ENGINES, DEFAULT_ENGINE_ID } from "@weave/agent/engines-registry.ts";
 import { ConfigPicker } from "./ConfigPicker";
+import { EnginePicker } from "./EnginePicker";
+import { ProvidersDialog } from "./ProvidersDialog";
 import { ContextPanel } from "./ContextPanel";
 import { Sidebar } from "./Sidebar";
 import { CreateProjectDialog, toneColor } from "./CreateProjectDialog";
@@ -71,6 +73,7 @@ function QuotaButton({ engineId }: { engineId: string | null | undefined }) {
 }
 
 export function App() {
+  const [providersDialogOpen, setProvidersDialogOpen] = useState(false);
   const { state: project, choose, startWith } = useProject();
   const port = project.status === "running" ? project.port : null;
   // Ported from Berd's onboarding gate: Home never requires a project — it's
@@ -444,38 +447,6 @@ export function App() {
           {project.status === "error" && (
             <span className="text-destructive">{project.message}</span>
           )}
-          {activeDir && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-muted-foreground outline-none transition-colors hover:bg-secondary/60 hover:text-foreground">
-                {engineName}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Agent Engine</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={engineId || (project.status === "running" ? project.engineId : null) || ""}
-                onValueChange={(id) => {
-                  const currentId =
-                    engineId ||
-                    (project.status === "running" ? project.engineId : null);
-                  if (id === currentId) return;
-                  // Switch inside the running session when we can — no server
-                  // restart, the conversation carries forward. Fall back to a
-                  // cold start only when nothing is connected yet.
-                  if (ready) switchEngine(id);
-                  else void startWith(activeDir, id);
-                }}
-              >
-                {Object.values(ENGINES).map((engine) => (
-                  <DropdownMenuRadioItem key={engine.id} value={engine.id}>
-                    {engine.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          )}
           {activeDir && <QuotaButton engineId={engineId || (project.status === "running" ? project.engineId : null)} />}
           <button type="button" className={iconBtn} disabled aria-label="Search">
             <SearchIcon className="size-4" />
@@ -684,13 +655,10 @@ export function App() {
 
         <div
           className={cn(
-            "relative z-10 mt-auto w-full px-6 pb-6",
-            // Home is a canvas, not a transcript: the composer sits out of the
-            // way in the corner. A chat keeps the wide centred column so the
-            // input lines up with the messages above it.
+            "relative z-10 mt-auto w-full pb-6",
             view === "home"
-              ? "ml-auto max-w-md"
-              : "mx-auto max-w-5xl",
+              ? "ml-auto max-w-md px-[var(--spacing-app-panel-gutter-inline)]"
+              : "px-[var(--spacing-app-panel-gutter-inline)]",
           )}
         >
           <div className="relative flex flex-col gap-2.5 rounded-composer bg-surface-chat-composer p-3 [-webkit-backdrop-filter:var(--backdrop-composer-glass)] [backdrop-filter:var(--backdrop-composer-glass)]">
@@ -848,13 +816,30 @@ export function App() {
             />
             <div className="flex items-center justify-between gap-2 px-1">
               <div className="flex flex-wrap items-center gap-2">
-                {configOptions.map((option) => (
+                <EnginePicker
+                  selectedEngineId={engineId || (project.status === "running" ? project.engineId : null) || undefined}
+                  loading={project.status === "starting"}
+                  onSelect={(id) => {
+                    const currentId =
+                      engineId ||
+                      (project.status === "running" ? project.engineId : null);
+                    if (id === currentId) return;
+                    if (ready) switchEngine(id);
+                    else if (activeDir) void startWith(activeDir, id);
+                  }}
+                  onRequestManageProviders={() => setProvidersDialogOpen(true)}
+                />
+                {configOptions
+                  .filter((option) => option.category !== "model" && !["plan", "build", "effort", "fast"].includes(option.id))
+                  .map((option) => (
                   <ConfigPicker
                     key={option.id}
                     option={option}
                     value={configValues[option.id]}
                     onSelect={setConfig}
                     disabled={!ready || busy}
+                    allOptions={configOptions}
+                    allValues={configValues}
                   />
                 ))}
               </div>
@@ -931,6 +916,11 @@ export function App() {
           remember(dir, editingProject?.engineId, meta);
           if (!editingProject && dir !== activeDir) void startWith(dir);
         }}
+      />
+
+      <ProvidersDialog
+        open={providersDialogOpen}
+        onOpenChange={setProvidersDialogOpen}
       />
     </div>
   );
