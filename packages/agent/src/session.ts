@@ -3,10 +3,12 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type {
+  AuthMethod,
   SessionConfigOption,
   SessionUpdate,
   TaskContract,
 } from "@weave/protocol";
+import { isAuthRequiredError } from "@weave/protocol";
 import { spawnAgent, type SpawnedAgent } from "./spawn.ts";
 import {
   confineToTaskDir,
@@ -41,12 +43,41 @@ export interface OpenSessionOptions {
   engineId?: string;
 }
 
+/**
+ * `session/new` was refused until the user signs in.
+ *
+ * Carries the methods the engine advertised at `initialize`, so the caller can
+ * offer an action instead of relaying a dead-end string. Weave used to drop
+ * `authMethods` on the floor and surface only `error.message`, which is why
+ * "Could not switch engine: Authentication required…" had nothing to click.
+ */
+export class AuthRequiredError extends Error {
+  readonly engineId: string;
+  readonly authMethods: AuthMethod[];
+
+  constructor(engineId: string, authMethods: AuthMethod[], cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "AuthRequiredError";
+    this.engineId = engineId;
+    this.authMethods = authMethods;
+  }
+}
+
 export interface AgentSession {
   /** Which engine is on the other end. */
   engineId: string;
   sessionId: string;
   resumed: boolean;
   configOptions: SessionConfigOption[];
+  /** What the engine advertised at `initialize`. Empty when it needs no auth. */
+  authMethods: AuthMethod[];
+  /**
+   * Tell the engine a method was satisfied.
+   *
+   * Enough on its own only for agent-handled methods. A `terminal` method
+   * needs its command run first — see `runTerminalAuth`.
+   */
+  authenticate(methodId: string): Promise<void>;
   prompt(text: string): Promise<{ stopReason: string }>;
   cancel(): Promise<void>;
   setConfigOption(configId: string, value: string): Promise<void>;
@@ -188,6 +219,9 @@ export async function openSession(
   let configOptions: SessionConfigOption[] = [];
   let resumed = false;
   const canLoadSession = init.agentCapabilities?.loadSession === true;
+  // Kept, not discarded: this is the only place the engine says how to sign
+  // in, and the caller needs it the moment `session/new` refuses.
+  const authMethods: AuthMethod[] = init.authMethods ?? [];
 
   if (canLoadSession && options.resumeSessionId) {
     try {
@@ -209,12 +243,22 @@ export async function openSession(
   }
 
   if (!resumed) {
-    const created = await connection.newSession({
-      cwd: task.cwd,
-      mcpServers: [],
-    });
-    sessionId = created.sessionId;
-    configOptions = created.configOptions ?? [];
+    try {
+      const created = await connection.newSession({
+        cwd: task.cwd,
+        mcpServers: [],
+      });
+      sessionId = created.sessionId;
+      configOptions = created.configOptions ?? [];
+    } catch (error) {
+      // Kill the child before rethrowing: an engine that refuses every session
+      // would otherwise leak one process per switch attempt.
+      if (isAuthRequiredError(error)) {
+        spawned.stop();
+        throw new AuthRequiredError(spawned.engine.id, authMethods, error);
+      }
+      throw error;
+    }
   }
 
   sink.onSession(sessionId, resumed, configOptions);
@@ -232,6 +276,12 @@ export async function openSession(
     },
     get configOptions() {
       return configOptions;
+    },
+    get authMethods() {
+      return authMethods;
+    },
+    async authenticate(methodId: string) {
+      await connection.authenticate({ methodId });
     },
     async prompt(text: string) {
       const result = await connection.prompt({

@@ -10,6 +10,7 @@ import type {
   GitStatus,
   ServerMessage,
 } from "../server/index.ts";
+import type { EngineAuthMethod, EngineAuthOperation } from "@weave/protocol";
 
 export type { ConversationMeta };
 
@@ -89,6 +90,19 @@ export function useAcpChat(port: number | null) {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * An engine that refused to open a session until the user signs in, plus the
+   * sign-in itself once started. Both are backend-owned snapshots — the UI
+   * never derives them, it only renders what the last message said.
+   */
+  const [authRequired, setAuthRequired] = useState<{
+    engineId: string;
+    engineLabel: string;
+    message: string;
+    methods: EngineAuthMethod[];
+  } | null>(null);
+  const [authOperation, setAuthOperation] =
+    useState<EngineAuthOperation | null>(null);
   /** The agent's own settings — `model`, `mode`, whatever else it advertises. */
   const [configOptions, setConfigOptions] = useState<SessionConfigOption[]>([]);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
@@ -292,6 +306,7 @@ export function useAcpChat(port: number | null) {
         switch (message.type) {
           case "ready":
             setState("ready");
+            setAuthRequired(null);
             setCwd(message.cwd);
             setEngineId(message.engineId);
             setEngineLabel(message.engineLabel);
@@ -357,6 +372,24 @@ export function useAcpChat(port: number | null) {
           case "reset":
             setTurns([]);
             return;
+          case "auth-required":
+            // Deliberately NOT `setError`: this is a state with an action, and
+            // routing it through the error toast is what left the user staring
+            // at "Authentication required…" with nothing to click.
+            setAuthRequired({
+              engineId: message.engineId,
+              engineLabel: message.engineLabel,
+              message: message.message,
+              methods: message.methods,
+            });
+            setBusy(false);
+            return;
+          case "auth-state":
+            setAuthOperation(message.operation);
+            // A sign-in that took clears the prompt that caused it; `ready`
+            // arrives separately and rebinds the conversation.
+            if (message.operation.status === "succeeded") setAuthRequired(null);
+            return;
           case "error":
             setError(message.message);
             setBusy(false);
@@ -419,6 +452,23 @@ export function useAcpChat(port: number | null) {
 
   const cancel = useCallback(() => {
     socketRef.current?.send(JSON.stringify({ type: "cancel" }));
+  }, []);
+
+  /** Start a sign-in. Progress arrives as `auth-state` snapshots. */
+  const startAuth = useCallback((engineId: string, methodId: string) => {
+    socketRef.current?.send(
+      JSON.stringify({ type: "start-auth", engineId, methodId }),
+    );
+  }, []);
+
+  const cancelAuth = useCallback(() => {
+    socketRef.current?.send(JSON.stringify({ type: "cancel-auth" }));
+  }, []);
+
+  /** Drop a finished sign-in the UI has shown. */
+  const clearAuth = useCallback(() => {
+    setAuthOperation(null);
+    setAuthRequired(null);
   }, []);
 
   /** Ask the server for project paths matching `query` (for `@file`). */
@@ -508,6 +558,11 @@ export function useAcpChat(port: number | null) {
     activeSessionId,
     send,
     switchEngine,
+    authRequired,
+    authOperation,
+    startAuth,
+    cancelAuth,
+    clearAuth,
     fileMatches,
     requestFiles,
     clearFileMatches,

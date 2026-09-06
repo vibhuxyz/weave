@@ -6,7 +6,8 @@ How the pieces fit, and why the seams are where they are.
 > are `@berd/*`, the CLI is `berd`, runtime output is `.berd/`. Every path here
 > is the real one. The rename is tracked in [V1](V1.md) under V1.1.
 
-Tiers: [V1](V1.md) · [MVP](MVP.md) · [V2](V2.md) · [V3](V3.md) · [V4](V4.md) ·
+Tiers: [V1](V1.md) · [CONTINUATION](CONTINUATION.md) · [MVP](MVP.md) ·
+[V2](V2.md) · [V3](V3.md) · [V4](V4.md) ·
 [ROADMAP](ROADMAP.md) · [LADDER](LADDER.md) · [FINDINGS](FINDINGS.md)
 
 ---
@@ -78,12 +79,13 @@ Planned, by tier — each tier file has the detail:
 | Tier | Files |
 |---|---|
 | [V1.1](V1.md) | `intake.ts` · `verify.ts` |
+| [V1.2](CONTINUATION.md) | `state.ts` · `checkpoint.ts` · `handoff.ts` · `tasks-store.ts` |
 | [MVP.1](MVP.md) | `worktree.ts` · `pool.ts` · `scheduler.ts` · `integrator.ts` · `compress.ts` |
 | [MVP.2](MVP.md) | `planner.ts` · `blueprint.ts` · `contracts.ts` · `decide.ts` |
 | [V2.1](V2.md) | `ownership.ts` · `bus.ts` · `state.ts` |
 | [V2.2](V2.md) | `context/` — `scan · model · graph · docs · index · update · retrieve · impact` |
 | [V3.1](V3.md) | `routing.ts` · `budget.ts` · `scale.ts` · `critpath.ts` |
-| [V3.2](V3.md) | `supervisor.ts` · `checkpoint.ts` · `policy.ts` · `replay.ts` |
+| [V3.2](V3.md) | `supervisor.ts` · `policy.ts` · `replay.ts` |
 
 `contracts.ts` generates a contract package **inside the target repo**. It is
 not a new workspace member here — the "a new version adds a file to an existing

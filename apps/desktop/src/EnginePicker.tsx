@@ -1,54 +1,49 @@
 import { useState, useEffect } from "react";
+import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { ComposerActionButton } from "@/shared/ui/composer-action-button";
-import { CheckIcon, ChevronDownIcon, SparklesIcon, ArrowLeftRightIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, SparklesIcon } from "lucide-react";
 import { ScrollArea } from "@/shared/ui/scroll-area";
 import { cn } from "@/shared/lib/cn";
+import { flattenConfigValues } from "@/shared/lib/sessionConfig";
 import { ENGINES } from "@weave/agent/engines-registry.ts";
 import { getProviderIcon } from "@/shared/ui/icons/ProviderIcons";
 import { Spinner } from "@/shared/ui/spinner";
 
-const MOCK_INSTALLED = ["claude-code", "codex", "antigravity"];
-
-const MOCK_MODELS: Record<string, { id: string, label: string }[]> = {
-  "claude-code": [
-    { id: "claude-fable", label: "Claude Fable 5 1[1m]" },
-    { id: "haiku", label: "Haiku" },
-    { id: "opus", label: "Opus" },
-    { id: "sonnet", label: "Sonnet" },
-  ],
-  codex: [
-    { id: "gpt-5.4-mini", label: "GPT 5.4 Mini" },
-    { id: "gpt-5.5", label: "GPT 5.5" },
-    { id: "gpt-5.6-luna", label: "GPT 5.6 Luna" },
-    { id: "gpt-5.6-terra", label: "GPT 5.6 Terra" },
-  ],
-  amp: [
-    { id: "amp-model", label: "Amp" },
-  ],
-  gemini: [
-    { id: "gemini-flash", label: "Gemini 1.5 Flash" },
-    { id: "gemini-pro", label: "Gemini 1.5 Pro" },
-  ],
-  antigravity: [
-    { id: "agy-model", label: "Antigravity" },
-  ]
-};
-
-export function EnginePicker({
-  selectedEngineId,
-  loading = false,
-  onSelect,
-  onRequestManageProviders,
-}: {
+export interface EnginePickerProps {
   selectedEngineId: string | undefined;
+  /** Install state from the orchestrator; empty until it reports in. */
+  engines: { id: string; label: string; installed: boolean }[];
+  /** The running agent's model selector, if it advertises one. */
+  modelOption: SessionConfigOption | undefined;
+  modelValue: string | undefined;
   loading?: boolean;
   onSelect: (id: string) => void;
+  onSelectModel: (configId: string, value: string) => void;
   onRequestManageProviders: () => void;
-}) {
+}
+
+/**
+ * Agent on the left, that agent's models on the right.
+ *
+ * The model column is whatever the running agent advertises through
+ * `newSession().configOptions` — ACP has no separate model list, so only the
+ * live session can answer "which models does this agent have?". Hovering an
+ * agent that is not the running one therefore shows no models; picking that
+ * agent switches the session, and its models arrive with the new one.
+ */
+export function EnginePicker({
+  selectedEngineId,
+  engines,
+  modelOption,
+  modelValue,
+  loading = false,
+  onSelect,
+  onSelectModel,
+  onRequestManageProviders,
+}: EnginePickerProps) {
   const [open, setOpen] = useState(false);
   const [focusedEngineId, setFocusedEngineId] = useState<string | undefined>(selectedEngineId);
-  const [selectedModelId, setSelectedModelId] = useState<string>("");
 
   // Reset focus when opening/closing
   useEffect(() => {
@@ -56,15 +51,6 @@ export function EnginePicker({
       setFocusedEngineId(selectedEngineId);
     }
   }, [open, selectedEngineId]);
-
-  // When engine changes, switch model to default if it doesn't exist
-  useEffect(() => {
-    if (!selectedEngineId) return;
-    const models = MOCK_MODELS[selectedEngineId] || [{ id: selectedEngineId, label: ENGINES[selectedEngineId]?.label || "Agent" }];
-    if (!models.find(m => m.id === selectedModelId)) {
-      setSelectedModelId(models[0].id);
-    }
-  }, [selectedEngineId, selectedModelId]);
 
   let triggerProviderIcon;
   if (loading) {
@@ -75,11 +61,24 @@ export function EnginePicker({
     triggerProviderIcon = <SparklesIcon className="size-4 text-muted-foreground" />;
   }
 
-  const triggerModels = selectedEngineId ? (MOCK_MODELS[selectedEngineId] || [{ id: selectedEngineId, label: ENGINES[selectedEngineId]?.label || "Agent" }]) : [];
-  const selectedModel = triggerModels.find(m => m.id === selectedModelId) || triggerModels[0];
+  const modelValues = flattenConfigValues(modelOption);
+  const selectedModel = modelValues.find((entry) => entry.value === modelValue);
+  const selectedEngineLabel = selectedEngineId
+    ? ENGINES[selectedEngineId]?.label
+    : undefined;
+
+  // An agent the orchestrator has not reported on yet is treated as usable —
+  // an empty list means "not known", not "nothing is installed".
+  const installedIds = new Set(
+    engines.filter((engine) => engine.installed).map((engine) => engine.id),
+  );
+  const isInstalled = (engineId: string) =>
+    engines.length === 0 || installedIds.has(engineId);
 
   const displayEngineId = focusedEngineId || selectedEngineId;
-  const models = displayEngineId ? (MOCK_MODELS[displayEngineId] || [{ id: displayEngineId, label: ENGINES[displayEngineId]?.label || "Agent" }]) : [];
+  const showsLiveModels =
+    Boolean(displayEngineId) && displayEngineId === selectedEngineId;
+  const models = showsLiveModels ? modelValues : [];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -93,7 +92,9 @@ export function EnginePicker({
           className="chat-composer-selector-trigger group min-w-0 max-w-full"
         >
           <span className="chat-composer-selector-label flex min-w-0 items-baseline gap-1.5 truncate max-w-56">
-            <span className="min-w-0 truncate">{selectedModel?.label || "Select Model"}</span>
+            <span className="min-w-0 truncate">
+              {selectedModel?.name || selectedEngineLabel || "Select Agent"}
+            </span>
           </span>
         </ComposerActionButton>
       </PopoverTrigger>
@@ -116,19 +117,25 @@ export function EnginePicker({
                         const isSelected = engine.id === selectedEngineId;
                         const isFocused = engine.id === focusedEngineId;
                         const engineIcon = getProviderIcon(engine.id, "size-4");
-                        const installed = MOCK_INSTALLED.includes(engine.id);
+                        const installed = isInstalled(engine.id);
                         return (
                           <button
                             key={engine.id}
                             onMouseEnter={() => setFocusedEngineId(engine.id)}
                             onClick={() => {
+                              setFocusedEngineId(engine.id);
                               if (!installed) {
                                 onRequestManageProviders();
+                                setOpen(false);
+                                return;
                               }
-                              // We don't close or fully select here if they just click the agent,
-                              // they need to click a model on the right. Or if we want, we can select the default model.
-                              // For now, let's just let hover do the work, or if they click, focus it.
-                              setFocusedEngineId(engine.id);
+                              // Switching the agent is the whole point of the
+                              // column: its models only exist once its session
+                              // is running, so the click cannot wait for one.
+                              if (!isSelected) {
+                                onSelect(engine.id);
+                                setOpen(false);
+                              }
                             }}
                             data-picker-nav-item
                             data-selected={isFocused || undefined}
@@ -169,15 +176,14 @@ export function EnginePicker({
                   <div className="space-y-0.5 p-1">
                     {models.length > 0 ? (
                       models.map((model) => {
-                        const isSelected = displayEngineId === selectedEngineId && model.id === selectedModelId;
+                        const isSelected = model.value === modelValue;
                         return (
                           <button
-                            key={model.id}
+                            key={model.value}
                             onClick={() => {
-                              if (displayEngineId) {
-                                onSelect(displayEngineId);
+                              if (modelOption) {
+                                onSelectModel(modelOption.id, model.value);
                               }
-                              setSelectedModelId(model.id);
                               setOpen(false);
                             }}
                             data-picker-nav-item
@@ -188,7 +194,7 @@ export function EnginePicker({
                               isSelected && "bg-accent"
                             )}
                           >
-                            <span className="min-w-0 flex-1 truncate">{model.label}</span>
+                            <span className="min-w-0 flex-1 truncate">{model.name}</span>
                             {isSelected && (
                               <CheckIcon className="size-4 shrink-0 text-muted-foreground" />
                             )}
@@ -197,7 +203,11 @@ export function EnginePicker({
                       })
                     ) : (
                       <div className="px-2 py-2 text-sm text-muted-foreground">
-                        Select an agent first
+                        {!displayEngineId
+                          ? "Select an agent first"
+                          : showsLiveModels
+                            ? `${selectedEngineLabel ?? "This agent"} has no model setting`
+                            : `Switch to ${ENGINES[displayEngineId]?.label ?? "this agent"} to see its models`}
                       </div>
                     )}
                   </div>

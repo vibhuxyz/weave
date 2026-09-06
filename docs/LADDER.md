@@ -6,6 +6,7 @@ version lives.
 The *reasoning* behind the tiers is in [ROADMAP](ROADMAP.md). The *detail* for
 each tier — files, acceptance criteria, edge cases — is in its own file:
 [V1](V1.md) · [MVP](MVP.md) · [V2](V2.md) · [V3](V3.md) · [V4](V4.md).
+One feature spans its own doc: [CONTINUATION](CONTINUATION.md) — V1.2.
 
 **A new version adds a file to an existing package, not a new top-level
 folder.** If something fits none of protocol / agent / core / cli / eval /
@@ -19,6 +20,7 @@ desktop, that is a signal to think — not to create `packages/utils`.
 |---|---|---|---|
 | ✅ | **V1.0** headless single-agent runner | Shipped `278bf8a` | `packages/{protocol,agent,core,cli}` |
 | ✅ | **V1.1** intake · verification ladder · eval harness | Shipped | `core/{intake,verify}.ts`, `eval/`, `protocol/{task,eval,verification}.ts` |
+| ⬜ | **V1.2** task state · checkpoints · engine handoff | Not started | `core/{state,checkpoint,handoff,tasks-store}.ts`, `protocol/continuation.ts` |
 | ⬜ | **MVP.1** worktrees · pool · scheduler · integrator | Not started | `core/{worktree,pool,scheduler,integrator,compress}.ts` |
 | ⬜ | **MVP.2** planner · blueprint · contracts · decide | Not started | `core/{planner,blueprint,contracts,decide}.ts` |
 | ⬜ | **MVP.3** lanes in the UI | Not started | `apps/desktop/src/useAcpChat.ts` |
@@ -26,7 +28,7 @@ desktop, that is a signal to think — not to create `packages/utils`.
 | ⬜ | **V2.2** project intelligence | Not started | `core/context/` |
 | ⬜ | **V2.3** the full dashboard | Not started | `apps/desktop` |
 | ⬜ | **V3.1** routing · budgets · adaptive scale | Not started | `core/{routing,budget,scale,critpath}.ts` |
-| ⬜ | **V3.2** supervisor · checkpoints · policy · replay | Not started | `core/{supervisor,checkpoint,policy,replay}.ts` |
+| ⬜ | **V3.2** supervisor · policy · replay CLI | Not started | `core/{supervisor,policy,replay}.ts` — `checkpoint.ts` pulled forward to [V1.2](CONTINUATION.md) |
 | ⬜ | **V3.3** sandboxing · extended ladder | Not started | `core/policy.ts`, `core/verify.ts` |
 | ⬜ | **V4** distributed | Not started, gated | — |
 

@@ -249,3 +249,154 @@ a task could run — full engine verification needs a Gemini or Codex API key
 this environment does not have, so "an agent actually completes a task" is
 still unverified for both. The debt list in [V1](V1.md) is honest about that;
 this closes the narrower "is the registry row even a real package" half.
+
+---
+
+## The packaged app was four bugs, not one
+
+`Weave.app` showed **"could not resolve repo root"** on the engine-install
+screen. That string was the first of four independent failures, each of which
+would have surfaced only once the one before it was fixed.
+
+**1. A bundled app has no working directory.** Both `install_engine` and
+`start_agent_server` derived their root like this:
+
+```rust
+std::env::current_dir()?.parent()          // dev: src-tauri → apps/desktop
+```
+
+macOS launches Finder/Dock apps with cwd `/`, and `Path::new("/").parent()` is
+`None` — hence the error. Verified on the running app: `lsof -p <pid> -d cwd`
+reported `/`.
+
+The fix is not a better fallback, it is **not asking**: `env!("CARGO_MANIFEST_DIR")`
+is baked in at compile time for dev, and `resource_dir()` is correct for a
+bundle. Neither depends on where the app was launched from.
+
+**2. There is no workspace to install into.** `install_engine` ran
+`pnpm -F @weave/agent add <pkg>` — a command that mutates a *source tree*. It
+only ever worked because the app was being run out of its own checkout.
+Engines now install to `<appData>/engines` with `npm --prefix`, and
+`resolveEngineEntry` reads `WEAVE_ENGINES_DIR` before falling back to
+workspace resolution.
+
+**3. The server was never in the bundle.** `tauri.conf.json` had no
+`resources` key, and the Rust looked for `repo_root/server/index.ts` — running
+raw TypeScript via `node --experimental-strip-types`, which also demands node
+22.6+ on the user's machine. It now ships as one prebundled ESM file
+(`scripts/bundle-server.mjs`, esbuild, ~950 KB), dropping the runtime
+requirement to plain node 18.
+
+**4. `node` is not on a GUI app's PATH.** LaunchServices gives an app
+`/usr/bin:/bin:/usr/sbin:/sbin`. Homebrew, nvm, fnm, volta and asdf all live
+outside it, so `Command::new("node")` fails with ENOENT even though node is
+plainly installed:
+
+```
+$ env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin sh -c 'command -v node'
+node NOT FOUND          # while `which node` says /opt/homebrew/bin/node
+```
+
+`resolve_node()` searches PATH, then the known install locations, then probes
+the login shell with `-ilc` (nvm and fnm initialise in `.zshrc`, which only an
+*interactive* shell reads). Every spawned child gets a PATH with node's own
+directory prepended.
+
+### Two things that only showed up when tested against the real bundle
+
+**Tauri preserves a resource's source path.** `"resources": ["resources/server.mjs"]`
+lands the file at `Contents/Resources/**resources/**server.mjs`, while
+`resource_dir()` returns `Contents/Resources`. The map form
+(`{"resources/server.mjs": "server.mjs"}`) flattens it. Declaring the resource
+is not the same as being able to find it.
+
+**`tauri dev` copies resources too.** So a resource-first lookup finds a stale
+bundle in `target/debug` and silently stops picking up server edits. The dev
+branch has to be checked **first**, and the ordering deserves a comment
+because it looks arbitrary.
+
+### The test that mattered
+
+Running the built `.app` from inside `target/` reported `claude-code` as
+installed when it was not: node's upward `node_modules` walk escaped the
+bundle and reached the workspace. Copying the `.app` outside the repo first is
+the only honest test — and it is why `resolveEngineEntry` checks the app-data
+directory *before* the workspace.
+
+---
+
+## Engines can refuse a session, and we were throwing away the fix
+
+"Could not switch engine: Authentication required: By continuing, you agree to
+https://antigravity.google/terms" — a red toast with nothing to click.
+
+The engine was not being unhelpful. `agy-acp` answers `initialize` with:
+
+```json
+"authMethods": [{ "type": "terminal", "id": "agy-login", "name": "Login",
+                  "args": ["--login"], "_meta": { "terminal-auth": {…} } }]
+```
+
+`openSession` read exactly one field off that response —
+`agentCapabilities.loadSession` — and dropped the rest. `authenticate` appeared
+**zero times** in the repo. So the one place an engine says how to sign in was
+discarded, and all that survived was its refusal.
+
+### `authenticate` alone is a trap
+
+Calling `connection.authenticate({ methodId })` on a `terminal` method returns
+`{}` — success — and authenticates nothing. The contract for that type is that
+the *client* runs a command the user can interact with; the engine has no way
+to do it. An implementation that only called `authenticate` would look correct,
+report success, and leave the user unauthenticated.
+
+So the flow has to be: run the command → `authenticate` → **try to open a
+session again**. Only that last step is evidence.
+
+### Deriving the command
+
+`AuthMethodTerminal` carries `args` but no `command`: the spec means "run the
+agent with these args". Default to `execPath + engineEntry + engine.args +
+method.args`, and prefer `_meta["terminal-auth"]` when the engine publishes it,
+because the engine knows its own invocation better than we can reconstruct it.
+For agy the two agree exactly, which is the check that the derivation is right.
+
+### Shaped like Berd's agent setup, deliberately
+
+Same contract as `AgentSetupOperation` in the Berd reference: the backend owns
+the operation, the UI is a pure view, and **every change ships the whole
+bounded snapshot** rather than a delta — no incremental merge for a
+reconnecting client to get wrong. `output` is the feature, not logging: device
+codes and verification URLs are printed there and a human has to read them, so
+both are lifted out of the stream and shown on their own (`ProviderSetupOutput`
+does the same, down to the device-code regex).
+
+The one thing moved: Berd runs this in Rust because it has no Node server.
+Weave's Node server already owns the engine children and has a live socket, so
+it owns the operation. Copying the *placement* rather than the *principle*
+would have meant a Tauri command that shells out to an engine it cannot
+resolve.
+
+### The default engine needs auth, so connecting could die
+
+`DEFAULT_ENGINE_ID` is `antigravity`. On a fresh install `createEngineSupervisor`
+throws before any handler is registered — a dead window, and no way to sign in,
+because every action needs a live supervisor. `openFirstUsableEngine` now
+reports the refusal and falls back to an engine that opens, saying which one.
+Announced, never silent.
+
+### What testing this cost
+
+The bug stopped reproducing halfway through: once agy is authenticated,
+`session/new` just succeeds. Worse, it is **slow** — 6 to 30+ seconds — so an
+early probe with a 25s timeout looked like a hang and an 8s one looked like a
+refusal. Neither was true.
+
+The fix was a stub ACP engine that refuses until a marker file exists. That
+made all three paths deterministic and offline: refuse → sign in → stream →
+retry → bound; and the subtle one, *login exits 0 but the engine still
+refuses*, which must report "Signed in, but the engine still refuses a
+session" rather than claiming success.
+
+**Related, unfixed:** `openSession` has no timeout. A slow or wedged engine
+hangs a switch forever with no feedback.

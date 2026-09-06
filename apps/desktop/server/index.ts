@@ -21,6 +21,9 @@ import {
   createEngineSupervisor,
   getEngine,
   installedEngines,
+  isTerminalMethod,
+  runTerminalAuth,
+  AuthRequiredError,
   ENGINES,
   DEFAULT_ENGINE_ID,
 } from "@weave/agent";
@@ -38,10 +41,14 @@ import {
   type GitStatus,
 } from "@weave/core";
 import type {
+  AuthMethod,
+  EngineAuthMethod,
+  EngineAuthOperation,
   SessionConfigOption,
   SessionUpdate,
   TaskContract,
 } from "@weave/protocol";
+import { toEngineAuthMethod } from "@weave/protocol";
 
 export const DEFAULT_PORT = 8137;
 export type { GitStatus, GitChange, ConversationMeta } from "@weave/core";
@@ -56,6 +63,10 @@ export type ClientMessage =
   | { type: "open-chat"; sessionId: string }
   /** Rebind this conversation to a different engine. */
   | { type: "switch-engine"; engineId: string }
+  /** Sign in to an engine that refused a session. */
+  | { type: "start-auth"; engineId: string; methodId: string }
+  /** Abandon a sign-in that is still running. */
+  | { type: "cancel-auth" }
   /** Fuzzy path lookup for the `@file` mention menu. */
   | { type: "list-files"; query: string };
 
@@ -86,6 +97,27 @@ export type ServerMessage =
   | { type: "git-status"; git: GitStatus }
   | { type: "turn-end"; stopReason: string }
   | { type: "error"; message: string }
+  /**
+   * An engine refused to open a session until the user signs in.
+   *
+   * Sent INSTEAD of `error`, because the engine's own message is a dead end:
+   * it names the problem and offers nothing to do about it. `methods` is what
+   * the engine advertised at `initialize`.
+   */
+  | {
+      type: "auth-required";
+      engineId: string;
+      engineLabel: string;
+      message: string;
+      methods: EngineAuthMethod[];
+    }
+  /**
+   * The whole current state of a sign-in, resent on every change.
+   *
+   * A full snapshot rather than a delta: there is then no incremental merge
+   * for the UI to get wrong, and a remount rehydrates from one message.
+   */
+  | { type: "auth-state"; operation: EngineAuthOperation }
   /** Which engines ("providers") have their package installed. */
   | {
       type: "engines";
@@ -268,11 +300,130 @@ async function handleConnection(
   // which knows the right engine id and reset semantics.
   let announced = false;
 
-  const supervisor = await createEngineSupervisor({
+  // ---------------------------------------------------------------------
+  // Signing in to an engine
+  //
+  // Mirrors Berd's agent-setup flow: the backend owns the operation, the UI is
+  // a pure view, and every change ships the whole bounded snapshot. Here the
+  // backend is this server rather than the Rust shell, because this is the
+  // process that owns the engine children and already has a live socket.
+  // ---------------------------------------------------------------------
+
+  /** The sign-in in flight, if any. One at a time — it is a modal action. */
+  let auth: { operation: EngineAuthOperation; abort: AbortController } | null =
+    null;
+  /** Methods an engine advertised when it refused, keyed by engine id. */
+  const authMethodsByEngine = new Map<string, AuthMethod[]>();
+
+  const publishAuth = (patch: Partial<EngineAuthOperation>) => {
+    if (!auth) return;
+    auth.operation = { ...auth.operation, ...patch };
+    send({ type: "auth-state", operation: auth.operation });
+  };
+
+  /** Relay an auth refusal as something the UI can act on. */
+  const sendAuthRequired = (error: AuthRequiredError) => {
+    authMethodsByEngine.set(error.engineId, error.authMethods);
+    send({
+      type: "auth-required",
+      engineId: error.engineId,
+      engineLabel: getEngine(error.engineId).label,
+      message: error.message,
+      methods: error.authMethods.map(toEngineAuthMethod),
+    });
+  };
+
+  /**
+   * Bind the conversation to `engineId`, announcing the result.
+   *
+   * Shared by `switch-engine` and by the retry after a successful sign-in, so
+   * both paths report identically — including refusing again, which is the
+   * normal outcome when a login was abandoned halfway.
+   */
+  const bindEngine = async (engineId: string): Promise<boolean> => {
+    try {
+      await supervisor.switchTo(engineId);
+    } catch (error) {
+      if (error instanceof AuthRequiredError) {
+        sendAuthRequired(error);
+        return false;
+      }
+      throw error;
+    }
+    currentEngineId = engineId;
+    persisted = false;
+    // The new engine's session never saw the conversation — carry it.
+    pendingPreamble = carryForwardDigest() || null;
+    ledger.append("agent.session", {
+      taskId: task.id,
+      sessionId: supervisor.current.sessionId,
+      resumed: false,
+      configOptions: supervisor.current.configOptions,
+    });
+    send({ type: "reset" });
+    send({
+      type: "ready",
+      sessionId: supervisor.current.sessionId,
+      cwd: projectDir,
+      engineId: currentEngineId,
+      engineLabel: getEngine(currentEngineId).label,
+      configOptions: supervisor.current.configOptions,
+      resumed: false,
+    });
+    await sendChats();
+    return true;
+  };
+
+  /**
+   * Open the first engine that will actually talk to us.
+   *
+   * The default engine needs a sign-in on a fresh install, and a connection
+   * that dies here leaves the user with a dead window and no way to sign in —
+   * every action below needs a live supervisor. So: report the refusal (the UI
+   * gets a real sign-in button), then fall back to an engine that opens, and
+   * say which one. Announced, never silent.
+   */
+  const openFirstUsableEngine = async (
+    wanted: string,
+    options: Omit<Parameters<typeof createEngineSupervisor>[0], "engineId">,
+  ) => {
+    const order = [
+      wanted,
+      ...installedEngines()
+        .map((entry) => entry.id)
+        .filter((id) => id !== wanted),
+    ];
+    let refusal: AuthRequiredError | null = null;
+
+    for (const engineId of order) {
+      try {
+        const opened = await createEngineSupervisor({ ...options, engineId });
+        if (refusal) {
+          sendAuthRequired(refusal);
+          send({
+            type: "error",
+            message: `${getEngine(refusal.engineId).label} needs you to sign in. Using ${getEngine(engineId).label} for now.`,
+          });
+        }
+        currentEngineId = engineId;
+        return opened;
+      } catch (error) {
+        if (error instanceof AuthRequiredError) {
+          refusal ??= error;
+          continue;
+        }
+        throw error;
+      }
+    }
+    // Nothing opened. Rethrow the auth refusal rather than a generic failure,
+    // so the reason survives to the caller.
+    throw refusal ?? new Error("No engine could open a session.");
+  };
+
+  const supervisor = await openFirstUsableEngine(currentEngineId, {
     task,
     policy: confineToTaskDir,
     resumeSessionId: resumeId,
-    engineId: currentEngineId,
     sink: {
       onSpawned: (pid, entry) =>
         ledger.append("agent.spawned", { taskId: task.id, pid, entry }),
@@ -376,36 +527,99 @@ async function handleConnection(
         pending = pending
           // Supersede whatever is in flight on the old engine (II.13).
           .then(() => supervisor.current.cancel().catch(() => {}))
-          .then(() => supervisor.switchTo(nextEngineId))
-          .then(async () => {
-            currentEngineId = nextEngineId;
-            persisted = false;
-            // The new engine's session never saw the conversation — carry it.
-            pendingPreamble = carryForwardDigest() || null;
-            ledger.append("agent.session", {
-              taskId: task.id,
-              sessionId: supervisor.current.sessionId,
-              resumed: false,
-              configOptions: supervisor.current.configOptions,
-            });
-            send({ type: "reset" });
-            send({
-              type: "ready",
-              sessionId: supervisor.current.sessionId,
-              cwd: projectDir,
-              engineId: currentEngineId,
-              engineLabel: getEngine(currentEngineId).label,
-              configOptions: supervisor.current.configOptions,
-              resumed: false,
-            });
-            await sendChats();
-          })
+          // An auth refusal is reported by `bindEngine` as `auth-required`,
+          // not as an error — it is a state with an action, not a failure.
+          .then(() => bindEngine(nextEngineId))
           .catch((error: unknown) =>
             send({
               type: "error",
               message: `Could not switch engine: ${
                 error instanceof Error ? error.message : String(error)
               }`,
+            }),
+          );
+        return;
+      }
+
+      case "cancel-auth":
+        auth?.abort.abort();
+        return;
+
+      case "start-auth": {
+        if (auth?.operation.status === "running") return;
+        const { engineId, methodId } = message;
+        const engine = ENGINES[engineId];
+        const method = authMethodsByEngine
+          .get(engineId)
+          ?.find((entry) => entry.id === methodId);
+        if (!engine || !method) {
+          send({ type: "error", message: "That sign-in is no longer available." });
+          return;
+        }
+
+        const abort = new AbortController();
+        auth = {
+          abort,
+          operation: {
+            engineId,
+            methodId,
+            phase: "starting",
+            status: "running",
+            output: [],
+            error: null,
+          },
+        };
+        send({ type: "auth-state", operation: auth.operation });
+
+        pending = pending
+          .then(async () => {
+            // A terminal method is the only kind that needs a process. The
+            // others are satisfied by `authenticate` alone — and calling it on
+            // a terminal method is a no-op that reports success, which is
+            // exactly how this looked like it worked before.
+            if (isTerminalMethod(method)) {
+              publishAuth({ phase: "authenticating" });
+              const result = await runTerminalAuth({
+                engine,
+                method,
+                cwd: projectDir,
+                signal: abort.signal,
+                onOutput: (output) => publishAuth({ output }),
+              });
+              if (!result.ok) {
+                publishAuth({
+                  status: "failed",
+                  output: result.output,
+                  error: abort.signal.aborted
+                    ? "Sign-in cancelled."
+                    : `Sign-in exited with code ${result.code ?? "unknown"}.`,
+                });
+                return;
+              }
+              publishAuth({ output: result.output });
+            }
+
+            // Tell the engine the method was satisfied. Best-effort: some
+            // engines have already recorded it themselves by this point and
+            // answer with an error rather than acknowledging it twice.
+            publishAuth({ phase: "verifying" });
+            await supervisor.current.authenticate(methodId).catch(() => {});
+
+            // The only proof that matters: can it open a session now?
+            const bound = await bindEngine(engineId);
+            publishAuth(
+              bound
+                ? { status: "succeeded", error: null }
+                : {
+                    status: "failed",
+                    error: "Signed in, but the engine still refuses a session.",
+                  },
+            );
+          })
+          .catch((error: unknown) =>
+            publishAuth({
+              status: "failed",
+              error: error instanceof Error ? error.message : String(error),
             }),
           );
         return;
@@ -557,6 +771,7 @@ async function handleConnection(
 
   socket.on("close", () => {
     ledger.append("run.finished", { status: "ok", wallMs: 0 });
+    auth?.abort.abort();
     supervisor.killAll();
   });
 }

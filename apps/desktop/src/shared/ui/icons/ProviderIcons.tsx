@@ -433,6 +433,10 @@ const PROVIDER_ICON_MAP: Record<string, (className: string) => ReactNode> = {
   openai: (className) => <OpenAIIcon className={className} />,
   chatgpt_codex: (className) => <CodexIcon className={className} />,
   google: (className) => <GoogleGeminiIcon className={className} />,
+  gemini: (className) => <GoogleGeminiIcon className={className} />,
+  // Antigravity is Google's agent and runs Gemini by default; it has no mark
+  // of its own here yet, so it borrows the family one rather than going bare.
+  antigravity: (className) => <GoogleGeminiIcon className={className} />,
   "copilot-acp": (className) => <CopilotIcon className={className} />,
   github_copilot: (className) => <CopilotIcon className={className} />,
   "cursor-agent": (className) => <CursorIcon className={className} />,

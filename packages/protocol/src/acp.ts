@@ -5,6 +5,10 @@
  * When the SDK version moves, this is the one file that has to notice.
  */
 export type {
+  AuthMethod,
+  AuthMethodTerminal,
+  AuthenticateRequest,
+  InitializeResponse,
   ModelInfo,
   PermissionOption,
   PermissionOptionKind,

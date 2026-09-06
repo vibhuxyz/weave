@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   ArrowLeftIcon,
@@ -15,6 +15,7 @@ import { usePersistedState } from "@/shared/hooks/usePersistedState";
 import { useResizableSidebar } from "@/shared/hooks/useResizableSidebar";
 import { useTextareaAutosize } from "@/shared/hooks/useTextareaAutosize";
 import { cn } from "@/shared/lib/cn";
+import { flattenConfigValues, splitConfigOptions } from "@/shared/lib/sessionConfig";
 import { Message, MessageContent } from "@/shared/ui/ai-elements/message";
 import {
   DropdownMenu,
@@ -39,6 +40,7 @@ import {
   type Agent,
 } from "./useAgents";
 import { AgentMessage } from "./agent/components/AgentMessage";
+import { EngineAuthPanel } from "@/features/auth/EngineAuthPanel";
 import { ThinkingBlock } from "./agent/components/ThinkingBlock";
 import { UserMessage } from "./UserMessage";
 import { HomeView } from "./home/canvas/ui/HomeView";
@@ -96,6 +98,11 @@ export function App() {
     activeSessionId,
     send,
     switchEngine,
+    authRequired,
+    authOperation,
+    startAuth,
+    cancelAuth,
+    clearAuth,
     fileMatches,
     requestFiles,
     clearFileMatches,
@@ -189,24 +196,24 @@ export function App() {
     [project, choose, startWith, newChat, setView],
   );
 
+  /** What this agent advertises, sorted into the composer's three slots. */
+  const {
+    model: modelOption,
+    primary: primaryConfigOption,
+    children: childConfigOptions,
+  } = useMemo(() => splitConfigOptions(configOptions), [configOptions]);
+
   useEffect(() => {
     const want = pendingAgentModel.current;
     if (!want) return;
-    const modelOpt = configOptions.find(
-      (o) => o.type === "select" && (o.category === "model" || /model/i.test(o.id)),
+    if (!modelOption) return;
+    const match = flattenConfigValues(modelOption).find(
+      (entry) =>
+        entry.value === want || entry.name.toLowerCase() === want.toLowerCase(),
     );
-    if (modelOpt && modelOpt.type === "select") {
-      const flat = modelOpt.options.flatMap((e) =>
-        "group" in e ? e.options : [e],
-      );
-      const match = flat.find(
-        (v) =>
-          v.value === want || v.name.toLowerCase() === want.toLowerCase(),
-      );
-      if (match) setConfig(modelOpt.id, match.value);
-      pendingAgentModel.current = null;
-    }
-  }, [configOptions, setConfig]);
+    if (match) setConfig(modelOption.id, match.value);
+    pendingAgentModel.current = null;
+  }, [modelOption, setConfig]);
 
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -616,6 +623,22 @@ export function App() {
             </Message>
           )}
 
+          {authRequired && (
+            <EngineAuthPanel
+              engineLabel={authRequired.engineLabel}
+              message={authRequired.message}
+              methods={authRequired.methods}
+              operation={
+                authOperation?.engineId === authRequired.engineId
+                  ? authOperation
+                  : null
+              }
+              onStart={(methodId) => startAuth(authRequired.engineId, methodId)}
+              onCancel={cancelAuth}
+              onDismiss={clearAuth}
+            />
+          )}
+
           {error && (() => {
             const match = error.match(/is not installed \((.*?)\)/);
             return (
@@ -818,7 +841,11 @@ export function App() {
               <div className="flex flex-wrap items-center gap-2">
                 <EnginePicker
                   selectedEngineId={engineId || (project.status === "running" ? project.engineId : null) || undefined}
+                  engines={engines}
+                  modelOption={modelOption}
+                  modelValue={modelOption ? configValues[modelOption.id] : undefined}
                   loading={project.status === "starting"}
+                  onSelectModel={setConfig}
                   onSelect={(id) => {
                     const currentId =
                       engineId ||
@@ -829,19 +856,16 @@ export function App() {
                   }}
                   onRequestManageProviders={() => setProvidersDialogOpen(true)}
                 />
-                {configOptions
-                  .filter((option) => option.category !== "model" && !["plan", "build", "effort", "fast"].includes(option.id))
-                  .map((option) => (
+                {primaryConfigOption && (
                   <ConfigPicker
-                    key={option.id}
-                    option={option}
-                    value={configValues[option.id]}
+                    option={primaryConfigOption}
+                    value={configValues[primaryConfigOption.id]}
+                    childOptions={childConfigOptions}
+                    childValues={configValues}
                     onSelect={setConfig}
                     disabled={!ready || busy}
-                    allOptions={configOptions}
-                    allValues={configValues}
                   />
-                ))}
+                )}
               </div>
               {busy ? (
                 <Button

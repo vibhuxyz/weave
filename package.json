@@ -13,6 +13,7 @@
     "dev:server": "pnpm -F desktop server",
     "tauri": "pnpm -F desktop tauri",
     "build": "pnpm -F desktop build",
+    "build:app": "pnpm -F desktop tauri build && cp -a apps/desktop/src-tauri/target/release/bundle/macos/*.app ./",
     "weave": "pnpm -F @weave/cli start",
     "eval": "pnpm -F @weave/cli start eval",
     "typecheck": "pnpm -r typecheck"

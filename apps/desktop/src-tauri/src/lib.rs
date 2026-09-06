@@ -6,9 +6,9 @@
 //! a localhost WebSocket.
 
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -16,25 +16,240 @@ use tauri::{Manager, RunEvent, State};
 
 const SERVER_PORT: u16 = 8137;
 
+/// The bundled server is compiled to plain ESM, so this is the real floor.
+/// Dev additionally needs 22.6+ for `--experimental-strip-types`, which the
+/// dev path checks separately.
+const MIN_NODE_MAJOR: u32 = 18;
+
+// ---------------------------------------------------------------------------
+// Finding node
+//
+// A GUI app launched from Finder inherits LaunchServices' PATH —
+// `/usr/bin:/bin:/usr/sbin:/sbin` — and nothing else. Homebrew, nvm, fnm,
+// volta and asdf all live outside that, so `Command::new("node")` fails with
+// ENOENT in a packaged app even though node is plainly installed.
+//
+// Ordered cheapest-first. The login-shell probe is last because it spawns an
+// interactive shell, which costs ~100ms and runs the user's whole rc file.
+// ---------------------------------------------------------------------------
+
+static NODE: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+
+fn is_executable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path)
+            .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
+    }
+}
+
+/// `node -v` → major version. Also proves the binary actually runs, which a
+/// permissions check alone does not (a stale nvm shim resolves and then dies).
+fn node_major(node: &Path) -> Option<u32> {
+    let out = Command::new(node).arg("-v").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .trim_start_matches('v')
+        .split('.')
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// Anything already on PATH. Covers `pnpm tauri dev` from a terminal.
+fn node_on_path() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join("node"))
+        .find(|candidate| is_executable(candidate))
+}
+
+/// Every version manager's default layout, plus the two homebrew prefixes.
+fn node_in_known_locations() -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let home = std::env::var("HOME").unwrap_or_default();
+
+    for fixed in [
+        "/opt/homebrew/bin/node", // homebrew, Apple silicon
+        "/usr/local/bin/node",    // homebrew on Intel, and the official pkg
+        "/usr/bin/node",
+    ] {
+        found.push(PathBuf::from(fixed));
+    }
+    if !home.is_empty() {
+        found.push(PathBuf::from(&home).join(".volta/bin/node"));
+        found.push(PathBuf::from(&home).join(".asdf/shims/node"));
+        found.push(PathBuf::from(&home).join(".local/bin/node"));
+
+        // nvm keeps one directory per installed version. Take the highest,
+        // compared numerically — a lexical sort puts v9 above v20.
+        let nvm = PathBuf::from(&home).join(".nvm/versions/node");
+        if let Ok(entries) = std::fs::read_dir(&nvm) {
+            let mut versions: Vec<(Vec<u32>, PathBuf)> = entries
+                .filter_map(|entry| entry.ok())
+                .map(|entry| {
+                    let parts = entry
+                        .file_name()
+                        .to_string_lossy()
+                        .trim_start_matches('v')
+                        .split('.')
+                        .filter_map(|part| part.parse::<u32>().ok())
+                        .collect::<Vec<_>>();
+                    (parts, entry.path().join("bin/node"))
+                })
+                .filter(|(parts, _)| !parts.is_empty())
+                .collect();
+            versions.sort_by(|a, b| b.0.cmp(&a.0));
+            found.extend(versions.into_iter().map(|(_, path)| path));
+        }
+    }
+    found
+}
+
+/// Last resort: ask the user's login shell what *it* thinks PATH is.
+///
+/// `-ilc` because nvm and fnm initialise in `.zshrc`, which only an
+/// **interactive** shell reads. A login shell alone misses them.
+#[cfg(unix)]
+fn node_from_login_shell() -> Option<PathBuf> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    let out = Command::new(shell)
+        .args(["-ilc", "command -v node"])
+        .output()
+        .ok()?;
+    let found = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with('/'))?
+        .to_string();
+    Some(PathBuf::from(found))
+}
+
+#[cfg(not(unix))]
+fn node_from_login_shell() -> Option<PathBuf> {
+    None
+}
+
+fn resolve_node() -> Result<PathBuf, String> {
+    let candidates = node_on_path()
+        .into_iter()
+        .chain(node_in_known_locations())
+        .chain(node_from_login_shell());
+
+    let mut too_old: Option<(PathBuf, u32)> = None;
+    for candidate in candidates {
+        if !is_executable(&candidate) {
+            continue;
+        }
+        match node_major(&candidate) {
+            Some(major) if major >= MIN_NODE_MAJOR => return Ok(candidate),
+            Some(major) => too_old.get_or_insert((candidate, major)),
+            None => continue,
+        };
+    }
+
+    Err(match too_old {
+        Some((path, major)) => format!(
+            "Weave needs Node {MIN_NODE_MAJOR} or newer. Found v{major} at {}.",
+            path.display()
+        ),
+        None => "Weave could not find Node.js. Install it (https://nodejs.org) \
+                 and reopen the app."
+            .to_string(),
+    })
+}
+
+fn node() -> Result<&'static Path, String> {
+    NODE.get_or_init(resolve_node)
+        .as_deref()
+        .map_err(|error| error.clone())
+}
+
+/// npm ships beside node in every distribution and version manager.
+fn npm_beside(node: &Path) -> Result<PathBuf, String> {
+    let npm = node
+        .parent()
+        .ok_or_else(|| "node has no parent directory".to_string())?
+        .join("npm");
+    if is_executable(&npm) {
+        return Ok(npm);
+    }
+    Err(format!(
+        "Found node at {} but no npm beside it. Weave installs engines with npm.",
+        node.display()
+    ))
+}
+
+/// PATH for anything we spawn: node's own directory first, then the usual
+/// prefixes, then whatever we inherited. Engines shell out to `git` and
+/// friends, and the inherited PATH may be the Finder minimum.
+fn child_path(node: &Path) -> String {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if let Some(bin) = node.parent() {
+        dirs.push(bin.to_path_buf());
+    }
+    dirs.push(PathBuf::from("/opt/homebrew/bin"));
+    dirs.push(PathBuf::from("/usr/local/bin"));
+    if let Some(inherited) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&inherited));
+    }
+    dirs.dedup();
+    std::env::join_paths(dirs)
+        .map(|joined| joined.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "/usr/bin:/bin".to_string())
+}
+
 #[derive(Default)]
 struct AgentServer {
     child: Mutex<Option<Child>>,
 }
 
+/// Where the server lives and how to start it. Differs between a dev checkout
+/// and a bundle, so it is resolved once and passed down rather than rederived.
+struct ServerLaunch {
+    entry: PathBuf,
+    /// Node flags before the entry file. Empty for the bundled build.
+    node_args: Vec<String>,
+    /// Working directory for the server process.
+    workdir: PathBuf,
+}
+
 impl AgentServer {
-    fn restart(&self, repo_root: &PathBuf, project_dir: &str, engine_id: Option<&str>) -> Result<(), String> {
+    fn restart(
+        &self,
+        launch: &ServerLaunch,
+        project_dir: &str,
+        engine_id: Option<&str>,
+        engines_dir: &Path,
+    ) -> Result<(), String> {
         self.stop();
 
-        let entry = repo_root.join("server").join("index.ts");
-        if !entry.exists() {
-            return Err(format!("ACP server not found at {}", entry.display()));
+        if !launch.entry.exists() {
+            return Err(format!(
+                "ACP server not found at {}",
+                launch.entry.display()
+            ));
         }
 
-        let mut cmd = Command::new("node");
-        cmd.arg("--experimental-strip-types")
-            .arg(&entry)
-            .current_dir(repo_root)
-            .env("PROJECT_DIR", project_dir);
+        let node = node()?;
+        let mut cmd = Command::new(node);
+        cmd.args(&launch.node_args)
+            .arg(&launch.entry)
+            .current_dir(&launch.workdir)
+            .env("PROJECT_DIR", project_dir)
+            // A bundle has no workspace to resolve engines from. This is what
+            // `resolveEngineEntry` reads instead. See packages/agent/engines.ts.
+            .env("WEAVE_ENGINES_DIR", engines_dir)
+            .env("PATH", child_path(node));
 
         if let Some(id) = engine_id {
             cmd.env("ENGINE_ID", id);
@@ -124,25 +339,71 @@ fn get_saved_project(app: tauri::AppHandle) -> Option<SavedProject> {
     })
 }
 
+/// Where engines are installed: `<appData>/engines`.
+///
+/// Never the workspace. `pnpm -F @weave/agent add` mutates a *source tree*,
+/// and a shipped `.app` has no source tree to mutate — that command only ever
+/// worked because the app was being run out of its own checkout.
+///
+/// The directory carries a private `package.json` so npm treats it as a
+/// project root and does not walk upward looking for one.
+fn engines_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("no data dir: {e}"))?
+        .join("engines");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir failed: {e}"))?;
+
+    let manifest = dir.join("package.json");
+    if !manifest.exists() {
+        std::fs::write(
+            &manifest,
+            "{\n  \"name\": \"weave-engines\",\n  \"private\": true\n}\n",
+        )
+        .map_err(|e| format!("could not write {}: {e}", manifest.display()))?;
+    }
+    Ok(dir)
+}
+
 #[tauri::command]
-async fn install_engine(package_name: String) -> Result<(), String> {
-    let repo_root = std::env::current_dir()
-        .map_err(|e| format!("cwd failed: {e}"))?
-        .parent()
-        .map(PathBuf::from)
-        .ok_or_else(|| "could not resolve repo root".to_string())?;
+async fn install_engine(app: tauri::AppHandle, package_name: String) -> Result<(), String> {
+    let node = node()?;
+    let npm = npm_beside(node)?;
+    let dir = engines_dir(&app)?;
 
-    let status = Command::new("pnpm")
-        .arg("-F")
-        .arg("@weave/agent")
-        .arg("add")
+    let output = Command::new(&npm)
+        .args(["install", "--no-audit", "--no-fund", "--loglevel=error"])
+        .arg("--prefix")
+        .arg(&dir)
         .arg(&package_name)
-        .current_dir(repo_root)
-        .status()
-        .map_err(|e| format!("failed to run pnpm: {e}"))?;
+        .current_dir(&dir)
+        .env("PATH", child_path(node))
+        .output()
+        .map_err(|e| format!("failed to run npm: {e}"))?;
 
-    if !status.success() {
-        return Err(format!("pnpm install failed with status: {status}"));
+    if !output.status.success() {
+        // npm's actual complaint is far more useful than its exit code, and
+        // this string is what the onboarding screen shows the user.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let tail: String = stderr
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .rev()
+            .take(6)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(format!(
+            "Could not install {package_name}.\n{}",
+            if tail.is_empty() {
+                format!("npm exited with {}", output.status)
+            } else {
+                tail
+            }
+        ));
     }
 
     Ok(())
@@ -327,6 +588,82 @@ fn kill_port(port: u16, server: State<'_, AgentServer>) -> Result<(), String> {
     Ok(())
 }
 
+/// Node needs this for `--experimental-strip-types`. Only the dev path cares:
+/// the bundled server is plain JS.
+const MIN_NODE_MAJOR_FOR_TS: u32 = 22;
+
+/// Decide which server to run.
+///
+/// Dev runs `server/index.ts` straight from the workspace with type
+/// stripping, so editing the server needs no rebuild. Release runs the
+/// prebundled `server.mjs` that ships as a Tauri resource.
+///
+/// **Dev is checked first, and that ordering is load-bearing.** `tauri dev`
+/// also copies resources into `target/debug`, so a resource-first lookup would
+/// find a stale bundle and silently stop picking up server edits — the kind of
+/// bug you debug for an hour before noticing.
+///
+/// Neither branch touches `current_dir()`. A Finder-launched app has cwd `/`,
+/// whose parent is `None`, which is what produced "could not resolve repo
+/// root" the first time this was packaged.
+fn server_launch(app: &tauri::AppHandle) -> Result<ServerLaunch, String> {
+    let mut why_not_dev: Option<String> = None;
+
+    if cfg!(debug_assertions) {
+        // Baked in at compile time, so it survives any working directory.
+        let desktop = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .ok_or_else(|| "CARGO_MANIFEST_DIR has no parent".to_string())?
+            .to_path_buf();
+        let entry = desktop.join("server").join("index.ts");
+
+        if !entry.exists() {
+            why_not_dev = Some(format!("no source at {}", entry.display()));
+        } else {
+            let node = node()?;
+            match node_major(node) {
+                Some(major) if major >= MIN_NODE_MAJOR_FOR_TS => {
+                    return Ok(ServerLaunch {
+                        entry,
+                        node_args: vec!["--experimental-strip-types".to_string()],
+                        workdir: desktop,
+                    })
+                }
+                // Not fatal — fall through to the bundle, which is plain JS
+                // and runs on anything from node 18.
+                Some(major) => {
+                    why_not_dev = Some(format!(
+                        "dev runs TypeScript directly and needs node \
+                         {MIN_NODE_MAJOR_FOR_TS}+, found v{major}"
+                    ))
+                }
+                None => why_not_dev = Some(format!("could not run {}", node.display())),
+            }
+        }
+    }
+
+    if let Ok(resources) = app.path().resource_dir() {
+        let bundled = resources.join("server.mjs");
+        if bundled.exists() {
+            return Ok(ServerLaunch {
+                entry: bundled,
+                node_args: Vec::new(),
+                workdir: resources,
+            });
+        }
+    }
+
+    Err(match why_not_dev {
+        Some(reason) => format!(
+            "No ACP server to run: {reason}, and no bundled server.mjs. \
+             Run `pnpm -F desktop bundle:server`."
+        ),
+        None => "The ACP server is missing from this build. It should ship as \
+                 `server.mjs` — check `bundle.resources` in tauri.conf.json."
+            .to_string(),
+    })
+}
+
 /// Point the agent at `project_dir` and (re)start the server. Returns the port.
 #[tauri::command]
 fn start_agent_server(
@@ -339,15 +676,10 @@ fn start_agent_server(
         return Err(format!("Not a folder: {project_dir}"));
     }
 
-    // In dev the repo root is the parent of src-tauri; in a bundle the server
-    // ships as a resource. Only dev is wired up for now.
-    let repo_root = std::env::current_dir()
-        .map_err(|e| format!("cwd failed: {e}"))?
-        .parent()
-        .map(PathBuf::from)
-        .ok_or_else(|| "could not resolve repo root".to_string())?;
+    let launch = server_launch(&app)?;
+    let engines = engines_dir(&app)?;
 
-    server.restart(&repo_root, &project_dir, engine_id.as_deref())?;
+    server.restart(&launch, &project_dir, engine_id.as_deref(), &engines)?;
     server.wait_until_listening(SERVER_PORT, Duration::from_secs(20))?;
 
     if let Ok(path) = settings_path(&app) {
