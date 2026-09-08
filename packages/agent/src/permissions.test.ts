@@ -74,6 +74,28 @@ test("confineToTaskDir rejects command attempting escape", async () => {
   }
 });
 
+test("confineToTaskDir holds ExitPlanMode for user review", async () => {
+  const request: RequestPermissionRequest = {
+    sessionId: "s1",
+    options: [
+      { optionId: "opt-1", name: "Yes", kind: "allow_once" },
+      { optionId: "opt-2", name: "No", kind: "reject_once" },
+    ],
+    toolCall: {
+      toolCallId: "tc-exitplanmode-1",
+      kind: "other",
+      title: "Exit plan mode",
+      rawInput: { plan: "1. do the thing\n2. verify" },
+    },
+  };
+
+  const decision = await confineToTaskDir(FAKE_TASK, request);
+  assert.equal(decision.decision, "reject");
+  if (decision.decision === "reject") {
+    assert.match(decision.reason, /user review/i);
+  }
+});
+
 test("resolveEngineArgs handles Antigravity sandboxed toggle", () => {
   const agy = getEngine("antigravity");
 

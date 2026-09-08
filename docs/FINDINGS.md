@@ -459,3 +459,31 @@ The desktop server decomposes user input into ACP `PromptBlock[]` entries and
 prefixes each image directly with its numbered directive (`Image N: <note>`). This
 ensures prompt-to-image binding remains unambiguous in the model's attention window.
 
+---
+
+## A plan is a conversation turn, not an engine feature
+
+No ACP engine has a "plan approval" call. Antigravity, Claude Code and Codex
+each emit a proposed plan as ordinary assistant text — and in different shapes
+(numbered list, `<plan>` block, checklist). Building approval against any one
+engine's format would strand the others.
+
+The flow that works for all of them: normalise whatever arrived into
+`PlanBlockEntry[]` (`agent/normalize/messageToBlocks.ts`), let the user edit
+that structure in `PlanApprovalModal`, then **send the edited plan back as the
+next prompt** ("Approved execution plan: …" / "Plan rejected. Feedback: …").
+The engine never knows a modal happened; it just receives a very specific
+instruction. Approval is a turn, not a capability.
+
+---
+
+## Flex children need `min-h-0` or a sibling gets pushed off-axis
+
+The chat composer floated to the top of the pane whenever the transcript was
+short. `main` is `flex flex-col`; the transcript was `flex-1` with no
+`min-h-0`, and the composer relied on `mt-auto`. A flex item's default
+`min-height` is `auto` (content size), so `flex-1` alone does not guarantee the
+child both fills *and* yields space — the layout is only stable once the scroll
+region is `min-h-0 flex-1` and the pinned sibling is `shrink-0`. This is the
+same trap as any scroll-area-inside-flex-column; write both classes every time.
+

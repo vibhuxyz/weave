@@ -7,6 +7,7 @@ import type {
   SessionUpdate,
   TaskContract,
   TaskResult,
+  Usage,
 } from "@weave/protocol";
 import { DEFAULT_RUN_CONFIG, agentConfigFrom } from "@weave/protocol";
 import { Ledger, newRunId } from "./ledger.ts";
@@ -47,6 +48,8 @@ export interface RunTaskOutcome {
   costUsd?: number;
   contextUsed?: number;
   contextSize?: number;
+  /** Per-turn token totals from the ACP `PromptResponse`, when reported. */
+  turnUsage?: Usage | null;
 }
 
 export function weaveDirFor(cwd: string, config?: RunConfig): string {
@@ -89,6 +92,7 @@ export async function runTask(
   let costUsd: number | undefined;
   let contextUsed: number | undefined;
   let contextSize: number | undefined;
+  let turnUsage: Usage | null | undefined;
   /** Set when a cap trips, so the result reports `timeout` rather than `ok`. */
   let stopped: "maxTurns" | "timeoutMs" | null = null;
 
@@ -184,18 +188,21 @@ export async function runTask(
     // Race the prompt against the wall clock. An unattended run with no cap
     // means one looping agent burns budget until morning.
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<{ stopReason: string }>((resolve) => {
-      timer = setTimeout(() => {
-        if (!stopped) stopped = "timeoutMs";
-        void session?.cancel().catch(() => {});
-        resolve({ stopReason: "timeout" });
-      }, timeoutMs);
-    });
+    const deadline = new Promise<{ stopReason: string; usage?: Usage | null }>(
+      (resolve) => {
+        timer = setTimeout(() => {
+          if (!stopped) stopped = "timeoutMs";
+          void session?.cancel().catch(() => {});
+          resolve({ stopReason: "timeout" });
+        }, timeoutMs);
+      },
+    );
 
-    const { stopReason } = await Promise.race([
-      session.prompt(task.prompt),
+    const { stopReason, usage } = await Promise.race([
+      session.prompt([{ type: "text", text: task.prompt }]),
       deadline,
     ]).finally(() => clearTimeout(timer));
+    turnUsage = usage;
 
     const wallMs = Date.now() - started;
 
@@ -286,6 +293,7 @@ export async function runTask(
       costUsd,
       contextUsed,
       contextSize,
+      turnUsage,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -316,6 +324,7 @@ export async function runTask(
       costUsd,
       contextUsed,
       contextSize,
+      turnUsage,
     };
   } finally {
     session?.close();

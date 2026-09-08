@@ -27,6 +27,8 @@ export interface ToolEntry {
   kind: ToolKind;
   /** Terminal / tool output text, accumulated from `content` on each update. */
   output?: string;
+  /** The tool's raw arguments (e.g. `{ command }`, `{ plan }`, `{ content }`). */
+  rawInput?: unknown;
   /** Epoch ms when the call first appeared, and when it finished. For timers. */
   startedAt?: number;
   endedAt?: number;
@@ -67,6 +69,21 @@ export interface TurnPlan {
   approved?: boolean;
 }
 
+/**
+ * Token accounting for one assistant turn. `contextUsed`/`contextSize` come from
+ * the running ACP `usage_update` (context window); `inputTokens`/`outputTokens`/
+ * `thoughtTokens` land once from the `PromptResponse` on `turn-end`. Every field
+ * is optional — not every engine reports any of this.
+ */
+export interface TurnUsage {
+  contextUsed?: number;
+  contextSize?: number;
+  costUsd?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  thoughtTokens?: number;
+}
+
 export interface ChatTurn {
   id: string;
   role: "user" | "assistant";
@@ -78,6 +95,8 @@ export interface ChatTurn {
   thought: string;
   tools: ToolEntry[];
   plan?: TurnPlan;
+  /** Token usage for this turn, as far as the engine has reported it. */
+  usage?: TurnUsage;
   sourceEventIds?: string[];
   sourceSeq?: number;
 }
@@ -235,6 +254,11 @@ export function useAcpChat(port: number | null) {
         case "tool_call": {
           const startStatus = update.status ?? "pending";
           const now = replay ? undefined : Date.now();
+          if (import.meta.env.DEV && /plan/i.test(update.title ?? "")) {
+            // Temporary: capture the exact shape of the plan-mode tool call so
+            // the approval modal can pull the plan text from the right field.
+            console.log("[plan-tool]", JSON.stringify(update, null, 2));
+          }
           withAssistantTurn((turn) => ({
             ...turn,
             tools: [
@@ -245,6 +269,7 @@ export function useAcpChat(port: number | null) {
                 status: startStatus,
                 kind: update.kind ?? "other",
                 output: toolText(update.content),
+                rawInput: update.rawInput,
                 startedAt: now,
                 endedAt: TERMINAL_STATUS.has(startStatus) ? now : undefined,
                 sourceEventIds,
@@ -272,6 +297,7 @@ export function useAcpChat(port: number | null) {
                 status: nextStatus,
                 title: update.title ?? tool.title,
                 kind: update.kind ?? tool.kind,
+                rawInput: update.rawInput ?? tool.rawInput,
                 // Updates carry the full content each time; keep the last
                 // non-empty snapshot so a status-only update never wipes it.
                 output: toolText(update.content) ?? tool.output,
@@ -300,6 +326,20 @@ export function useAcpChat(port: number | null) {
               },
             };
           });
+          return;
+        }
+        case "usage_update": {
+          // Running context-window figure + cumulative session cost. Claude Code
+          // and Codex emit this per turn; other engines never do.
+          withAssistantTurn((turn) => ({
+            ...turn,
+            usage: {
+              ...turn.usage,
+              contextUsed: update.used,
+              contextSize: update.size,
+              costUsd: update.cost?.amount ?? turn.usage?.costUsd,
+            },
+          }));
           return;
         }
         default:
@@ -413,9 +453,22 @@ export function useAcpChat(port: number | null) {
           case "update":
             applyUpdate(message.update, message.replay === true, message.source);
             return;
-          case "turn-end":
+          case "turn-end": {
+            const usage = message.usage;
+            if (usage) {
+              withAssistantTurn((turn) => ({
+                ...turn,
+                usage: {
+                  ...turn.usage,
+                  inputTokens: usage.inputTokens,
+                  outputTokens: usage.outputTokens,
+                  thoughtTokens: usage.thoughtTokens ?? undefined,
+                },
+              }));
+            }
             setBusy(false);
             return;
+          }
           case "chats":
             setChats(message.chats);
             if (message.activeSessionId)
@@ -547,7 +600,7 @@ export function useAcpChat(port: number | null) {
       clearTimeout(retry);
       socket?.close();
     };
-  }, [applyUpdate, port]);
+  }, [applyUpdate, withAssistantTurn, port]);
 
   const send = useCallback(
     (

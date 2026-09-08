@@ -3,6 +3,7 @@ import { CheckIcon, CopyIcon, PencilIcon } from "lucide-react";
 import { AgentAvatar } from "./agents/AgentAvatar";
 import { useCopyToClipboard } from "./hooks/use-copy-to-clipboard";
 import { cn } from "@/shared/lib/cn";
+import type { ChatImageAttachment } from "./useAcpChat";
 
 /**
  * A user turn: the prompt text plus hover actions to copy it or drop it back
@@ -15,16 +16,47 @@ import { cn } from "@/shared/lib/cn";
 export function UserMessage({
   text,
   mentions,
+  images,
   onEdit,
+  onViewImage,
 }: {
   text: string;
   mentions?: string[];
+  images?: ChatImageAttachment[];
   onEdit?: (text: string) => void;
+  onViewImage?: (image: ChatImageAttachment) => void;
 }) {
   const { isCopied, copyToClipboard } = useCopyToClipboard();
 
   return (
     <div className="flex flex-col items-end gap-1.5">
+      {images && images.length > 0 && (
+        <div className="flex flex-wrap justify-end gap-2">
+          {images.map((image, i) => (
+            <div
+              key={i}
+              className="flex w-40 flex-col gap-1 rounded-lg border border-border/60 bg-agent-surface-raised p-1.5"
+            >
+              <button
+                type="button"
+                title="View image"
+                aria-label="View image"
+                onClick={() => onViewImage?.(image)}
+                className="block w-full"
+              >
+                <img
+                  src={image.previewUrl}
+                  alt=""
+                  className="h-24 w-full rounded object-cover"
+                />
+              </button>
+              {image.prompt && (
+                <p className="text-xs text-agent-text-faint">{image.prompt}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       {mentions && mentions.length > 0 && (
         <div className="flex flex-wrap justify-end gap-1">
           {mentions.map((name) => (
@@ -38,7 +70,7 @@ export function UserMessage({
           ))}
         </div>
       )}
-      <div className="whitespace-pre-wrap">{text}</div>
+      {text && <div className="whitespace-pre-wrap">{text}</div>}
       <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         <ActionButton
           label={isCopied ? "Copied" : "Copy"}

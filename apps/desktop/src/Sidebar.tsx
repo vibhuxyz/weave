@@ -24,7 +24,7 @@ import {
 import type { ConversationMeta } from "./useAcpChat";
 import type { ProjectEntry } from "./useProjects";
 
-export type SidebarView = "home" | "chat" | "agents";
+export type SidebarView = "home" | "chat" | "agents" | "skills";
 
 export interface SidebarProps {
   projects: ProjectEntry[];
@@ -44,7 +44,7 @@ export interface SidebarProps {
 const NAV = [
   { id: "home", label: "Home", icon: HomeIcon, view: "home" as const },
   { id: "agents", label: "Agents", icon: SparklesIcon, view: "agents" as const },
-  { id: "skills", label: "Skills", icon: BookOpenIcon, view: null },
+  { id: "skills", label: "Skills", icon: BookOpenIcon, view: "skills" as const },
 ] as const;
 
 /** Compact "how long ago" — 5m, 16h, 3d, 2w. */
@@ -125,21 +125,17 @@ export function Sidebar({
     <aside className="flex max-h-full w-full shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-agent-surface-raised p-2">
       <nav className="flex flex-col gap-0.5 pt-2">
         {NAV.map(({ id, label, icon: Icon, view: navView }) => {
-          const active = navView !== null && navView === view;
+          const active = navView === view;
           return (
             <button
               key={id}
               type="button"
-              // "Skills" has no screen yet — stays disabled.
-              disabled={navView === null}
-              onClick={navView ? () => onViewChange(navView) : undefined}
+              onClick={() => onViewChange(navView)}
               className={cn(
                 "flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm transition-colors",
-                navView === null && "text-foreground/90 disabled:opacity-40",
-                navView !== null &&
-                  (active
-                    ? "bg-secondary text-foreground"
-                    : "text-foreground/80 hover:bg-secondary/60 hover:text-foreground"),
+                active
+                  ? "bg-secondary text-foreground"
+                  : "text-foreground/80 hover:bg-secondary/60 hover:text-foreground",
               )}
             >
               <Icon className="size-4" />
@@ -268,7 +264,7 @@ export function Sidebar({
 
       <div
         hidden={chatsCollapsed}
-        className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto"
+        className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto"
       >
         {chats.length === 0 && (
           <button
@@ -308,7 +304,7 @@ export function Sidebar({
         })}
       </div>
 
-      <div className="mt-3 border-border/60 border-t pt-2">
+      <div className="mt-6 border-border/60 border-t pt-3">
         <button
           type="button"
           disabled

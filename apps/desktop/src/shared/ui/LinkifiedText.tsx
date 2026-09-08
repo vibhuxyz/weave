@@ -1,4 +1,5 @@
 import { Fragment, memo, useCallback, useMemo } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { linkifyText } from "@/shared/lib/linkify";
 import { cn } from "@/shared/lib/cn";
 
@@ -53,11 +54,9 @@ export const LinkifiedText = memo(function LinkifiedText({
   const handleLinkClick = useCallback(
     (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
       event.preventDefault();
-      void import("@tauri-apps/plugin-opener")
-        .then(({ openUrl }) => openUrl(href))
-        .catch((error: unknown) => {
-          console.error("[linkifiedText] openUrl failed:", error);
-        });
+      void openUrl(href).catch((error: unknown) => {
+        console.error("[linkifiedText] openUrl failed:", error);
+      });
     },
     [],
   );

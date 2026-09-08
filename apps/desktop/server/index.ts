@@ -51,6 +51,7 @@ import type {
   SessionConfigOption,
   SessionUpdate,
   TaskContract,
+  Usage,
 } from "@weave/protocol";
 import { toEngineAuthMethod, isAuthRequiredError } from "@weave/protocol";
 
@@ -107,7 +108,7 @@ export type ServerMessage =
   | { type: "config-changed"; configId: string; value: string }
   | { type: "config-rejected"; configId: string; message: string }
   | { type: "git-status"; git: GitStatus }
-  | { type: "turn-end"; stopReason: string }
+  | { type: "turn-end"; stopReason: string; usage?: Usage | null }
   | { type: "error"; message: string }
   /**
    * An engine refused to open a session until the user signs in.
@@ -1128,8 +1129,8 @@ async function handleConnection(
         });
         pending = pending
           .then(() => supervisor!.current.prompt(blocks))
-          .then(async ({ stopReason }) => {
-            send({ type: "turn-end", stopReason });
+          .then(async ({ stopReason, usage }) => {
+            send({ type: "turn-end", stopReason, usage });
             ledger.append("task.finished", {
               taskId: task.id,
               status: "ok",

@@ -77,6 +77,7 @@ export function AgentMessage({
   onAction,
   onSend,
   onUpdatePlan,
+  onExitPlanMode,
 }: {
   turn: ChatTurn;
   projectDir: string | null;
@@ -88,6 +89,8 @@ export function AgentMessage({
   onAction?: (action: BlockAction) => void;
   onSend?: (text: string) => void;
   onUpdatePlan?: (turnId: string, plan: TurnPlan) => void;
+  /** Take the engine out of plan mode — called when a plan is approved. */
+  onExitPlanMode?: () => void;
 }) {
   const [tab, setTab] = useState<AgentTab>("overview");
   const [depth, setDepth] = useState<DepthLevel>("normal");
@@ -104,6 +107,7 @@ export function AgentMessage({
         engineId,
         engineLabel,
         plan: turn.plan,
+        usage: turn.usage,
         sourceEventIds: turn.sourceEventIds,
         sourceSeq: turn.sourceSeq,
       }),
@@ -115,6 +119,7 @@ export function AgentMessage({
       running,
       turn.id,
       turn.plan,
+      turn.usage,
       turn.sourceEventIds,
       turn.sourceSeq,
       turn.text,
@@ -229,6 +234,7 @@ export function AgentMessage({
             viewModel.meta.changed,
             engineLabel,
             onUpdatePlan,
+            onExitPlanMode,
           )
         )}
       </div>
@@ -245,6 +251,7 @@ function renderBlocks(
   changed?: boolean,
   engineLabel?: string,
   onUpdatePlan?: (turnId: string, plan: TurnPlan) => void,
+  onExitPlanMode?: () => void,
 ) {
   const toolBlocks = blocks.filter(
     (block): block is Extract<AgentBlock, { type: "tool" }> =>
@@ -311,6 +318,7 @@ function renderBlocks(
                 block={block}
                 engineLabel={engineLabel}
                 onSend={onSend}
+                onExitPlanMode={onExitPlanMode}
                 onUpdatePlan={(plan) =>
                   onUpdatePlan?.(block.turnId ?? block.id, plan)
                 }

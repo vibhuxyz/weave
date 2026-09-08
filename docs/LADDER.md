@@ -58,11 +58,33 @@ desktop, that is a signal to think — not to create `packages/utils`.
    - `EngineSupervisor` managing live engine switching across 4 ACP engines (`antigravity`,
      `claude-code`, `codex`, `amp`) with warm child pools.
    - In-band engine authentication: `EngineAuthPanel` with interactive terminal auth, API keys,
-     OAuth, and live snapshot streaming (`auth-state`).
+     OAuth, and live snapshot streaming (`auth-state`). Hardened so auth and login
+     prompts fire reliably on every engine, not just the ones that happen to
+     surface `authMethods` early (`d758b59`).
    - Multimodal prompts with per-image instruction blocks and `ImageLightbox`.
    - Skills view and plugins integration with prompt system block composition.
    - Dev server and process tree termination (`kill_port` child tree recursion) with AirPlay filtering.
    - Model quota island tracking live rate limits and spend caps.
+
+7. **Safety, plan review, and workspace UI** (`044e656` … `d758b59` + working tree):
+   - **Command boundary inspection + `sandbox-exec`** — `confineToTaskDir`
+     inspects shell command strings across every engine (rejecting `..` and
+     credential-dir references), `--no-sandbox` is now conditional per
+     project/task via `resolveEngineArgs`, and on macOS a `sandboxed` task
+     additionally wraps the child in `sandbox-exec` with kernel-level deny
+     rules. Covered by `packages/agent/src/permissions.test.ts`.
+   - **Interactive plan approval** — agent `<plan>` output is normalised to
+     `PlanBlockEntry[]` regardless of the shape the engine emits
+     (`messageToBlocks.ts`); `PlanApprovalModal` lets the user edit, reorder,
+     re-prioritise, add, or drop steps, then the *edited* plan is sent back as
+     the next prompt. Reject sends structured feedback instead. Works for all
+     engines because it operates on normalised blocks, not an engine API.
+   - **File tree in the context panel** — native directory listing over a Tauri
+     command (`lib.rs`), rendered by `features/chat/ui/FilesList.tsx`.
+   - **Composer / modal layout fixes** (working tree) — transcript scroll area
+     is `min-h-0 flex-1`, composer is `shrink-0` so it stays pinned to the
+     bottom regardless of transcript length; `PlanApprovalModal` opens as a
+     top-anchored near-full-height sheet rather than a small centred box.
 
 **Not yet run:** the actual 12×2×3 baseline matrix. Wiring is done and one real
 cell has been verified end to end; the full run is API cost and wall-clock

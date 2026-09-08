@@ -3,6 +3,7 @@ import type { AuthMethod, AuthMethodTerminal } from "@weave/protocol";
 import { AUTH_OUTPUT_MAX_LINES } from "@weave/protocol";
 import type { EngineDescriptor } from "./engines-registry.ts";
 import { resolveEngineEntry } from "./engines.ts";
+import { augmentPathWithUserDirs } from "./spawn.ts";
 
 /**
  * Signing in to an engine.
@@ -70,10 +71,18 @@ export function isTerminalMethod(
   return "type" in method && method.type === "terminal";
 }
 
+export function stripAnsi(text: string): string {
+  return text
+    .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "")
+    .replace(/\x1B\([a-zA-Z]/g, "")
+    .replace(/\x1B\][^\x07\x1B]*(\x07|\x1B\\)/g, "");
+}
+
 export interface RunTerminalAuthOptions {
   engine: EngineDescriptor;
   method: AuthMethodTerminal;
   cwd: string;
+  input?: string;
   /** Called on every output change, with the whole bounded tail. */
   onOutput(lines: string[]): void;
   /** Abort the login (user cancelled, connection closed). */
@@ -102,26 +111,38 @@ export function runTerminalAuth(
   );
 
   return new Promise((resolve) => {
+    const stdio: ["pipe" | "ignore", "pipe", "pipe"] = [
+      options.input != null ? "pipe" : "ignore",
+      "pipe",
+      "pipe",
+    ];
     const child = spawn(command, args, {
       cwd: options.cwd,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio,
       env: {
         ...process.env,
         ELECTRON_RUN_AS_NODE: "1",
+        PATH: augmentPathWithUserDirs(process.env.PATH),
         ...env,
         // Login CLIs hide prompts and spinners when they think nothing is
         // watching. We are relaying every line to a human, so say so.
         FORCE_COLOR: "0",
-        CI: "",
+        NO_COLOR: "1",
       },
     });
+
+    if (options.input != null) {
+      child.stdin?.write(options.input + "\n");
+      child.stdin?.end();
+    }
 
     const output: string[] = [];
     let tail = "";
     let settled = false;
 
     const push = (chunk: string) => {
-      const lines = (tail + chunk).split(/\r?\n|\r/);
+      const stripped = stripAnsi(chunk);
+      const lines = (tail + stripped).split(/\r?\n|\r/);
       tail = lines.pop() ?? "";
       let changed = false;
       for (const line of lines) {

@@ -7,6 +7,7 @@ import type {
   SessionConfigOption,
   SessionUpdate,
   TaskContract,
+  Usage,
 } from "@weave/protocol";
 import { isAuthRequiredError } from "@weave/protocol";
 import { spawnAgent, type SpawnedAgent } from "./spawn.ts";
@@ -86,7 +87,9 @@ export interface AgentSession {
    * needs its command run first — see `runTerminalAuth`.
    */
   authenticate(methodId: string): Promise<void>;
-  prompt(blocks: PromptBlock[]): Promise<{ stopReason: string }>;
+  prompt(
+    blocks: PromptBlock[],
+  ): Promise<{ stopReason: string; usage?: Usage | null }>;
   cancel(): Promise<void>;
   setConfigOption(configId: string, value: string): Promise<void>;
   newSession(): Promise<string>;
@@ -383,7 +386,7 @@ export async function openSession(
         sessionId,
         prompt: blocks,
       });
-      return { stopReason: result.stopReason };
+      return { stopReason: result.stopReason, usage: result.usage };
     },
     async cancel() {
       await connection.cancel({ sessionId });

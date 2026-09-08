@@ -4,6 +4,7 @@ import { Badge } from "@/shared/ui/badge";
 import { cn } from "@/shared/lib/cn";
 import type { AgentRunMeta } from "../normalize/types";
 import { deriveStatusPill } from "../normalize/runMeta";
+import { formatTokens } from "../lib/formatTokens";
 
 export type DepthLevel = "brief" | "normal" | "deep";
 
@@ -28,7 +29,7 @@ export function AgentHeader({
   const details = [
     meta.model,
     formatDuration(meta.durationMs),
-    meta.usage?.used ? `${(meta.usage.used / 1000).toFixed(1)}k tokens` : null,
+    meta.usage?.used ? `${formatTokens(meta.usage.used)} tokens` : null,
     meta.usage?.costUsd ? `$${meta.usage.costUsd.toFixed(2)}` : null,
   ].filter(Boolean);
   const pill = deriveStatusPill(meta);

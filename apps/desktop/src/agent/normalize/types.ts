@@ -319,6 +319,18 @@ export interface PlanBlock extends AgentBlockBase {
   entries: PlanBlockEntry[];
   approved?: boolean;
   turnId?: string;
+  /**
+   * The agent has finished planning and is blocked on the user (Claude Code
+   * plan mode / an `ExitPlanMode` tool call). The UI opens the approval modal
+   * automatically for these; a live todo-list plan leaves it false.
+   */
+  awaitingApproval?: boolean;
+  /**
+   * The plan as the agent wrote it — full markdown, headings and prose intact.
+   * Present for `ExitPlanMode`-style plans; the modal renders and edits this
+   * verbatim rather than the fragmented `entries`. Todo-list plans have none.
+   */
+  markdown?: string;
 }
 
 export type AgentBlock =

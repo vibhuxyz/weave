@@ -104,6 +104,27 @@ function mutates(kind: ToolKind | null | undefined): boolean {
 }
 
 /**
+ * Claude Code (and other engines') "plan mode" ends with an `ExitPlanMode`
+ * tool call that asks permission to start executing. Weave holds that: the
+ * plan is surfaced in the approval modal and the user decides. Rejecting here
+ * makes the engine stop and wait for the follow-up prompt the modal sends.
+ */
+export function isPlanModeExit(request: RequestPermissionRequest): boolean {
+  const title = (request.toolCall.title ?? "").toLowerCase();
+  if (/\bexit\s?plan\s?mode\b|\bapprove plan\b|\bpresent(?:ing)? (?:the )?plan\b/.test(title)) {
+    return true;
+  }
+  const id = (request.toolCall.toolCallId ?? "").toLowerCase();
+  if (id.includes("exitplanmode") || id.includes("exit_plan_mode")) return true;
+  const raw = request.toolCall.rawInput;
+  return (
+    typeof raw === "object" &&
+    raw !== null &&
+    "plan" in (raw as Record<string, unknown>)
+  );
+}
+
+/**
  * Extract a shell command string from toolCall rawInput if present.
  */
 export function extractCommand(rawInput: unknown): string | null {
@@ -193,6 +214,14 @@ export function inspectCommandBoundaries(
  * Enforces boundaries across both file locations and shell command inputs.
  */
 export const confineToTaskDir: PermissionPolicy = (task, request) => {
+  if (isPlanModeExit(request)) {
+    return {
+      decision: "reject",
+      reason:
+        "plan held for user review in Weave — wait for the approved plan before executing",
+    };
+  }
+
   const allow = findAllowOption(request);
   if (!allow) {
     return {

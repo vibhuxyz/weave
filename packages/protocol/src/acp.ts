@@ -12,6 +12,7 @@ export type {
   ModelInfo,
   PermissionOption,
   PermissionOptionKind,
+  PromptResponse,
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestPermissionRequest,
@@ -21,6 +22,7 @@ export type {
   SessionUpdate,
   ToolCallStatus,
   ToolKind,
+  Usage,
   WriteTextFileRequest,
   WriteTextFileResponse,
 } from "@agentclientprotocol/sdk";

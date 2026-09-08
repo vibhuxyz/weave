@@ -5,7 +5,7 @@
   "identifier": "dev.vibhu.weave",
   "build": {
     "beforeDevCommand": {
-      "script": "exec ./node_modules/.bin/vite",
+      "script": "pnpm bundle:server && exec ./node_modules/.bin/vite",
       "cwd": "..",
       "wait": false
     },
@@ -24,7 +24,8 @@
         "minHeight": 480,
         "backgroundColor": "#1a1a1a",
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {

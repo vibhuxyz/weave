@@ -26,4 +26,7 @@ export default defineConfig({
       ignored: ["**/reference/**", "**/.berd/**", "**/src-tauri/target/**"],
     },
   },
+  build: {
+    chunkSizeWarningLimit: 2500,
+  },
 });

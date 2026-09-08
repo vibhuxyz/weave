@@ -53,6 +53,7 @@ import {
 import { AgentMessage } from "./agent/components/AgentMessage";
 import { EngineAuthPanel } from "@/features/auth/EngineAuthPanel";
 import { ThinkingBlock } from "./agent/components/ThinkingBlock";
+import { AgentStatusLine } from "./agent/components/AgentStatusLine";
 import { UserMessage } from "./UserMessage";
 import { HomeView } from "./home/canvas/ui/HomeView";
 import { basename } from "./paths";
@@ -251,6 +252,21 @@ export function App() {
     primary: primaryConfigOption,
     children: childConfigOptions,
   } = useMemo(() => splitConfigOptions(configOptions), [configOptions]);
+
+  /**
+   * Drop the engine out of "plan" mode — run on plan approval so the follow-up
+   * prompt actually executes instead of the engine re-entering ExitPlanMode.
+   */
+  const exitPlanMode = useCallback(() => {
+    if (!primaryConfigOption) return;
+    if (configValues[primaryConfigOption.id] !== "plan") return;
+    const values = flattenConfigValues(primaryConfigOption);
+    const target =
+      values.find((v) => v.value === "acceptEdits") ??
+      values.find((v) => v.value === "default") ??
+      values.find((v) => v.value !== "plan");
+    if (target) setConfig(primaryConfigOption.id, target.value);
+  }, [primaryConfigOption, configValues, setConfig]);
 
   useEffect(() => {
     const want = pendingAgentModel.current;
@@ -567,8 +583,19 @@ export function App() {
     const plugins = formatSkillPluginsSystemPrompt(skillPlugins, activeDir);
 
     let textToSend = draft;
-    if (draft.trim().startsWith("/plan ") || draft.trim() === "/plan") {
-      const task = draft.trim().slice(5).trim();
+    const trimmedDraft = draft.trim();
+    const isPlanSlash = trimmedDraft.startsWith("/plan ") || trimmedDraft === "/plan";
+    const isNaturalPlan =
+      /^(?:create|make|propose|generate|write|draft)(?:\s+(?:a|an|one))?\s+plan\b/i.test(trimmedDraft) ||
+      /^plan\s*:\s*/i.test(trimmedDraft);
+
+    if (isPlanSlash || isNaturalPlan) {
+      const task = isPlanSlash
+        ? trimmedDraft.slice(5).trim()
+        : trimmedDraft
+            .replace(/^(?:create|make|propose|generate|write|draft)(?:\s+(?:a|an|one))?\s+plan\s*(?:to|for|on|about|how to)?\s*/i, "")
+            .replace(/^plan\s*:\s*/i, "")
+            .trim();
       textToSend = task
         ? `[Planning Mode]\nPlease inspect the workspace and propose a step-by-step execution plan for the following task, formatted inside a <plan> block with numbered steps. DO NOT modify any files or execute commands yet until I review and approve the plan:\n\n${task}`
         : `[Planning Mode]\nPlease inspect the current status and propose a step-by-step execution plan inside a <plan> block with numbered steps before modifying any files or running commands.`;
@@ -631,7 +658,7 @@ export function App() {
   return (
     <div
       data-app-shell-root="true"
-      className="bg-dot-grid flex h-dvh flex-col text-foreground"
+      className="bg-dot-grid flex h-full min-h-0 flex-col text-foreground"
       style={{ "--project-tint": projectTint } as CSSProperties}
     >
       <UsageLimitIsland />
@@ -750,7 +777,33 @@ export function App() {
         {/* Full-bleed on the shell's dot grid. The panel used to be a raised
             card, which boxed Home's canvas and the Agents grid inside a second
             surface — the sidebar is the only chrome that should read as one. */}
-        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main
+          className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
+          onDragOver={(e) => {
+            if (view !== "chat" || !e.dataTransfer.types.includes("Files")) return;
+            e.preventDefault();
+            setIsDraggingImage(true);
+          }}
+          onDragLeave={(e) => {
+            if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+            setIsDraggingImage(false);
+          }}
+          onDrop={(e) => {
+            if (view !== "chat") return;
+            e.preventDefault();
+            setIsDraggingImage(false);
+            if (e.dataTransfer.files.length) void addImageFiles(e.dataTransfer.files);
+          }}
+        >
+          {view === "chat" && isDraggingImage && (
+            <div className="pointer-events-none absolute inset-3 z-40 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary bg-background/70 [backdrop-filter:blur(2px)]">
+              <ImagePlusIcon className="size-7 text-primary" />
+              <p className="text-sm font-medium text-foreground">Drop image to attach</p>
+              <p className="text-xs text-muted-foreground">
+                It’s added to the composer as a preview you can annotate
+              </p>
+            </div>
+          )}
           {authRequired && (
             <div className="z-30 w-full shrink-0 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
               <div className="mx-auto max-w-2xl">
@@ -816,7 +869,7 @@ export function App() {
         <div
           ref={scrollRef}
           onScroll={onTranscriptScroll}
-          className="mx-auto flex w-full flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] py-6"
+          className="mx-auto flex w-full min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] py-6"
         >
           {turns.length === 0 && ready && (
             <p className="mt-16 text-center text-sm text-muted-foreground">
@@ -828,6 +881,14 @@ export function App() {
               <MessageContent>
                 {turn.role === "assistant" ? (
                   <>
+                    {busy && turn === turns.at(-1) && (
+                      <AgentStatusLine
+                        turn={turn}
+                        running={busy}
+                        configValues={configValues}
+                        projectDir={activeDir}
+                      />
+                    )}
                     {(turn.thought ||
                       (busy &&
                         turn === turns.at(-1) &&
@@ -867,6 +928,7 @@ export function App() {
                       }}
                       onSend={send}
                       onUpdatePlan={updateTurnPlan}
+                      onExitPlanMode={exitPlanMode}
                     />
                     )}
                   </>
@@ -886,6 +948,18 @@ export function App() {
           {busy && turns.at(-1)?.role === "user" && (
             <Message from="assistant">
               <MessageContent>
+                <AgentStatusLine
+                  turn={{
+                    id: "pending",
+                    role: "assistant",
+                    text: "",
+                    thought: "",
+                    tools: [],
+                  }}
+                  running={busy}
+                  configValues={configValues}
+                  projectDir={activeDir}
+                />
                 <ThinkingBlock text="" streaming />
               </MessageContent>
             </Message>
@@ -910,7 +984,7 @@ export function App() {
 
         <div
           className={cn(
-            "relative z-10 mt-auto w-full pb-6",
+            "relative z-10 mt-auto w-full shrink-0 pb-6",
             view === "home"
               ? "ml-auto max-w-md px-[var(--spacing-app-panel-gutter-inline)]"
               : "px-[var(--spacing-app-panel-gutter-inline)]",

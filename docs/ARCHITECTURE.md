@@ -64,8 +64,13 @@ grep -rn "@tauri-apps\|from \"react\"\|apps/desktop" packages/ --include=*.ts
 - `session.ts` — `initialize · newSession · loadSession · prompt · cancel`, plus
   the ACP client (permission, file I/O). Supports multimodal `PromptBlock[]` (text
   and images) and handles `AuthRequiredError`.
-- `permissions.ts` — `PermissionPolicy`, `confineToTaskDir`, `rejectAll`,
-  `isInside` (symlink-resolving — see [FINDINGS](FINDINGS.md)).
+- `permissions.ts` — `PermissionPolicy`, `confineToTaskDir` (now also inspects
+  shell command *strings* for `..` traversal and credential-dir references,
+  not just `toolCall.locations`), `rejectAll`, `isInside` (symlink-resolving —
+  see [FINDINGS](FINDINGS.md)). `permissions.test.ts` covers the boundary.
+- `engines.ts` / `engines-registry.ts` — `resolveEngineArgs` makes
+  `--no-sandbox` conditional per project/task; a `sandboxed` task on macOS is
+  additionally wrapped in `sandbox-exec` with kernel-level deny rules.
 - `config-options.ts` — apply `model`/`mode`/`effort`/`fast`, report refusals.
 
 `agent` knows nothing about ledgers or runs. It emits through a sink; who
@@ -137,12 +142,17 @@ React + Tauri. Built in three layers:
 2. **React UI surfaces:**
    - `HomeView`: canvas view with project overview and widgets.
    - `ChatView`: transcript rendering with `AgentMessage`, `ThinkingBlock`, `ToolSteps`,
-     and `UserMessage`.
+     and `UserMessage`. `<plan>` output is normalised to `PlanBlockEntry[]`
+     (`agent/normalize/messageToBlocks.ts`) and shown via `PlanBlockView`;
+     `PlanApprovalModal` lets the user edit/reorder/re-prioritise steps, then
+     the edited plan (or rejection feedback) is sent back as the next prompt —
+     engine-agnostic because it never calls an engine API.
    - `AgentsView` & `SkillsView`: persona management and skill plugins.
    - `EnginePicker`, `ProvidersDialog`, and `EngineAuthPanel`: engine selection,
      install status, and credential/terminal sign-in.
    - `ContextPanel`: project git status, running dev servers with stop controls,
-     standing and manual project agents.
+     standing and manual project agents, and a native file tree
+     (`features/chat/ui/FilesList.tsx` over a Tauri directory-listing command).
    - `UsageLimitIsland`: live model rate limit and spend quota monitor.
    - `ImageLightbox`: screenshot attachment preview and full-screen view.
 3. **`src-tauri/src/lib.rs` — Native host layer:**
@@ -189,7 +199,7 @@ lanes a reader, not a second stream.
 
 ---
 
-## 4. Two boundaries that enforce path confinement
+## 4. Boundaries that enforce path confinement
 
 They are independent on purpose, because they catch different things:
 
@@ -198,14 +208,21 @@ They are independent on purpose, because they catch different things:
    Bash) which never route through our client.
 2. **`safeResolve`** in `session.ts` refuses out-of-tree paths in
    `readTextFile` / `writeTextFile`. Catches ACP-routed I/O.
+3. **`confineToTaskDir` command-string inspection** — for the many tool calls
+   that report no `locations` (shell commands especially), the command string
+   itself is scanned for `..` traversal and references to credential dirs
+   (`~/.ssh`, `~/.aws`, `~/.gnupg`) and rejected before it runs.
+4. **`sandbox-exec`** (macOS, `sandboxed` tasks only) — a kernel-level deny
+   wrapper on the engine child as defence in depth, plus conditional
+   `--no-sandbox` via `resolveEngineArgs`.
 
-Neither is sufficient alone — which is why `filesWritten` can be empty on a
-successful fix while `filesChanged` (from git) is not.
+The first two are not sufficient alone — which is why `filesWritten` can be
+empty on a successful fix while `filesChanged` (from git) is not.
 
-**Known gap, recorded not hidden:** many tool calls report no `locations` at
-all, so the policy passes vacuously and says so in its reason string
-(`no locations reported (unverified)`). Inspection is not containment. The real
-answer is MVP.1's worktrees.
+**Known gap, recorded not hidden:** command-string inspection is still
+inspection, not containment — it narrows the hole the vacuous location check
+left (reason string: `no locations reported (unverified)`) but does not close
+it. The real answer is MVP.1's worktrees.
 
 ---
 

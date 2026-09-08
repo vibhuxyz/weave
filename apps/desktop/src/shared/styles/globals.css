@@ -1446,6 +1446,35 @@
      shape (pills, cards, notes). Disabled under reduced motion. */
   --animate-widget-settle: widget-settle 380ms cubic-bezier(0.34, 1.56, 0.64, 1)
     both;
+  /* Composer Stop button: staggered rings that expand outward from the button
+     and fade as they grow, signalling the agent is still working. A second
+     layer of dots slowly orbits the same centre. Disabled under reduced
+     motion (see below). */
+  --animate-stop-ring: stop-ring 2.6s ease-out infinite;
+  --animate-stop-orbit: stop-orbit 7s linear infinite;
+
+  @keyframes stop-ring {
+    0% {
+      opacity: 0.5;
+      transform: scale(0.7);
+    }
+    70% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.75);
+    }
+  }
+
+  @keyframes stop-orbit {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
 
   @keyframes widget-settle {
     from {
@@ -1677,6 +1706,13 @@
     animation: none;
     transform: scaleY(0.65);
   }
+  .stop-ring,
+  .stop-orbit {
+    animation: none;
+  }
+  .stop-ring {
+    opacity: 0.28;
+  }
 }
 @keyframes text-shimmer {
   0% {
@@ -1904,17 +1940,6 @@ html[data-window-kind="voice-buddy"] #root {
     --text-selection-fg: var(--surface-chat-responding-pill-fg);
   }
 
-  /* Chat transcript find-in-page tints, painted via the CSS Custom
-     Highlight API (see src/features/chat/lib/transcriptSearch.ts). */
-  ::highlight(chat-search-match) {
-    background-color: var(--chat-search-match-bg);
-    color: var(--chat-search-match-fg);
-  }
-
-  ::highlight(chat-search-match-active) {
-    background-color: var(--chat-search-match-active-bg);
-    color: var(--chat-search-match-active-fg);
-  }
 
   ::-webkit-scrollbar {
     width: var(--scrollbar-size);

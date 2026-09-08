@@ -86,6 +86,8 @@ export interface ChatImageAttachmentDraft {
   mimeType: string;
   base64: string;
   previewUrl: string;
+  /** What the agent should fix or build from this specific image. */
+  prompt: string;
 }
 
 export interface ChatFileAttachmentDraft {

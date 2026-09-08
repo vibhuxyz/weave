@@ -10,6 +10,8 @@ import { parseSessionDeepLink } from "@/features/sessions/lib/sessionDeepLink";
 import { isExternalHref } from "@/shared/lib/isExternalHref";
 import { isUrlTrusted } from "@/shared/lib/trustedDomains";
 import { LinkSafetyModal } from "@/shared/ui/ai-elements/link-safety-modal";
+import { downloadDir } from "@tauri-apps/api/path";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { cn } from "@/shared/lib/cn";
 import { useVirtualLayoutPendingForStreamdown } from "@/features/chat/transcript/measurement";
 import { useStreamdownTableScrollbarSizing } from "@/shared/ui/ai-elements/streamdown-table-scrollbar";
@@ -383,10 +385,6 @@ export function detectStreamdownMermaidDownloadFormat(
 }
 
 async function openDownloadsFolder() {
-  const [{ downloadDir }, { openPath }] = await Promise.all([
-    import("@tauri-apps/api/path"),
-    import("@tauri-apps/plugin-opener"),
-  ]);
   await openPath(await downloadDir());
 }
 
@@ -424,11 +422,9 @@ const MarkdownLink = memo(
           onClick={(e) => {
             e.preventDefault();
             if (isUrlTrusted(href ?? "")) {
-              void import("@tauri-apps/plugin-opener")
-                .then(({ openUrl }) => openUrl(href ?? ""))
-                .catch((error: unknown) => {
-                  console.error("[linkSafety] openUrl failed:", error);
-                });
+              void openUrl(href ?? "").catch((error: unknown) => {
+                console.error("[linkSafety] openUrl failed:", error);
+              });
             } else {
               openModal?.(href ?? "");
             }

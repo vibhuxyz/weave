@@ -29,7 +29,7 @@ which starts the Rust shell, which spawns the Node ACP server and the agent.
 ## Where this is going
 
 ```
-V1    Single-agent engineering workspace          ← V1.0 shipped, V1.1 in progress
+V1    Single-agent engineering workspace          ← shipped, standing at the MVP gate
  ↓
 MVP   Basic parallel multi-agent execution
  ↓
@@ -45,7 +45,7 @@ a product someone could run, not a half-built version of the next.
 
 | Tier | What it adds | Status |
 |---|---|---|
-| **[V1](docs/V1.md)** | runner · ledger · permissions · intake · verification ladder · eval harness | shipped |
+| **[V1](docs/V1.md)** | runner · ledger · permissions · intake · verification ladder · eval harness · multi-engine supervisor · in-band auth · command-boundary sandboxing · interactive plan approval · file-tree context panel | shipped |
 | **[MVP](docs/MVP.md)** | worktrees · pool · scheduler · integrator · planner · blueprint · contracts · lanes UI | not started |
 | **[V2](docs/V2.md)** | ownership · event bus · dynamic deps · context model · impact · dashboard | not started |
 | **[V3](docs/V3.md)** | routing · budgets · adaptive scale · supervisor · checkpoints · sandboxing | not started |
@@ -414,6 +414,12 @@ PATH.
 ## History
 
 ```
+d758b59  Auth and login prompts fire reliably across all engines
+2acbb41  Interactive plan approval modal for all agents
+89e5415  File tree in the context panel (native directory listing)
+044e656  Command-boundary inspection, sandbox-exec, conditional engine sandboxing
+7722dc1  Multi-engine supervisor, in-band auth, desktop systems
+402441b  V1.1: intake, verification ladder, 12 fixtures, berd → weave rename
 4f11ff5  pnpm dev runs the whole stack
 f31b854  V1.1 (part): eval harness with repeats, isolation, anti-cheat, caps
 4335acb  Docs: architecture, ladder, findings

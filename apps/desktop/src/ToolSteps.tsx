@@ -1,18 +1,9 @@
-import { useEffect, useState } from "react";
-import type { ToolKind } from "@agentclientprotocol/sdk";
+import { useState } from "react";
 import {
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  FileTextIcon,
-  GlobeIcon,
-  LightbulbIcon,
   Loader2Icon,
-  PencilIcon,
-  SearchIcon,
-  SettingsIcon,
-  TerminalIcon,
-  Trash2Icon,
   WrenchIcon,
   XIcon,
 } from "lucide-react";
@@ -24,73 +15,15 @@ import {
 } from "@/shared/ui/ai-elements/task";
 import { Shimmer } from "@/shared/ui/ai-elements/shimmer";
 import { cn } from "@/shared/lib/cn";
+import { formatElapsed, useNow } from "./agent/lib/elapsed";
+import { KIND_ICONS, activeTitle, shorten } from "./agent/lib/toolTitle";
 import type { ToolEntry } from "./useAcpChat";
-
-/** ACP reports what a tool *does*, so the icon comes from `kind`, not a name map. */
-const KIND_ICONS: Record<ToolKind, typeof WrenchIcon> = {
-  read: FileTextIcon,
-  edit: PencilIcon,
-  delete: Trash2Icon,
-  move: PencilIcon,
-  search: SearchIcon,
-  execute: TerminalIcon,
-  think: LightbulbIcon,
-  fetch: GlobeIcon,
-  switch_mode: SettingsIcon,
-  other: WrenchIcon,
-};
-
-/** Swap a leading past-tense verb in an ACP title for its present-tense form. */
-const TITLE_VERB_SWAP: Array<[RegExp, string]> = [
-  [/^Read /, "Reading "],
-  [/^Edit /, "Editing "],
-  [/^Write /, "Creating "],
-  [/^Wrote /, "Creating "],
-  [/^Search(ed)? /, "Searching "],
-  [/^Delete[d]? /, "Deleting "],
-  [/^Ran /, "Running "],
-  [/^Fetch(ed)? /, "Fetching "],
-];
-
-function activeTitle(title: string): string {
-  for (const [re, replacement] of TITLE_VERB_SWAP) {
-    if (re.test(title)) return title.replace(re, replacement);
-  }
-  return title;
-}
 
 /** A running command past this many seconds is probably stuck — nudge the user. */
 const SLOW_AFTER_S = 60;
 
-function shorten(title: string, projectDir: string | null): string {
-  if (!projectDir) return title;
-  return title
-    .replaceAll(projectDir + "/", "")
-    .replaceAll(projectDir, ".")
-    .trim();
-}
-
 function isRunning(tool: ToolEntry) {
   return tool.status === "in_progress" || tool.status === "pending";
-}
-
-function formatElapsed(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return `${m}m ${rem.toString().padStart(2, "0")}s`;
-}
-
-/** Ticks once a second while `live` so a running timer stays current. */
-function useNow(live: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!live) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [live]);
-  return now;
 }
 
 /**
@@ -117,7 +50,11 @@ function ToolRow({
   projectDir: string | null;
   onStop?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
+  // Claude Code reports a spawned sub-agent (Task tool) as `kind: "think"`.
+  // Its streamed output is "what the sub-agent is exploring" — keep it open so
+  // the user can watch it rather than staring at a collapsed row.
+  const isSubagent = tool.kind === "think";
+  const [open, setOpen] = useState(isSubagent);
   const Icon = KIND_ICONS[tool.kind] ?? WrenchIcon;
   const running = isRunning(tool);
   const failed = tool.status === "failed";
@@ -132,8 +69,8 @@ function ToolRow({
 
   const cleaned = tool.output ? cleanOutput(tool.output) : "";
   const hasLog = cleaned.length > 0;
-  // A running shell command is the thing the user most wants to watch and stop.
-  const highlight = isShell && running;
+  // A running shell command or sub-agent is what the user most wants to watch.
+  const highlight = (isShell || isSubagent) && running;
 
   const tone = failed
     ? "text-agent-critical-fg"
@@ -174,10 +111,16 @@ function ToolRow({
         >
           {running ? (
             <Shimmer className="min-w-0 truncate">
-              {shorten(activeTitle(tool.title), projectDir)}
+              {isSubagent
+                ? `Exploring — ${shorten(tool.title, projectDir)}`
+                : shorten(activeTitle(tool.title), projectDir)}
             </Shimmer>
           ) : (
-            <span className="truncate">{shorten(tool.title, projectDir)}</span>
+            <span className="truncate">
+              {isSubagent
+                ? `Explored — ${shorten(tool.title, projectDir)}`
+                : shorten(tool.title, projectDir)}
+            </span>
           )}
           <ChevronRightIcon
             className={cn(

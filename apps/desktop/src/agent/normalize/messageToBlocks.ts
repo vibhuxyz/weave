@@ -1,5 +1,5 @@
 import type { GitStatus } from "../../../server/index.ts";
-import type { ToolEntry, TurnPlan } from "../../useAcpChat";
+import type { ToolEntry, TurnPlan, TurnUsage } from "../../useAcpChat";
 import { explanationFromKnownText } from "./explanation";
 import { findingsFromKnownText, makeFinding } from "./finding";
 import { projectOverviewFromText } from "./projectOverview";
@@ -91,6 +91,62 @@ function planFromText(
   return null;
 }
 
+/** Loose "numbered or bulleted list" parser — only trusted once we already
+ *  know the agent is in plan mode (an ExitPlanMode tool call this turn). */
+function planStepsFromText(text: string): PlanBlockEntry[] {
+  const entries: PlanBlockEntry[] = [];
+  for (const line of text.split("\n")) {
+    const match = /^\s*(?:\d+[.)]|[-*])\s+(.+)$/.exec(line);
+    const content = match?.[1]?.replace(/^\*\*|\*\*$/g, "").trim();
+    if (content && !content.startsWith("#")) {
+      entries.push({
+        id: `step-${entries.length + 1}`,
+        content,
+        priority: "medium",
+        status: "pending",
+      });
+    }
+  }
+  return entries;
+}
+
+/** Claude Code plan mode ends with an `ExitPlanMode` tool call; some engines
+ *  title it "Approve Plan" / "Present plan". Also treat a write into
+ *  `~/.claude/plans/*.md` as the same signal. */
+function isPlanModeExit(tools: ToolEntry[]): boolean {
+  return tools.some(isPlanModeTool);
+}
+
+function isPlanModeTool(t: ToolEntry): boolean {
+  const title = t.title.toLowerCase();
+  return (
+    /\bexit\s?plan\s?mode\b|\bpresent(?:ed|ing)? (?:the )?plan\b|\bapprove plan\b/.test(
+      title,
+    ) || /\.claude\/plans\/[^\s]*\.md\b/.test(title)
+  );
+}
+
+/** The full plan markdown — from the `ExitPlanMode` tool's `{ plan }` arg, or
+ *  the `{ content }` of the write into `~/.claude/plans/*.md`. Far richer than
+ *  the prose summary the agent leaves in the chat message. */
+function planTextFromTools(tools: ToolEntry[]): string | null {
+  for (const t of tools) {
+    if (!isPlanModeTool(t)) continue;
+    const raw = t.rawInput;
+    if (typeof raw === "string" && raw.trim()) return raw;
+    if (raw && typeof raw === "object") {
+      const rec = raw as Record<string, unknown>;
+      for (const key of ["plan", "content", "text", "markdown"]) {
+        if (typeof rec[key] === "string" && (rec[key] as string).trim()) {
+          return rec[key] as string;
+        }
+      }
+    }
+    if (t.output && t.output.trim().length > 40) return t.output;
+  }
+  return null;
+}
+
 export function messageToBlocks(options: {
   id: string;
   text: string;
@@ -101,6 +157,7 @@ export function messageToBlocks(options: {
   engineId: string;
   engineLabel: string;
   plan?: TurnPlan;
+  usage?: TurnUsage;
   sourceEventIds?: string[];
   sourceSeq?: number;
 }): AgentViewModel {
@@ -122,6 +179,7 @@ export function messageToBlocks(options: {
   const text = options.text.trim();
 
   // If a structured plan exists on the turn or can be detected in text, emit it.
+  const planModeExit = isPlanModeExit(options.tools);
   if (options.plan && options.plan.entries.length > 0) {
     blocks.push({
       id: `plan-${options.id}`,
@@ -131,6 +189,25 @@ export function messageToBlocks(options: {
       title: "Execution Plan",
       entries: options.plan.entries,
       approved: options.plan.approved,
+      awaitingApproval: planModeExit && !options.plan.approved,
+      turnId: options.id,
+    });
+  } else if (planModeExit) {
+    // Plan mode with no ACP todo-list: keep the agent's plan markdown intact —
+    // the modal renders it as-is — and gate execution on the modal.
+    const planText = (planTextFromTools(options.tools) ?? options.text).trim();
+    const steps =
+      planFromText(planText, options.id, src())?.entries ??
+      planStepsFromText(planText);
+    blocks.push({
+      id: `plan-${options.id}`,
+      schemaVersion: 1,
+      source: src(),
+      type: "plan",
+      title: "Execution Plan",
+      entries: steps,
+      markdown: planText || "The agent proposed a plan but left no details.",
+      awaitingApproval: true,
       turnId: options.id,
     });
   } else if (text) {
@@ -271,6 +348,18 @@ export function messageToBlocks(options: {
     (testBlock?.steps.filter((s) => s.status === "failed").length ?? 0);
   meta.changed = meta.filesChanged > 0 || mutatesState(options.tools);
 
+  if (options.usage) {
+    const { usage } = options;
+    const used = usage.outputTokens ?? usage.contextUsed;
+    if (used != null || usage.contextSize != null || usage.costUsd != null) {
+      meta.usage = {
+        used,
+        size: usage.contextSize,
+        costUsd: usage.costUsd,
+      };
+    }
+  }
+
   return {
     schemaVersion: 1,
     id: options.id,
@@ -365,6 +454,37 @@ export function parseStepSignal(output: string | undefined): StepSignal {
   return { badge, badgeTone, durationMs };
 }
 
+// Search / inspection commands that use a non-zero exit as an ordinary
+// "no match" / "differs" result, not an error. `grep foo` with no hit exits 1;
+// that is not a failing step and must not turn a run red.
+const SEARCH_COMMAND =
+  /^(?:grep|egrep|fgrep|rg|ag|ack|find|fd|diff|cmp|test|\[|ls|cat|head|tail|wc|sed|awk|jq|rev|sort|uniq|comm|which|type|command|pgrep)$/;
+const PASSTHROUGH_COMMAND = /^(?:cd|echo|true|false|pwd|export|set|:)$/;
+// Output that means the shell itself failed, not just an empty result.
+const REAL_SHELL_ERROR =
+  /\b(?:command not found|permission denied|killed|segmentation fault|cannot execute|not a directory|too many open files|out of memory)\b/i;
+
+/** Every &&/||/;/| segment is a search or passthrough command. */
+function isSearchOnlyCommand(title: string): boolean {
+  const segments = title.split(/&&|\|\||[;|]/).map((s) => s.trim());
+  if (segments.length === 0) return false;
+  return segments.every((seg) => {
+    const word = seg.replace(/^\S+=\S+\s+/, "").split(/\s+/)[0]?.replace(/.*\//, "");
+    return !word || SEARCH_COMMAND.test(word) || PASSTHROUGH_COMMAND.test(word);
+  });
+}
+
+/** A "failed" execute tool that is really just an empty search result. */
+function isBenignSearchExit(tool: ToolEntry): boolean {
+  if (tool.status !== "failed") return false;
+  if (REAL_SHELL_ERROR.test(tool.output ?? "")) return false;
+  if (!isSearchOnlyCommand(tool.title)) return false;
+  const exit = /\bexit(?:\s+code)?\s+(\d+)/i.exec(tool.output ?? "");
+  // grep/diff use exit 1; exit ≥ 3 is always a real error. Missing code (the
+  // engine just flagged the tool) is treated as benign for a search command.
+  return !exit || Number(exit[1]) <= 2;
+}
+
 function testRunFromTools(tools: ToolEntry[]): TestRunBlock | null {
   const commandTools = tools.filter((tool) => tool.kind === "execute");
   if (commandTools.length === 0) return null;
@@ -372,7 +492,14 @@ function testRunFromTools(tools: ToolEntry[]): TestRunBlock | null {
   const hasRunSignal = commandTools.some((t) => RUN_SIGNATURE.test(t.output ?? ""));
   if (commandTools.length < 2 && !hasRunSignal) return null;
 
-  const failed = commandTools.some((tool) => tool.status === "failed");
+  // Pure exploration — every command is a grep/find/ls with no test-shaped
+  // output — is not a "run". Let those render as ordinary tool steps.
+  const allSearch = commandTools.every((t) => isSearchOnlyCommand(t.title));
+  if (allSearch && !hasRunSignal) return null;
+
+  const failed = commandTools.some(
+    (tool) => tool.status === "failed" && !isBenignSearchExit(tool),
+  );
   const running = commandTools.some(
     (tool) => tool.status === "pending" || tool.status === "in_progress",
   );
@@ -383,14 +510,15 @@ function testRunFromTools(tools: ToolEntry[]): TestRunBlock | null {
       tool.startedAt != null && tool.endedAt != null
         ? tool.endedAt - tool.startedAt
         : undefined;
+    const benign = isBenignSearchExit(tool);
     return {
       id: tool.id,
       label: tool.title,
-      status: tool.status,
+      status: benign ? ("completed" as const) : tool.status,
       kind: tool.kind,
       durationMs: sig.durationMs ?? wallMs,
-      badge: sig.badge,
-      badgeTone: sig.badgeTone,
+      badge: benign ? "no match" : sig.badge,
+      badgeTone: benign ? ("neutral" as const) : sig.badgeTone,
       output: tool.output,
     };
   });

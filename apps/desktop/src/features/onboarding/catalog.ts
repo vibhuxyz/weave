@@ -84,7 +84,6 @@ export function recommendationsForWorkTypes(
 export const ONBOARDING_ENGINE_IDS = [
   "claude-code",
   "codex",
-  "gemini",
   "amp",
   "antigravity",
 ] as const;
