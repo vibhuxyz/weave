@@ -459,7 +459,7 @@ export function useAcpChat(port: number | null) {
             setPendingConfigId(null);
             setPendingConfigValue(null);
             if (isAuthRequiredError(message.message)) {
-              const activeId = engineId ?? "claude-code";
+              const activeId = targetEngineId ?? engineId ?? "antigravity";
               const isClaude = activeId === "claude-code";
               const isCodex = activeId === "codex";
               setAuthRequired({

@@ -751,7 +751,7 @@ export function App() {
             card, which boxed Home's canvas and the Agents grid inside a second
             surface — the sidebar is the only chrome that should read as one. */}
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-          {authRequired && isSameEngine(authRequired.engineId, activeEngineId) && (
+          {authRequired && (
             <div className="z-30 w-full shrink-0 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
               <div className="mx-auto max-w-2xl">
                 <EngineAuthPanel

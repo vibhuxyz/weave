@@ -78,9 +78,19 @@ export const AUTH_OUTPUT_MAX_LINES = 200;
  * the raw error.
  */
 export function isAuthRequiredError(error: unknown): boolean {
+  if (typeof error === "object" && error !== null) {
+    if (
+      "authMethods" in error ||
+      ("data" in error &&
+        typeof (error as { data?: unknown }).data === "object" &&
+        (error as { data?: { authMethods?: unknown } }).data?.authMethods !== undefined)
+    ) {
+      return true;
+    }
+  }
   const message =
     error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  return /auth[_ ]?required|authentication required|not authenticated|requires? (?:you to )?(?:sign|log) ?in|unauthenticated/i.test(
+  return /auth[_ ]?required|authentication required|not authenticated|requires? (?:you to )?(?:sign|log) ?in|unauthenticated|antigravity\.google\/terms|unauthorized|\b401\b|invalid[_ ]?api[_ ]?key|missing[_ ]?api[_ ]?key|oauth token|claude login|codex login|agy auth login|sign[_ ]?in required|login required|needs? (?:to )?(?:sign|log) ?in|authentication failed/i.test(
     message,
   );
 }

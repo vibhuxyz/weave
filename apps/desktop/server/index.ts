@@ -22,10 +22,14 @@ import {
   getEngine,
   installedEngines,
   isTerminalMethod,
+  resolveEngineEntry,
+  resolveCodexCliEntry,
   runTerminalAuth,
   AuthRequiredError,
   ENGINES,
   DEFAULT_ENGINE_ID,
+  type EngineSupervisor,
+  type PromptBlock,
 } from "@weave/agent";
 import {
   Ledger,
@@ -48,14 +52,20 @@ import type {
   SessionUpdate,
   TaskContract,
 } from "@weave/protocol";
-import { toEngineAuthMethod } from "@weave/protocol";
+import { toEngineAuthMethod, isAuthRequiredError } from "@weave/protocol";
 
 export const DEFAULT_PORT = 8137;
 export type { GitStatus, GitChange, ConversationMeta } from "@weave/core";
 
 /** Messages the UI sends us. */
 export type ClientMessage =
-  | { type: "prompt"; text: string; persona?: string }
+  | {
+      type: "prompt";
+      text: string;
+      persona?: string;
+      /** Screenshots the user attached, each with its own fix/build instructions. */
+      images?: { data: string; mimeType: string; prompt?: string }[];
+    }
   | { type: "cancel" }
   | { type: "set-config"; configId: string; value: string }
   | { type: "git" }
@@ -64,11 +74,13 @@ export type ClientMessage =
   /** Rebind this conversation to a different engine. */
   | { type: "switch-engine"; engineId: string }
   /** Sign in to an engine that refused a session. */
-  | { type: "start-auth"; engineId: string; methodId: string }
+  | { type: "start-auth"; engineId: string; methodId: string; secret?: string }
   /** Abandon a sign-in that is still running. */
   | { type: "cancel-auth" }
   /** Fuzzy path lookup for the `@file` mention menu. */
-  | { type: "list-files"; query: string };
+  | { type: "list-files"; query: string }
+  /** Refresh installed engines list. */
+  | { type: "refresh-engines" };
 
 /** Messages we send the UI. */
 export type ServerMessage =
@@ -228,6 +240,14 @@ async function handleConnection(
   projectDir: string,
   store: SessionStore,
 ): Promise<void> {
+  // Autoload environment variables from project directory if available
+  try {
+    process.loadEnvFile(resolve(projectDir, ".env"));
+  } catch {}
+  try {
+    process.loadEnvFile(resolve(projectDir, ".env.local"));
+  } catch {}
+
   const send = (message: ServerMessage) => safeSend(socket, message);
   const ledger = new Ledger(weaveDirFor(projectDir), newRunId());
   // Instructions that ride the *next* prompt only, then clear: new-chat
@@ -263,18 +283,25 @@ async function handleConnection(
   // Skills are a property of the repo; discover them once per connection.
   const skillCatalog = formatSkillCatalog(await discoverSkills(projectDir));
 
+  const isSandboxed =
+    process.env.WEAVE_SANDBOX === "1" || process.env.SANDBOXED === "true";
+
   const task: TaskContract = {
     id: "desktop",
     prompt: "",
     cwd: projectDir,
+    sandboxed: isSandboxed,
   };
 
   ledger.append("run.started", { cwd: projectDir, config: { via: "desktop" } });
 
   const installed = new Set(installedEngines().map((e) => e.id));
+  const uniqueEngines = Array.from(
+    new Map(Object.values(ENGINES).map((e) => [e.id, e])).values(),
+  );
   send({
     type: "engines",
-    engines: Object.values(ENGINES).map((e) => ({
+    engines: uniqueEngines.map((e) => ({
       id: e.id,
       label: e.label,
       installed: installed.has(e.id),
@@ -291,7 +318,7 @@ async function handleConnection(
       chats: (await conversations.list()).sort(
         (a, b) => b.updatedAt - a.updatedAt,
       ),
-      activeSessionId: supervisor.current.sessionId,
+      activeSessionId: supervisor?.current?.sessionId ?? "",
     });
 
   let currentEngineId = process.env.ENGINE_ID || DEFAULT_ENGINE_ID;
@@ -323,13 +350,129 @@ async function handleConnection(
 
   /** Relay an auth refusal as something the UI can act on. */
   const sendAuthRequired = (error: AuthRequiredError) => {
-    authMethodsByEngine.set(error.engineId, error.authMethods);
+    let rawMethods = [...error.authMethods];
+    const engineId = error.engineId;
+    if (rawMethods.length === 0) {
+      if (engineId === "antigravity" || engineId === "agy") {
+        rawMethods.push({
+          id: "agy-login",
+          name: "Sign in with Google Antigravity",
+          type: "terminal",
+          command: "agy",
+          args: ["auth", "login"],
+          _meta: {
+            "terminal-auth": {
+              command: "agy",
+              args: ["auth", "login"],
+            },
+          },
+        } as unknown as AuthMethod);
+      } else if (engineId === "claude-code") {
+        const engine = ENGINES["claude-code"];
+        if (engine) {
+          rawMethods.push(
+            {
+              id: "claude-ai-login",
+              name: "Claude Subscription",
+              type: "terminal",
+              description: "Use Claude subscription",
+              args: ["--cli", "auth", "login", "--claudeai"],
+              _meta: {
+                "terminal-auth": {
+                  command: process.execPath,
+                  args: [
+                    resolveEngineEntry(engine),
+                    "--cli",
+                    "auth",
+                    "login",
+                    "--claudeai",
+                  ],
+                  label: "Claude Login",
+                },
+              },
+            } as unknown as AuthMethod,
+            {
+              id: "console-login",
+              name: "Anthropic Console",
+              type: "terminal",
+              description: "Use Anthropic Console (API usage billing)",
+              args: ["--cli", "auth", "login", "--console"],
+              _meta: {
+                "terminal-auth": {
+                  command: process.execPath,
+                  args: [
+                    resolveEngineEntry(engine),
+                    "--cli",
+                    "auth",
+                    "login",
+                    "--console",
+                  ],
+                  label: "Anthropic Console Login",
+                },
+              },
+            } as unknown as AuthMethod,
+          );
+        }
+      }
+    }
+    if (error.engineId === "codex") {
+      const codexCli = resolveCodexCliEntry(getEngine("codex"));
+      const isNative = !codexCli.endsWith(".js");
+      const cmd = isNative ? codexCli : process.execPath;
+      const baseArgs = isNative ? [] : [codexCli];
+      if (!rawMethods.some((m) => m.id === "chat-gpt-device-code")) {
+        rawMethods.unshift({
+          id: "chat-gpt-device-code",
+          name: "Sign in with Device Code",
+          type: "terminal",
+          description: "Sign in using one-time verification code in browser (recommended)",
+          _meta: {
+            "terminal-auth": {
+              command: cmd,
+              args: [...baseArgs, "login", "--device-auth"],
+              label: "ChatGPT Device Auth",
+            },
+          },
+        } as unknown as AuthMethod);
+      }
+      if (!rawMethods.some((m) => m.id === "chat-gpt" || m.id === "codex-login")) {
+        rawMethods.push({
+          id: "chat-gpt",
+          name: "Sign in with ChatGPT",
+          type: "terminal",
+          description: "Sign in using your OpenAI ChatGPT account",
+          _meta: {
+            "terminal-auth": {
+              command: cmd,
+              args: [...baseArgs, "login"],
+              label: "ChatGPT Login",
+            },
+          },
+        } as unknown as AuthMethod);
+      }
+      if (!rawMethods.some((m) => m.id === "api-key")) {
+        rawMethods.push({
+          id: "api-key",
+          name: "OpenAI API Key",
+          type: "terminal",
+          description: "Authenticate using an OpenAI API Key",
+          _meta: {
+            "terminal-auth": {
+              command: cmd,
+              args: [...baseArgs, "login", "--with-api-key"],
+              label: "OpenAI API Key Login",
+            },
+          },
+        } as unknown as AuthMethod);
+      }
+    }
+    authMethodsByEngine.set(error.engineId, rawMethods);
     send({
       type: "auth-required",
       engineId: error.engineId,
       engineLabel: getEngine(error.engineId).label,
       message: error.message,
-      methods: error.authMethods.map(toEngineAuthMethod),
+      methods: rawMethods.map(toEngineAuthMethod),
     });
   };
 
@@ -342,10 +485,21 @@ async function handleConnection(
    */
   const bindEngine = async (engineId: string): Promise<boolean> => {
     try {
-      await supervisor.switchTo(engineId);
+      if (!supervisor) {
+        supervisor = await createEngineSupervisor({ ...supervisorOptions, engineId });
+      } else {
+        await supervisor.switchTo(engineId);
+      }
     } catch (error) {
       if (error instanceof AuthRequiredError) {
         sendAuthRequired(error);
+        return false;
+      }
+      if (isAuthRequiredError(error)) {
+        const errObj = error as { data?: { authMethods?: AuthMethod[] } };
+        const methods: AuthMethod[] =
+          errObj?.data?.authMethods ?? authMethodsByEngine.get(engineId) ?? [];
+        sendAuthRequired(new AuthRequiredError(engineId, methods, error));
         return false;
       }
       throw error;
@@ -397,19 +551,22 @@ async function handleConnection(
 
     for (const engineId of order) {
       try {
-        const opened = await createEngineSupervisor({ ...options, engineId });
-        if (refusal) {
-          sendAuthRequired(refusal);
-          send({
-            type: "error",
-            message: `${getEngine(refusal.engineId).label} needs you to sign in. Using ${getEngine(engineId).label} for now.`,
-          });
-        }
         currentEngineId = engineId;
+        const opened = await createEngineSupervisor({ ...options, engineId });
         return opened;
       } catch (error) {
         if (error instanceof AuthRequiredError) {
+          if (engineId === wanted) throw error;
           refusal ??= error;
+          continue;
+        }
+        if (isAuthRequiredError(error)) {
+          const errObj = error as { data?: { authMethods?: AuthMethod[] } };
+          const methods: AuthMethod[] =
+            errObj?.data?.authMethods ?? authMethodsByEngine.get(engineId) ?? [];
+          const authErr = new AuthRequiredError(engineId, methods, error);
+          if (engineId === wanted) throw authErr;
+          refusal ??= authErr;
           continue;
         }
         throw error;
@@ -420,7 +577,7 @@ async function handleConnection(
     throw refusal ?? new Error("No engine could open a session.");
   };
 
-  const supervisor = await openFirstUsableEngine(currentEngineId, {
+  const supervisorOptions: Omit<Parameters<typeof createEngineSupervisor>[0], "engineId"> = {
     task,
     policy: confineToTaskDir,
     resumeSessionId: resumeId,
@@ -482,14 +639,32 @@ async function handleConnection(
       onFileWritten: (path, bytes) =>
         ledger.append("file.written", { taskId: task.id, path, bytes }),
     },
-  });
+  };
 
-  console.log(
-    "[session]",
-    supervisor.current.sessionId,
-    supervisor.current.resumed ? "(resumed)" : "(new)",
-    `config: ${supervisor.current.configOptions.map((o) => o.id).join(", ") || "none"}`,
-  );
+  let supervisor: EngineSupervisor | null = null;
+  try {
+    supervisor = await openFirstUsableEngine(currentEngineId, supervisorOptions);
+  } catch (error) {
+    if (error instanceof AuthRequiredError) {
+      sendAuthRequired(error);
+    } else if (isAuthRequiredError(error)) {
+      const errObj = error as { data?: { authMethods?: AuthMethod[] } };
+      const methods: AuthMethod[] =
+        errObj?.data?.authMethods ?? authMethodsByEngine.get(currentEngineId) ?? [];
+      sendAuthRequired(new AuthRequiredError(currentEngineId, methods, error));
+    } else {
+      throw error;
+    }
+  }
+
+  if (supervisor) {
+    console.log(
+      "[session]",
+      supervisor.current.sessionId,
+      supervisor.current.resumed ? "(resumed)" : "(new)",
+      `config: ${supervisor.current.configOptions.map((o) => o.id).join(", ") || "none"}`,
+    );
+  }
 
   void sendChats();
 
@@ -518,7 +693,7 @@ async function handleConnection(
 
     switch (message.type) {
       case "cancel":
-        void supervisor.current.cancel();
+        void supervisor?.current?.cancel();
         return;
 
       case "switch-engine": {
@@ -526,18 +701,45 @@ async function handleConnection(
         if (nextEngineId === currentEngineId || !ENGINES[nextEngineId]) return;
         pending = pending
           // Supersede whatever is in flight on the old engine (II.13).
-          .then(() => supervisor.current.cancel().catch(() => {}))
+          .then(() => supervisor?.current?.cancel().catch(() => {}))
           // An auth refusal is reported by `bindEngine` as `auth-required`,
           // not as an error — it is a state with an action, not a failure.
           .then(() => bindEngine(nextEngineId))
-          .catch((error: unknown) =>
+          .catch((error: unknown) => {
+            if (error instanceof AuthRequiredError) {
+              sendAuthRequired(error);
+              return;
+            }
+            if (isAuthRequiredError(error)) {
+              const errObj = error as { data?: { authMethods?: AuthMethod[] } };
+              const methods: AuthMethod[] =
+                errObj?.data?.authMethods ?? authMethodsByEngine.get(nextEngineId) ?? [];
+              sendAuthRequired(new AuthRequiredError(nextEngineId, methods, error));
+              return;
+            }
             send({
               type: "error",
               message: `Could not switch engine: ${
                 error instanceof Error ? error.message : String(error)
               }`,
-            }),
-          );
+            });
+          });
+        return;
+      }
+
+      case "refresh-engines": {
+        const installed = new Set(installedEngines().map((e) => e.id));
+        const uniqueEngines = Array.from(
+          new Map(Object.values(ENGINES).map((e) => [e.id, e])).values(),
+        );
+        send({
+          type: "engines",
+          engines: uniqueEngines.map((e) => ({
+            id: e.id,
+            label: e.label,
+            installed: installed.has(e.id),
+          })),
+        });
         return;
       }
 
@@ -548,10 +750,176 @@ async function handleConnection(
       case "start-auth": {
         if (auth?.operation.status === "running") return;
         const { engineId, methodId } = message;
-        const engine = ENGINES[engineId];
-        const method = authMethodsByEngine
-          .get(engineId)
-          ?.find((entry) => entry.id === methodId);
+        const normalizedEngineId =
+          engineId === "agy" || engineId === "antigravity"
+            ? "antigravity"
+            : engineId;
+        const engine = ENGINES[normalizedEngineId] || ENGINES[engineId];
+        let method = (
+          authMethodsByEngine.get(engineId) ??
+          authMethodsByEngine.get(normalizedEngineId)
+        )?.find((entry) => entry.id === methodId);
+        if (
+          !method &&
+          normalizedEngineId === "antigravity" &&
+          methodId === "agy-login"
+        ) {
+          method = {
+            id: "agy-login",
+            name: "Sign in with Google Antigravity",
+            type: "terminal",
+            command: "agy",
+            args: ["auth", "login"],
+            _meta: {
+              "terminal-auth": {
+                command: "agy",
+                args: ["auth", "login"],
+              },
+            },
+          } as unknown as AuthMethod;
+        }
+        if (!method && normalizedEngineId === "claude-code" && engine) {
+          if (methodId === "claude-ai-login") {
+            method = {
+              id: "claude-ai-login",
+              name: "Claude Subscription",
+              type: "terminal",
+              description: "Use Claude subscription",
+              args: ["--cli", "auth", "login", "--claudeai"],
+              _meta: {
+                "terminal-auth": {
+                  command: process.execPath,
+                  args: [
+                    resolveEngineEntry(engine),
+                    "--cli",
+                    "auth",
+                    "login",
+                    "--claudeai",
+                  ],
+                  label: "Claude Login",
+                },
+              },
+            } as unknown as AuthMethod;
+          } else if (methodId === "console-login") {
+            method = {
+              id: "console-login",
+              name: "Anthropic Console",
+              type: "terminal",
+              description: "Use Anthropic Console (API usage billing)",
+              args: ["--cli", "auth", "login", "--console"],
+              _meta: {
+                "terminal-auth": {
+                  command: process.execPath,
+                  args: [
+                    resolveEngineEntry(engine),
+                    "--cli",
+                    "auth",
+                    "login",
+                    "--console",
+                  ],
+                  label: "Anthropic Console Login",
+                },
+              },
+            } as unknown as AuthMethod;
+          }
+        }
+        if (!method && normalizedEngineId === "codex" && engine) {
+          const codexCli = resolveCodexCliEntry(engine);
+          const isNative = !codexCli.endsWith(".js");
+          const cmd = isNative ? codexCli : process.execPath;
+          const baseArgs = isNative ? [] : [codexCli];
+          if (methodId === "chat-gpt" || methodId === "codex-login") {
+            method = {
+              id: methodId,
+              name: "Sign in with ChatGPT",
+              type: "terminal",
+              description: "Sign in using your OpenAI ChatGPT account",
+              _meta: {
+                "terminal-auth": {
+                  command: cmd,
+                  args: [...baseArgs, "login"],
+                  label: "ChatGPT Login",
+                },
+              },
+            } as unknown as AuthMethod;
+          } else if (methodId === "chat-gpt-device-code") {
+            method = {
+              id: "chat-gpt-device-code",
+              name: "Sign in with Device Code",
+              type: "terminal",
+              description: "Sign in using one-time device verification code",
+              _meta: {
+                "terminal-auth": {
+                  command: cmd,
+                  args: [...baseArgs, "login", "--device-auth"],
+                  label: "ChatGPT Device Auth",
+                },
+              },
+            } as unknown as AuthMethod;
+          } else if (methodId === "api-key") {
+            method = {
+              id: "api-key",
+              name: "OpenAI API Key",
+              type: "terminal",
+              description: "Authenticate using an OpenAI API Key",
+              _meta: {
+                "terminal-auth": {
+                  command: cmd,
+                  args: [...baseArgs, "login", "--with-api-key"],
+                  label: "OpenAI API Key Login",
+                },
+              },
+            } as unknown as AuthMethod;
+          }
+        }
+        if (
+          method &&
+          normalizedEngineId === "codex" &&
+          engine &&
+          !isTerminalMethod(method)
+        ) {
+          const codexCli = resolveCodexCliEntry(engine);
+          const isNative = !codexCli.endsWith(".js");
+          const cmd = isNative ? codexCli : process.execPath;
+          const baseArgs = isNative ? [] : [codexCli];
+          if (method.id === "chat-gpt") {
+            method = {
+              ...method,
+              type: "terminal",
+              _meta: {
+                "terminal-auth": {
+                  command: cmd,
+                  args: [...baseArgs, "login", "--device-auth"],
+                  label: "ChatGPT Login",
+                },
+              },
+            } as unknown as AuthMethod;
+          } else if (method.id === "chat-gpt-device-code") {
+            method = {
+              ...method,
+              type: "terminal",
+              _meta: {
+                "terminal-auth": {
+                  command: cmd,
+                  args: [...baseArgs, "login", "--device-auth"],
+                  label: "ChatGPT Device Auth",
+                },
+              },
+            } as unknown as AuthMethod;
+          } else if (method.id === "api-key") {
+            method = {
+              ...method,
+              type: "terminal",
+              _meta: {
+                "terminal-auth": {
+                  command: cmd,
+                  args: [...baseArgs, "login", "--with-api-key"],
+                  label: "OpenAI API Key Login",
+                },
+              },
+            } as unknown as AuthMethod;
+          }
+        }
         if (!engine || !method) {
           send({ type: "error", message: "That sign-in is no longer available." });
           return;
@@ -561,7 +929,7 @@ async function handleConnection(
         auth = {
           abort,
           operation: {
-            engineId,
+            engineId: normalizedEngineId,
             methodId,
             phase: "starting",
             status: "running",
@@ -583,6 +951,7 @@ async function handleConnection(
                 engine,
                 method,
                 cwd: projectDir,
+                input: message.secret,
                 signal: abort.signal,
                 onOutput: (output) => publishAuth({ output }),
               });
@@ -603,7 +972,9 @@ async function handleConnection(
             // engines have already recorded it themselves by this point and
             // answer with an error rather than acknowledging it twice.
             publishAuth({ phase: "verifying" });
-            await supervisor.current.authenticate(methodId).catch(() => {});
+            if (supervisor) {
+              await supervisor.current.authenticate(methodId).catch(() => {});
+            }
 
             // The only proof that matters: can it open a session now?
             const bound = await bindEngine(engineId);
@@ -640,6 +1011,7 @@ async function handleConnection(
       }
 
       case "set-config":
+        if (!supervisor) return;
         supervisor.current
           .setConfigOption(message.configId, message.value)
           .then(() =>
@@ -662,9 +1034,10 @@ async function handleConnection(
         return;
 
       case "new-chat": {
+        if (!supervisor) return;
         const instructions = message.instructions;
         pending = pending
-          .then(() => supervisor.current.newSession())
+          .then(() => supervisor!.current.newSession())
           .then(async (sessionId) => {
             persisted = false;
             pendingPreamble = instructions?.trim() || null;
@@ -675,7 +1048,7 @@ async function handleConnection(
               cwd: projectDir,
               engineId: currentEngineId,
               engineLabel: getEngine(currentEngineId).label,
-              configOptions: supervisor.current.configOptions,
+              configOptions: supervisor!.current.configOptions,
               resumed: false,
             });
             await sendChats();
@@ -692,25 +1065,26 @@ async function handleConnection(
       }
 
       case "open-chat": {
+        if (!supervisor) return;
         const wanted = message.sessionId;
         pending = pending
           .then(async () => {
             send({ type: "reset" });
-            const ok = await supervisor.current.resumeSession(wanted);
+            const ok = await supervisor!.current.resumeSession(wanted);
             if (!ok) {
               send({ type: "error", message: "Could not open that chat." });
               await sendChats();
               return;
             }
             persisted = true;
-            await store.set(projectDir, supervisor.current.sessionId);
+            await store.set(projectDir, supervisor!.current.sessionId);
             send({
               type: "ready",
-              sessionId: supervisor.current.sessionId,
+              sessionId: supervisor!.current.sessionId,
               cwd: projectDir,
               engineId: currentEngineId,
               engineLabel: getEngine(currentEngineId).label,
-              configOptions: supervisor.current.configOptions,
+              configOptions: supervisor!.current.configOptions,
               resumed: true,
             });
             await sendChats();
@@ -728,13 +1102,32 @@ async function handleConnection(
       }
 
       case "prompt": {
+        if (!supervisor) {
+          send({
+            type: "error",
+            message: "Please sign in to the AI engine before sending a message.",
+          });
+          return;
+        }
         const promptText = message.text;
         recordTurn("user", promptText);
         // The persona block + skills catalog + any pending preamble ride every
         // prompt as one <system> block, so nothing drifts over a conversation.
         const outgoing = composeSystem(promptText, message.persona);
+        const blocks: PromptBlock[] = [{ type: "text", text: outgoing }];
+        // Number each image and put its instructions immediately before it, so
+        // a multi-image prompt can't be misread about which note belongs to
+        // which screenshot.
+        (message.images ?? []).forEach((image, i) => {
+          const note = image.prompt?.trim();
+          blocks.push({
+            type: "text",
+            text: note ? `Image ${i + 1}: ${note}` : `Image ${i + 1}:`,
+          });
+          blocks.push({ type: "image", data: image.data, mimeType: image.mimeType });
+        });
         pending = pending
-          .then(() => supervisor.current.prompt(outgoing))
+          .then(() => supervisor!.current.prompt(blocks))
           .then(async ({ stopReason }) => {
             send({ type: "turn-end", stopReason });
             ledger.append("task.finished", {
@@ -747,12 +1140,12 @@ async function handleConnection(
             // Now the session exists on the agent's disk and can be resumed.
             if (!persisted) {
               persisted = true;
-              await store.set(projectDir, supervisor.current.sessionId);
+              await store.set(projectDir, supervisor!.current.sessionId);
             }
             // Title is filled from the first prompt; later turns only bump
             // `updatedAt` so the chat floats to the top of the list.
             await conversations.record(
-              supervisor.current.sessionId,
+              supervisor!.current.sessionId,
               titleFromPrompt(promptText),
             );
             await sendChats();
@@ -760,6 +1153,17 @@ async function handleConnection(
             send({ type: "git-status", git: await readGitStatus(projectDir) });
           })
           .catch((error: unknown) => {
+            if (error instanceof AuthRequiredError) {
+              sendAuthRequired(error);
+              return;
+            }
+            if (isAuthRequiredError(error)) {
+              const errObj = error as { data?: { authMethods?: AuthMethod[] } };
+              const methods: AuthMethod[] =
+                errObj?.data?.authMethods ?? authMethodsByEngine.get(currentEngineId) ?? [];
+              sendAuthRequired(new AuthRequiredError(currentEngineId, methods, error));
+              return;
+            }
             const text = error instanceof Error ? error.message : String(error);
             ledger.append("error", { taskId: task.id, where: "prompt", message: text });
             send({ type: "error", message: text });
@@ -772,7 +1176,7 @@ async function handleConnection(
   socket.on("close", () => {
     ledger.append("run.finished", { status: "ok", wallMs: 0 });
     auth?.abort.abort();
-    supervisor.killAll();
+    supervisor?.killAll();
   });
 }
 
