@@ -8,6 +8,7 @@ import type { ProjectAgent } from "./useProjects";
 import type { Agent } from "./useAgents";
 import { ProjectAgentsPicker } from "./agents/ProjectAgentsPicker";
 import { AgentAvatar } from "./agents/AgentAvatar";
+import { FilesList } from "./features/chat/ui/FilesList";
 
 const TABS = ["Context", "Changes", "Files"] as const;
 type Tab = (typeof TABS)[number];
@@ -56,7 +57,7 @@ export function ContextPanel({
   const alwaysAgents = attached.filter((x) => x.pa.mode === "always");
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col gap-4 rounded-xl border border-border/60 bg-agent-surface-raised p-4">
+    <aside className="flex h-full w-72 shrink-0 flex-col gap-4 overflow-hidden rounded-xl border border-border/60 bg-agent-surface-raised p-4">
       {servers.length > 0 && (
         <div className="flex flex-col gap-2 rounded-xl border border-agent-accent/20 bg-agent-accent-wash p-2.5">
           <p className="flex items-center gap-1.5 px-1 font-mono text-agent-accent text-[10px] uppercase tracking-[0.1em]">
@@ -139,96 +140,68 @@ export function ContextPanel({
         ))}
       </div>
 
-      {tab === "Context" && (
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <p className="text-muted-foreground text-xs">Active project</p>
-            <button
-              type="button"
-              onClick={onRefresh}
-              title="Refresh git state"
-              className="text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <RefreshCwIcon className="size-3.5" />
-            </button>
-          </div>
-
-          <div className="rounded-lg bg-secondary/70 px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <FolderGitIcon className="size-4 shrink-0" />
-              <span className="truncate text-sm">{basename(projectDir)}</span>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        {tab === "Context" && (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground text-xs">Active project</p>
+              <button
+                type="button"
+                onClick={onRefresh}
+                title="Refresh git state"
+                className="text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <RefreshCwIcon className="size-3.5" />
+              </button>
             </div>
-            <p className="truncate pl-6 text-muted-foreground text-xs">
-              {tildeHome(projectDir)}
-            </p>
-          </div>
 
-          <p className="text-muted-foreground text-xs">Branch</p>
-          <div className="flex items-center gap-2 rounded-lg bg-secondary/70 px-3 py-2.5">
-            <GitBranchIcon className="size-4 shrink-0" />
-            <span className="truncate text-sm">
-              {git.branch ?? "not a git repo"}
-            </span>
-          </div>
+            <div className="rounded-lg bg-secondary/70 px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <FolderGitIcon className="size-4 shrink-0" />
+                <span className="truncate text-sm">{basename(projectDir)}</span>
+              </div>
+              <p className="truncate pl-6 text-muted-foreground text-xs">
+                {tildeHome(projectDir)}
+              </p>
+            </div>
 
-          {/* Standing agents */}
-          <div className="flex items-center justify-between">
-            <p className="text-muted-foreground text-xs">Agents</p>
-            <button
-              type="button"
-              onClick={() => setEditAgents((v) => !v)}
-              className="text-muted-foreground text-xs transition-colors hover:text-foreground"
-            >
-              {editAgents ? "Done" : "Edit"}
-            </button>
-          </div>
+            <p className="text-muted-foreground text-xs">Branch</p>
+            <div className="flex items-center gap-2 rounded-lg bg-secondary/70 px-3 py-2.5">
+              <GitBranchIcon className="size-4 shrink-0" />
+              <span className="truncate text-sm">
+                {git.branch ?? "not a git repo"}
+              </span>
+            </div>
 
-          {editAgents ? (
-            <ProjectAgentsPicker
-              agents={agents}
-              value={projectAgents}
-              onChange={onProjectAgentsChange}
-              compact
-            />
-          ) : attached.length === 0 ? (
-            <p className="text-muted-foreground text-xs">
-              No agents on this project.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-1">
-              {alwaysAgents.map(({ agent }) => (
-                <div
-                  key={agent.id}
-                  className="flex items-center gap-2 rounded-lg bg-secondary/70 px-2.5 py-1.5"
-                >
-                  <AgentAvatar
-                    name={agent.name}
-                    tint={agent.tint}
-                    icon={agent.icon}
-                    size="sm"
-                    className="size-6 shrink-0"
-                  />
-                  <span className="min-w-0 flex-1 truncate text-xs">
-                    {agent.name}
-                  </span>
-                  <span className="shrink-0 text-[10px] text-muted-foreground">
-                    always
-                  </span>
-                </div>
-              ))}
-              {manualAgents.map(({ agent }) => {
-                const on = manualActive.includes(agent.id);
-                return (
-                  <button
+            {/* Standing agents */}
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground text-xs">Agents</p>
+              <button
+                type="button"
+                onClick={() => setEditAgents((v) => !v)}
+                className="text-muted-foreground text-xs transition-colors hover:text-foreground"
+              >
+                {editAgents ? "Done" : "Edit"}
+              </button>
+            </div>
+
+            {editAgents ? (
+              <ProjectAgentsPicker
+                agents={agents}
+                value={projectAgents}
+                onChange={onProjectAgentsChange}
+                compact
+              />
+            ) : attached.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                No agents on this project.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {alwaysAgents.map(({ agent }) => (
+                  <div
                     key={agent.id}
-                    type="button"
-                    onClick={() => onToggleManual(agent.id)}
-                    className={cn(
-                      "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors",
-                      on
-                        ? "bg-agent-accent-wash text-foreground"
-                        : "bg-secondary/70 text-muted-foreground hover:text-foreground",
-                    )}
+                    className="flex items-center gap-2 rounded-lg bg-secondary/70 px-2.5 py-1.5"
                   >
                     <AgentAvatar
                       name={agent.name}
@@ -240,52 +213,79 @@ export function ContextPanel({
                     <span className="min-w-0 flex-1 truncate text-xs">
                       {agent.name}
                     </span>
-                    <span
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      always
+                    </span>
+                  </div>
+                ))}
+                {manualAgents.map(({ agent }) => {
+                  const on = manualActive.includes(agent.id);
+                  return (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      onClick={() => onToggleManual(agent.id)}
                       className={cn(
-                        "shrink-0 text-[10px]",
-                        on ? "text-agent-accent" : "text-muted-foreground",
+                        "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors",
+                        on
+                          ? "bg-agent-accent-wash text-foreground"
+                          : "bg-secondary/70 text-muted-foreground hover:text-foreground",
                       )}
                     >
-                      {on ? "on · next chat" : "manual"}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab === "Changes" && (
-        <div className="flex flex-col gap-1 overflow-y-auto">
-          {git.changes.length === 0 ? (
-            <p className="text-muted-foreground text-xs">
-              {git.branch
-                ? "No uncommitted changes."
-                : "Not a git repository."}
-            </p>
-          ) : (
-            git.changes.map((change) => (
-              <div
-                key={change.path}
-                className="flex items-baseline gap-2 rounded-md px-2 py-1 text-xs hover:bg-secondary/60"
-              >
-                <span className="w-14 shrink-0 text-muted-foreground">
-                  {describe(change.code)}
-                </span>
-                <span className="truncate font-mono">{change.path}</span>
+                      <AgentAvatar
+                        name={agent.name}
+                        tint={agent.tint}
+                        icon={agent.icon}
+                        size="sm"
+                        className="size-6 shrink-0"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-xs">
+                        {agent.name}
+                      </span>
+                      <span
+                        className={cn(
+                          "shrink-0 text-[10px]",
+                          on ? "text-agent-accent" : "text-muted-foreground",
+                        )}
+                      >
+                        {on ? "on · next chat" : "manual"}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-            ))
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
 
-      {tab === "Files" && (
-        <p className="text-muted-foreground text-xs leading-relaxed">
-          A file tree needs a directory-listing call the server does not have
-          yet. Changes shows what the agent actually touched.
-        </p>
-      )}
+        {tab === "Changes" && (
+          <div className="flex flex-col gap-1">
+            {git.changes.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                {git.branch
+                  ? "No uncommitted changes."
+                  : "Not a git repository."}
+              </p>
+            ) : (
+              git.changes.map((change) => (
+                <div
+                  key={change.path}
+                  className="flex items-baseline gap-2 rounded-md px-2 py-1 text-xs hover:bg-secondary/60"
+                >
+                  <span className="w-14 shrink-0 text-muted-foreground">
+                    {describe(change.code)}
+                  </span>
+                  <span className="truncate font-mono">{change.path}</span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {tab === "Files" && (
+          <FilesList projectWorkingDirs={projectDir ? [projectDir] : undefined} />
+        )}
+      </div>
     </aside>
   );
 }

@@ -197,6 +197,12 @@ fn child_path(node: &Path) -> String {
     if let Some(bin) = node.parent() {
         dirs.push(bin.to_path_buf());
     }
+    if let Ok(home) = std::env::var("HOME") {
+        let home_path = PathBuf::from(home);
+        dirs.push(home_path.join(".local").join("bin"));
+        dirs.push(home_path.join(".cargo").join("bin"));
+        dirs.push(home_path.join("bin"));
+    }
     dirs.push(PathBuf::from("/opt/homebrew/bin"));
     dirs.push(PathBuf::from("/usr/local/bin"));
     if let Some(inherited) = std::env::var_os("PATH") {
@@ -300,6 +306,14 @@ impl AgentServer {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FileTreeEntry {
+    name: String,
+    path: String,
+    kind: String,
+}
+
 #[derive(Serialize, Deserialize, Default)]
 struct Settings {
     project_dir: Option<String>,
@@ -337,6 +351,17 @@ fn get_saved_project(app: tauri::AppHandle) -> Option<SavedProject> {
         dir,
         engine_id: settings.engine_id,
     })
+}
+
+/// Save the preferred engine id so restarts open with the chosen engine.
+#[tauri::command]
+fn save_engine_id(app: tauri::AppHandle, engine_id: String) -> Result<(), String> {
+    let path = settings_path(&app)?;
+    let mut settings = read_settings(&app);
+    settings.engine_id = Some(engine_id);
+    let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    std::fs::write(path, raw).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Where engines are installed: `<appData>/engines`.
@@ -404,6 +429,91 @@ async fn install_engine(app: tauri::AppHandle, package_name: String) -> Result<(
                 tail
             }
         ));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn check_installed_engines(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let dir = engines_dir(&app)?;
+    let node_modules = dir.join("node_modules");
+    let mut installed = Vec::new();
+
+    for (id, pkg) in [
+        ("claude-code", "@agentclientprotocol/claude-agent-acp"),
+        ("codex", "@agentclientprotocol/codex-acp"),
+        ("amp", "@sourcegraph/amp"),
+        ("antigravity", "agy-acp"),
+    ] {
+        let pkg_path = if pkg.starts_with('@') {
+            let parts: Vec<&str> = pkg.split('/').collect();
+            if parts.len() == 2 {
+                node_modules.join(parts[0]).join(parts[1])
+            } else {
+                node_modules.join(pkg)
+            }
+        } else {
+            node_modules.join(pkg)
+        };
+
+        if pkg_path.join("package.json").exists() {
+            installed.push(id.to_string());
+        }
+    }
+
+    Ok(installed)
+}
+
+#[tauri::command]
+async fn uninstall_engine(app: tauri::AppHandle, package_name: String) -> Result<(), String> {
+    let node = node()?;
+    let npm = npm_beside(node)?;
+    let dir = engines_dir(&app)?;
+
+    let output = Command::new(&npm)
+        .args(["uninstall", "--loglevel=error"])
+        .arg("--prefix")
+        .arg(&dir)
+        .arg(&package_name)
+        .current_dir(&dir)
+        .env("PATH", child_path(node))
+        .output()
+        .map_err(|e| format!("failed to run npm: {e}"))?;
+
+    // Explicitly ensure package directory is removed from node_modules
+    let pkg_path = if package_name.starts_with('@') {
+        let parts: Vec<&str> = package_name.split('/').collect();
+        if parts.len() == 2 {
+            dir.join("node_modules").join(parts[0]).join(parts[1])
+        } else {
+            dir.join("node_modules").join(&package_name)
+        }
+    } else {
+        dir.join("node_modules").join(&package_name)
+    };
+
+    if pkg_path.exists() {
+        let _ = std::fs::remove_dir_all(&pkg_path);
+    }
+
+    if package_name.starts_with('@') {
+        let parts: Vec<&str> = package_name.split('/').collect();
+        if parts.len() == 2 {
+            let scope_dir = dir.join("node_modules").join(parts[0]);
+            if scope_dir.exists() {
+                if let Ok(mut read) = std::fs::read_dir(&scope_dir) {
+                    if read.next().is_none() {
+                        let _ = std::fs::remove_dir(&scope_dir);
+                    }
+                }
+            }
+        }
+    }
+
+    if !output.status.success() && pkg_path.exists() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Could not uninstall {package_name}: {stderr}"));
     }
 
     Ok(())
@@ -588,6 +698,49 @@ fn kill_port(port: u16, server: State<'_, AgentServer>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn list_directory_entries(path: String) -> Result<Vec<FileTreeEntry>, String> {
+    let dir = PathBuf::from(&path);
+    if !dir.is_dir() {
+        return Err(format!("Not a directory: {path}"));
+    }
+
+    let read_dir = std::fs::read_dir(&dir).map_err(|e| e.to_string())?;
+    let mut entries = Vec::new();
+
+    for entry in read_dir.flatten() {
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        if file_name == ".git" || file_name == ".DS_Store" {
+            continue;
+        }
+
+        let file_type = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+
+        let is_dir = if file_type.is_symlink() {
+            entry.path().is_dir()
+        } else {
+            file_type.is_dir()
+        };
+
+        entries.push(FileTreeEntry {
+            name: file_name,
+            path: entry.path().to_string_lossy().to_string(),
+            kind: if is_dir { "directory".into() } else { "file".into() },
+        });
+    }
+
+    entries.sort_by(|a, b| match (a.kind.as_str(), b.kind.as_str()) {
+        ("directory", "file") => std::cmp::Ordering::Less,
+        ("file", "directory") => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+
+    Ok(entries)
+}
+
 /// Node needs this for `--experimental-strip-types`. Only the dev path cares:
 /// the bundled server is plain JS.
 const MIN_NODE_MAJOR_FOR_TS: u32 = 22;
@@ -703,10 +856,14 @@ pub fn run() {
         .manage(AgentServer::default())
         .invoke_handler(tauri::generate_handler![
             get_saved_project,
+            save_engine_id,
             install_engine,
+            uninstall_engine,
+            check_installed_engines,
             start_agent_server,
             port_info,
-            kill_port
+            kill_port,
+            list_directory_entries
         ])
         .build(tauri::generate_context!())
         .expect("error building the app")
