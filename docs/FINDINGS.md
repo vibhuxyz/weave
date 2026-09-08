@@ -403,17 +403,24 @@ hangs a switch forever with no feedback.
 
 ---
 
-## Antigravity runs its own sandbox by default (`--no-sandbox`)
+## Antigravity sandbox is conditional per project/task
 
 `agy-acp` defaults to `sandbox: true`. In that mode, shell commands (even simple
 read-only probes like `node -v` or `git status`) are denied internally by
 Antigravity's runner — even after Weave's permission policy has evaluated the
 location and approved the tool call.
 
-Weave's `confineToTaskDir` already acts as the authoritative security boundary,
-confining every file write to the task directory. Running Antigravity with
-`args: ["--no-sandbox"]` drops the redundant internal sandbox so tool executions
-honour Weave's policy rather than failing with silent denials.
+We now make `--no-sandbox` conditional via `resolveEngineArgs`:
+- For unconstrained development projects, `--no-sandbox` is retained so developer
+  tools work without interference.
+- When `task.sandboxed` is true, `--no-sandbox` is omitted, engaging Antigravity's
+  internal sandbox locks.
+- On macOS, when `sandboxed` is active, the child process is additionally wrapped
+  with `sandbox-exec`, denying access to credentials (`~/.ssh`, `~/.aws`, `~/.gnupg`)
+  and denying writes outside the task directory at the OS kernel level.
+- Across all engines (Claude Code, Codex, Antigravity), `confineToTaskDir` inspects
+  shell execution command strings, rejecting path traversals (`..`) and references
+  to sensitive credential directories.
 
 ---
 
