@@ -10,7 +10,12 @@ import type {
   GitStatus,
   ServerMessage,
 } from "../server/index.ts";
-import type { EngineAuthMethod, EngineAuthOperation } from "@weave/protocol";
+import {
+  isAuthRequiredError,
+  type EngineAuthMethod,
+  type EngineAuthOperation,
+} from "@weave/protocol";
+import type { ChatImageAttachmentDraft } from "@/shared/types/messages";
 
 export type { ConversationMeta };
 
@@ -43,15 +48,36 @@ function toolText(content: unknown): string | undefined {
   return parts.length > 0 ? parts.join("") : undefined;
 }
 
+/** An image attached to a prompt, with the per-image fix/build instructions. */
+export interface ChatImageAttachment {
+  previewUrl: string;
+  mimeType: string;
+  prompt: string;
+}
+
+export interface PlanItem {
+  id: string;
+  content: string;
+  priority?: "high" | "medium" | "low";
+  status?: "pending" | "in_progress" | "completed";
+}
+
+export interface TurnPlan {
+  entries: PlanItem[];
+  approved?: boolean;
+}
+
 export interface ChatTurn {
   id: string;
   role: "user" | "assistant";
   text: string;
   /** Names of agents @-mentioned on this prompt, for the pills on the bubble. */
   mentions?: string[];
+  images?: ChatImageAttachment[];
   /** The agent's reasoning stream (`agent_thought_chunk`), shown collapsed. */
   thought: string;
   tools: ToolEntry[];
+  plan?: TurnPlan;
   sourceEventIds?: string[];
   sourceSeq?: number;
 }
@@ -113,6 +139,11 @@ export function useAcpChat(port: number | null) {
   const [engines, setEngines] = useState<
     { id: string; label: string; installed: boolean }[]
   >([]);
+  const [isSwitchingEngine, setIsSwitchingEngine] = useState(false);
+  const [targetEngineId, setTargetEngineId] = useState<string | null>(null);
+  const [isSettingConfig, setIsSettingConfig] = useState(false);
+  const [pendingConfigId, setPendingConfigId] = useState<string | null>(null);
+  const [pendingConfigValue, setPendingConfigValue] = useState<string | null>(null);
   /** Pre-change config values, kept only until the agent confirms or refuses. */
   const previousConfigRef = useRef<Record<string, string>>({});
   /** `@file` mention results, and the query they answer (drops stale replies). */
@@ -253,8 +284,26 @@ export function useAcpChat(port: number | null) {
           }));
           return;
         }
+        case "plan": {
+          withAssistantTurn((turn) => {
+            const nextEntries: PlanItem[] = (update.entries ?? []).map((entry, idx) => ({
+              id: `plan-step-${idx + 1}`,
+              content: entry.content,
+              priority: entry.priority,
+              status: entry.status,
+            }));
+            return {
+              ...turn,
+              plan: {
+                entries: nextEntries,
+                approved: turn.plan?.approved ?? false,
+              },
+            };
+          });
+          return;
+        }
         default:
-          // plan / user_message_chunk / commands — not rendered yet.
+          // user_message_chunk / commands — not rendered yet.
           return;
       }
     },
@@ -306,6 +355,11 @@ export function useAcpChat(port: number | null) {
         switch (message.type) {
           case "ready":
             setState("ready");
+            setIsSwitchingEngine(false);
+            setTargetEngineId(null);
+            setIsSettingConfig(false);
+            setPendingConfigId(null);
+            setPendingConfigValue(null);
             setAuthRequired(null);
             setCwd(message.cwd);
             setEngineId(message.engineId);
@@ -330,6 +384,9 @@ export function useAcpChat(port: number | null) {
             setGit(message.git);
             return;
           case "config-changed":
+            setIsSettingConfig(false);
+            setPendingConfigId(null);
+            setPendingConfigValue(null);
             delete previousConfigRef.current[message.configId];
             setConfigValues((current) => ({
               ...current,
@@ -337,6 +394,9 @@ export function useAcpChat(port: number | null) {
             }));
             return;
           case "config-rejected": {
+            setIsSettingConfig(false);
+            setPendingConfigId(null);
+            setPendingConfigValue(null);
             // Roll the optimistic value back so the pill never shows a setting
             // the agent refused.
             const previous = previousConfigRef.current[message.configId];
@@ -373,6 +433,8 @@ export function useAcpChat(port: number | null) {
             setTurns([]);
             return;
           case "auth-required":
+            setIsSwitchingEngine(false);
+            setTargetEngineId(null);
             // Deliberately NOT `setError`: this is a state with an action, and
             // routing it through the error toast is what left the user staring
             // at "Authentication required…" with nothing to click.
@@ -391,6 +453,73 @@ export function useAcpChat(port: number | null) {
             if (message.operation.status === "succeeded") setAuthRequired(null);
             return;
           case "error":
+            setIsSwitchingEngine(false);
+            setTargetEngineId(null);
+            setIsSettingConfig(false);
+            setPendingConfigId(null);
+            setPendingConfigValue(null);
+            if (isAuthRequiredError(message.message)) {
+              const activeId = engineId ?? "claude-code";
+              const isClaude = activeId === "claude-code";
+              const isCodex = activeId === "codex";
+              setAuthRequired({
+                engineId: activeId,
+                engineLabel:
+                  engineLabel ??
+                  (isClaude
+                    ? "Claude Code"
+                    : isCodex
+                    ? "Codex"
+                    : "Google Antigravity"),
+                message: message.message,
+                methods: isClaude
+                  ? [
+                      {
+                        id: "claude-ai-login",
+                        name: "Claude Subscription",
+                        description: "Use Claude subscription",
+                        kind: "terminal",
+                      },
+                      {
+                        id: "console-login",
+                        name: "Anthropic Console",
+                        description: "Use Anthropic Console (API usage billing)",
+                        kind: "terminal",
+                      },
+                    ]
+                  : isCodex
+                  ? [
+                      {
+                        id: "chat-gpt-device-code",
+                        name: "Sign in with Device Code",
+                        description: "Sign in using one-time verification code (recommended)",
+                        kind: "terminal",
+                      },
+                      {
+                        id: "chat-gpt",
+                        name: "Sign in with Browser",
+                        description: "Sign in using your OpenAI ChatGPT account in browser",
+                        kind: "terminal",
+                      },
+                      {
+                        id: "api-key",
+                        name: "OpenAI API Key",
+                        description: "Authenticate using an OpenAI API Key",
+                        kind: "terminal",
+                      },
+                    ]
+                  : [
+                      {
+                        id: "agy-login",
+                        name: "Sign in with Google Antigravity",
+                        description: "Runs `agy auth login` to authenticate",
+                        kind: "terminal",
+                      },
+                    ],
+              });
+              setBusy(false);
+              return;
+            }
             setError(message.message);
             setBusy(false);
             return;
@@ -421,10 +550,18 @@ export function useAcpChat(port: number | null) {
   }, [applyUpdate, port]);
 
   const send = useCallback(
-    (text: string, opts?: { persona?: string; mentions?: string[] }) => {
+    (
+      text: string,
+      opts?: {
+        persona?: string;
+        mentions?: string[];
+        images?: ChatImageAttachmentDraft[];
+      },
+    ) => {
       const trimmed = text.trim();
+      const images = opts?.images?.length ? opts.images : undefined;
       const socket = socketRef.current;
-      if (!trimmed || !socket || socket.readyState !== WebSocket.OPEN) return;
+      if ((!trimmed && !images) || !socket || socket.readyState !== WebSocket.OPEN) return;
 
       setError(null);
       setBusy(true);
@@ -435,6 +572,11 @@ export function useAcpChat(port: number | null) {
           role: "user",
           text: trimmed,
           mentions: opts?.mentions?.length ? opts.mentions : undefined,
+          images: images?.map((image) => ({
+            previewUrl: image.previewUrl,
+            mimeType: image.mimeType,
+            prompt: image.prompt,
+          })),
           thought: "",
           tools: [],
         },
@@ -444,6 +586,11 @@ export function useAcpChat(port: number | null) {
           type: "prompt",
           text: trimmed,
           persona: opts?.persona,
+          images: images?.map((image) => ({
+            data: image.base64,
+            mimeType: image.mimeType,
+            prompt: image.prompt,
+          })),
         }),
       );
     },
@@ -455,9 +602,10 @@ export function useAcpChat(port: number | null) {
   }, []);
 
   /** Start a sign-in. Progress arrives as `auth-state` snapshots. */
-  const startAuth = useCallback((engineId: string, methodId: string) => {
+  const startAuth = useCallback((engineId: string, methodId: string, secret?: string) => {
+    const normalized = engineId === "agy" ? "antigravity" : engineId;
     socketRef.current?.send(
-      JSON.stringify({ type: "start-auth", engineId, methodId }),
+      JSON.stringify({ type: "start-auth", engineId: normalized, methodId, secret }),
     );
   }, []);
 
@@ -491,15 +639,23 @@ export function useAcpChat(port: number | null) {
    */
   const switchEngine = useCallback((nextEngineId: string) => {
     const socket = socketRef.current;
-    if (socket?.readyState !== WebSocket.OPEN) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    setIsSwitchingEngine(true);
+    setTargetEngineId(nextEngineId);
     setBusy(false);
     setError(null);
+    setAuthRequired(null);
+    setAuthOperation(null);
     socket.send(JSON.stringify({ type: "switch-engine", engineId: nextEngineId }));
   }, []);
 
   const setConfig = useCallback((configId: string, value: string) => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+    setIsSettingConfig(true);
+    setPendingConfigId(configId);
+    setPendingConfigValue(value);
 
     // Optimistic, but reversible: remember what it was so `config-rejected`
     // can put it back. Without this the pill shows a value the agent refused.
@@ -541,6 +697,19 @@ export function useAcpChat(port: number | null) {
     }
   }, []);
 
+  const refreshEngines = useCallback(() => {
+    const socket = socketRef.current;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "refresh-engines" }));
+    }
+  }, []);
+
+  const updateTurnPlan = useCallback((turnId: string, plan: TurnPlan) => {
+    setTurns((prev) =>
+      prev.map((t) => (t.id === turnId ? { ...t, plan } : t)),
+    );
+  }, []);
+
   return {
     state,
     cwd,
@@ -558,6 +727,8 @@ export function useAcpChat(port: number | null) {
     activeSessionId,
     send,
     switchEngine,
+    isSwitchingEngine,
+    targetEngineId,
     authRequired,
     authOperation,
     startAuth,
@@ -568,8 +739,13 @@ export function useAcpChat(port: number | null) {
     clearFileMatches,
     cancel,
     setConfig,
+    isSettingConfig,
+    pendingConfigId,
+    pendingConfigValue,
     refreshGit,
+    refreshEngines,
     newChat,
     openChat,
+    updateTurnPlan,
   };
 }

@@ -1,15 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ChevronDownIcon,
+  ImagePlusIcon,
   PanelLeftIcon,
   PanelRightIcon,
   SearchIcon,
   ActivityIcon,
+  XIcon,
 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
+import { ComposerActionButton } from "@/shared/ui/composer-action-button";
+import { ComposerSendButton } from "@/shared/ui/composer-send-button";
+import { GlassButton } from "@/shared/ui/glass-button";
+import { ImageLightbox } from "@/shared/ui/ImageLightbox";
+import type { ChatImageAttachmentDraft } from "@/shared/types/messages";
 import { JumpToLatestButton } from "@/shared/ui/jump-to-latest-button";
 import { usePersistedState } from "@/shared/hooks/usePersistedState";
 import { useResizableSidebar } from "@/shared/hooks/useResizableSidebar";
@@ -25,6 +33,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { isAuthRequiredError } from "@weave/protocol";
 import { ENGINES, DEFAULT_ENGINE_ID } from "@weave/agent/engines-registry.ts";
 import { ConfigPicker } from "./ConfigPicker";
 import { EnginePicker } from "./EnginePicker";
@@ -33,6 +42,8 @@ import { ContextPanel } from "./ContextPanel";
 import { Sidebar } from "./Sidebar";
 import { CreateProjectDialog, toneColor } from "./CreateProjectDialog";
 import { AgentsView } from "./agents/AgentsView";
+import { SkillsView } from "./skills/SkillsView";
+import { useSkillPlugins, formatSkillPluginsSystemPrompt } from "./useSkillPlugins";
 import { AgentAvatar } from "./agents/AgentAvatar";
 import {
   useAgents,
@@ -98,6 +109,8 @@ export function App() {
     activeSessionId,
     send,
     switchEngine,
+    isSwitchingEngine,
+    targetEngineId,
     authRequired,
     authOperation,
     startAuth,
@@ -108,13 +121,18 @@ export function App() {
     clearFileMatches,
     cancel,
     setConfig,
+    isSettingConfig,
+    pendingConfigValue,
     refreshGit,
+    refreshEngines,
     newChat,
     openChat,
+    updateTurnPlan,
   } = useAcpChat(port);
 
   const { projects, remember, setProjectAgents, forget } = useProjects();
   const { agents } = useAgents();
+  const { plugins: skillPlugins } = useSkillPlugins();
   const [createOpen, setCreateOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<
     ProjectEntry | null
@@ -122,17 +140,18 @@ export function App() {
   const [previewTint, setPreviewTint] = useState<string>();
   // Manual agents the user turned on for the next new chat.
   const [manualActive, setManualActive] = useState<string[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
   const activeProjectEntry =
     project.status === "running"
       ? projects.find((p) => p.dir === project.dir)
       : undefined;
-  const [view, setView] = usePersistedState<"home" | "chat" | "agents">(
+  const [view, setView] = usePersistedState<"home" | "chat" | "agents" | "skills">(
     "berd:view",
     "home",
     // Legacy "chat" (pre-home-split) starts at home rather than a blank
-    // transcript; "agents" is preserved.
-    (v, d) => (v === "home" || v === "agents" ? v : d),
+    // transcript; "agents" and "skills" are preserved.
+    (v, d) => (v === "home" || v === "agents" || v === "skills" ? v : d),
   );
 
   // Opening or starting a chat always drops the Agents view so the transcript
@@ -146,6 +165,7 @@ export function App() {
     setView("chat");
     newChat();
     setManualActive([]);
+    setSelectedAgentId(null);
   }, [project, choose, newChat, setView]);
   const openChatAndShow = useCallback(
     (sessionId: string) => {
@@ -172,6 +192,34 @@ export function App() {
   // A model a chosen agent asked for, applied once its config options arrive.
   const pendingAgentModel = useRef<string | null>(null);
 
+  const activeEngineId =
+    engineId || (project.status === "running" ? project.engineId : null);
+
+  const isSameEngine = useCallback((a?: string | null, b?: string | null) => {
+    if (!a || !b) return true;
+    if (a === b) return true;
+    return (
+      (a === "agy" || a === "antigravity") &&
+      (b === "agy" || b === "antigravity")
+    );
+  }, []);
+
+  const handleSelectEngine = useCallback(
+    (id: string) => {
+      const currentId =
+        engineId || (project.status === "running" ? project.engineId : null);
+      if (id === currentId && !authRequired) return;
+      clearAuth();
+      void invoke("save_engine_id", { engineId: id }).catch(console.error);
+      if (activeDir) remember(activeDir, id);
+      if (connection === "ready") switchEngine(id);
+      else if (activeDir) void startWith(activeDir, id);
+    },
+    [engineId, project, authRequired, clearAuth, activeDir, remember, connection, switchEngine, startWith],
+  );
+
+
+
   const handleChatWithAgent = useCallback(
     (agent: Agent) => {
       const running = project.status === "running";
@@ -183,6 +231,7 @@ export function App() {
       }
       setView("chat");
       pendingAgentModel.current = agent.model ?? null;
+      setSelectedAgentId(agent.id);
       const currentEngine = project.engineId;
       // The picked agent rides every prompt of the new chat.
       setManualActive([agent.id]);
@@ -216,6 +265,19 @@ export function App() {
   }, [modelOption, setConfig]);
 
   const [draft, setDraft] = useState("");
+  const [imageAttachments, setImageAttachments] = useState<ChatImageAttachmentDraft[]>([]);
+  // Everything uploaded this session, so `/img` can re-attach an earlier image
+  // without the user hunting for the file again.
+  const [imageLibrary, setImageLibrary] = useState<ChatImageAttachmentDraft[]>([]);
+  const [imgQuery, setImgQuery] = useState<string | null>(null);
+  // The attachment whose instruction box should grab focus next — set when an
+  // image lands via `/img` so the user can type what to do with it right away.
+  const [focusAttachmentId, setFocusAttachmentId] = useState<string | null>(null);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<
+    { previewUrl: string; name?: string } | null
+  >(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { resetHeight: resetComposerHeight } = useTextareaAutosize({
@@ -278,19 +340,41 @@ export function App() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
-  const handleInstallEngine = async (packageName: string) => {
+  const [installingEngineId, setInstallingEngineId] = useState<string | null>(null);
+
+  const handleInstallEngine = async (packageName: string, targetEngineId?: string) => {
     setInstallingEngine(true);
+    setInstallingEngineId(targetEngineId || null);
     try {
       await invoke("install_engine", { packageName });
-      const targetEngineId = project.status === "running" ? project.engineId : engineId;
+      refreshEngines();
+      const currentTarget = targetEngineId || (project.status === "running" ? project.engineId : engineId);
       if ("dir" in project) {
-        void startWith(project.dir, targetEngineId || DEFAULT_ENGINE_ID);
+        void startWith(project.dir, currentTarget || DEFAULT_ENGINE_ID);
       }
     } catch (e) {
       console.error(e);
       alert(`Failed to install: ${String(e)}`);
+      throw e;
     } finally {
       setInstallingEngine(false);
+      setInstallingEngineId(null);
+    }
+  };
+
+  const handleUninstallEngine = async (packageName: string, targetEngineId?: string) => {
+    setInstallingEngine(true);
+    setInstallingEngineId(targetEngineId || null);
+    try {
+      await invoke("uninstall_engine", { packageName });
+      refreshEngines();
+    } catch (e) {
+      console.error(e);
+      alert(`Failed to uninstall: ${String(e)}`);
+      throw e;
+    } finally {
+      setInstallingEngine(false);
+      setInstallingEngineId(null);
     }
   };
 
@@ -306,19 +390,32 @@ export function App() {
   const [mentioned, setMentioned] = useState<Agent[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const mentionItemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
   // A query with a "/" or "." is a path — `@src/App.tsx` — so the menu shows
   // files instead of agents.
   const fileMode = mentionQuery !== null && /[./]/.test(mentionQuery);
   const mentionMatches =
     mentionQuery === null || fileMode
       ? []
-      : agents
-          .filter(
-            (a) =>
-              !mentioned.some((m) => m.id === a.id) &&
-              a.name.toLowerCase().includes(mentionQuery.toLowerCase()),
-          )
-          .slice(0, 6);
+      : agents.filter(
+          (a) =>
+            !mentioned.some((m) => m.id === a.id) &&
+            a.name.toLowerCase().includes(mentionQuery.toLowerCase()),
+        );
+
+  const imgMatches =
+    imgQuery === null
+      ? []
+      : imageLibrary.filter((image) =>
+          image.name.toLowerCase().includes(imgQuery.trim().toLowerCase()),
+        );
+
+  useEffect(() => {
+    if (mentionMatches.length > 0 && mentionItemRefs.current[mentionIndex]) {
+      mentionItemRefs.current[mentionIndex]?.scrollIntoView({ block: "nearest" });
+    }
+  }, [mentionIndex, mentionMatches.length]);
 
   useEffect(() => {
     if (fileMode && mentionQuery !== null) requestFiles(mentionQuery);
@@ -328,8 +425,11 @@ export function App() {
   const onDraftChange = (value: string) => {
     setDraft(value);
     const caret = textareaRef.current?.selectionStart ?? value.length;
-    const m = /(?:^|\s)@([\w./-]*)$/.exec(value.slice(0, caret));
+    const head = value.slice(0, caret);
+    const m = /(?:^|\s)@([\w./-]*)$/.exec(head);
     setMentionQuery(m ? m[1] : null);
+    const img = /(?:^|\s)\/img[ ]?([\w. -]*)$/.exec(head);
+    setImgQuery(img ? img[1] : null);
     setMentionIndex(0);
   };
 
@@ -349,7 +449,17 @@ export function App() {
       .slice(0, caret)
       .replace(/(?:^|\s)@([\w./-]*)$/, (full) => full.replace(/@[\w./-]*$/, ""));
     setDraft(before + draft.slice(caret));
-    setMentioned((cur) => [...cur, agent]);
+    setMentioned((cur) => (cur.some((m) => m.id === agent.id) ? cur : [...cur, agent]));
+    setSelectedAgentId(agent.id);
+    setManualActive((cur) => (cur.includes(agent.id) ? cur : [...cur, agent.id]));
+    if (agent.model) {
+      pendingAgentModel.current = agent.model;
+    }
+    const currentEngine = project.status === "running" ? project.engineId : engineId;
+    if (agent.engineId && agent.engineId !== currentEngine) {
+      if (connection === "ready") switchEngine(agent.engineId);
+      else if (activeDir) void startWith(activeDir, agent.engineId);
+    }
     setMentionQuery(null);
     requestAnimationFrame(() => el?.focus());
   };
@@ -372,7 +482,81 @@ export function App() {
     });
   };
 
+  const addImageFiles = async (files: FileList | File[]) => {
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith("image/")) continue;
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+      const image: ChatImageAttachmentDraft = {
+        id: crypto.randomUUID(),
+        kind: "image",
+        name: file.name,
+        mimeType: file.type,
+        base64,
+        previewUrl: URL.createObjectURL(file),
+        prompt: "",
+      };
+      setImageAttachments((cur) => [...cur, image]);
+      setImageLibrary((cur) => [...cur, image]);
+    }
+  };
+
+  // The library holds the only reference to a preview URL once a message is
+  // sent, so removing a draft attachment must not revoke it.
+  const removeImageAttachment = (id: string) => {
+    setImageAttachments((cur) => cur.filter((a) => a.id !== id));
+  };
+
+  const attachFromLibrary = (image: ChatImageAttachmentDraft) => {
+    // Picking from `/img` always puts the image on the message. If it's
+    // already attached, refresh that copy's instructions from the library
+    // (the saved prompt) rather than adding a duplicate.
+    const existing = imageAttachments.find((a) => a.previewUrl === image.previewUrl);
+    if (existing) {
+      setImageAttachments((cur) =>
+        cur.map((a) =>
+          a.id === existing.id
+            ? { ...a, prompt: a.prompt.trim() || image.prompt }
+            : a,
+        ),
+      );
+      setFocusAttachmentId(existing.id);
+    } else {
+      const id = crypto.randomUUID();
+      setImageAttachments((cur) => [
+        ...cur,
+        { ...image, id, prompt: image.prompt },
+      ]);
+      setFocusAttachmentId(id);
+    }
+    const el = textareaRef.current;
+    const caret = el?.selectionStart ?? draft.length;
+    const before = draft.slice(0, caret).replace(/(?:^|\s)\/img[ ]?[\w. -]*$/, "");
+    const next = before + draft.slice(caret);
+    setDraft(next);
+    setImgQuery(null);
+    // Focus goes to the new image's instruction box (see focusAttachmentId),
+    // so the caret position in the textarea is all we restore here.
+    requestAnimationFrame(() => el?.setSelectionRange(before.length, before.length));
+  };
+
+  const setImageAttachmentPrompt = (id: string, prompt: string) => {
+    setImageAttachments((cur) => cur.map((a) => (a.id === id ? { ...a, prompt } : a)));
+    // Keep it on the image itself too, so re-attaching via `/img` brings the
+    // instructions back with it instead of an empty box.
+    const previewUrl = imageAttachments.find((a) => a.id === id)?.previewUrl;
+    setImageLibrary((cur) =>
+      cur.map((a) => (a.previewUrl === previewUrl ? { ...a, prompt } : a)),
+    );
+  };
+
   const submit = () => {
+    if (!draft.trim() && imageAttachments.length === 0) return;
     // Standing agents (`always` + manually toggled) plus this message's
     // @-mentions ride every prompt, so the persona can't drift over a chat.
     // The server merges this with the skills catalog into one <system> block.
@@ -380,13 +564,26 @@ export function App() {
       ...manualActive,
       ...mentioned.map((a) => a.id),
     ]);
-    send(draft, {
-      persona,
+    const plugins = formatSkillPluginsSystemPrompt(skillPlugins, activeDir);
+
+    let textToSend = draft;
+    if (draft.trim().startsWith("/plan ") || draft.trim() === "/plan") {
+      const task = draft.trim().slice(5).trim();
+      textToSend = task
+        ? `[Planning Mode]\nPlease inspect the workspace and propose a step-by-step execution plan for the following task, formatted inside a <plan> block with numbered steps. DO NOT modify any files or execute commands yet until I review and approve the plan:\n\n${task}`
+        : `[Planning Mode]\nPlease inspect the current status and propose a step-by-step execution plan inside a <plan> block with numbered steps before modifying any files or running commands.`;
+    }
+
+    send(textToSend, {
+      persona: [persona, plugins].filter(Boolean).join("\n\n") || undefined,
       mentions: mentioned.map((a) => a.name),
+      images: imageAttachments,
     });
+    setImageAttachments([]);
     setDraft("");
     setMentioned([]);
     setMentionQuery(null);
+    setImgQuery(null);
     resetComposerHeight();
   };
 
@@ -415,6 +612,22 @@ export function App() {
     toneColor(projects.find((p) => p.dir === activeDir)?.tint) ??
     "transparent";
 
+  const handleHeaderMouseDown = (e: React.MouseEvent) => {
+    // Only drag on primary (left) button
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement | null;
+    // Don't drag if clicking buttons, inputs, links or other interactive elements
+    if (target?.closest("button, a, input, select, textarea, [role='button'], [data-no-drag]")) {
+      return;
+    }
+    // Double-click toggles maximize/restore on macOS
+    if (e.detail === 2) {
+      void getCurrentWindow().toggleMaximize();
+      return;
+    }
+    void getCurrentWindow().startDragging();
+  };
+
   return (
     <div
       data-app-shell-root="true"
@@ -424,10 +637,11 @@ export function App() {
       <UsageLimitIsland />
       {/* ── Top bar: window drag surface + shell chrome ───────────────── */}
       <header
-        data-tauri-drag-region
-        className="flex h-[var(--spacing-app-top-bar)] shrink-0 select-none items-center gap-2 pr-4"
+        data-tauri-drag-region="deep"
+        onMouseDown={handleHeaderMouseDown}
+        className="flex h-[var(--spacing-app-top-bar)] shrink-0 select-none items-center gap-2 pr-4 cursor-default"
       >
-        <div className="h-full w-[var(--spacing-app-top-bar-leading)] shrink-0" />
+        <div data-tauri-drag-region className="h-full w-[var(--spacing-app-top-bar-leading)] shrink-0" />
         <button
           type="button"
           className={iconBtn}
@@ -444,7 +658,10 @@ export function App() {
             <ArrowRightIcon className="size-4" />
           </button>
         </div>
-        <span className="min-w-0 flex-1 truncate text-[length:var(--text-app-top-bar-title)] text-foreground">
+        <span
+          data-tauri-drag-region
+          className="min-w-0 flex-1 truncate text-[length:var(--text-app-top-bar-title)] text-foreground"
+        >
           {activeDir ? basename(activeDir) : "Weave"}
         </span>
         <div className="flex shrink-0 items-center gap-2 text-xs">
@@ -534,8 +751,56 @@ export function App() {
             card, which boxed Home's canvas and the Agents grid inside a second
             surface — the sidebar is the only chrome that should read as one. */}
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+          {authRequired && isSameEngine(authRequired.engineId, activeEngineId) && (
+            <div className="z-30 w-full shrink-0 border-b border-border bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+              <div className="mx-auto max-w-2xl">
+                <EngineAuthPanel
+                  engineId={authRequired.engineId}
+                  engineLabel={authRequired.engineLabel}
+                  message={authRequired.message}
+                  methods={authRequired.methods}
+                  operation={
+                    authOperation && isSameEngine(authOperation.engineId, authRequired.engineId)
+                      ? authOperation
+                      : null
+                  }
+                  onStart={(methodId, secret) => startAuth(authRequired.engineId, methodId, secret)}
+                  onCancel={cancelAuth}
+                  onDismiss={clearAuth}
+                />
+              </div>
+            </div>
+          )}
+
+          {error && !isAuthRequiredError(error) && !authRequired && (() => {
+            const match = error.match(/is not installed \((.*?)\)/);
+            return (
+              <div className="z-30 w-full shrink-0 border-b border-destructive/20 bg-destructive/10 px-6 py-2.5">
+                <div className="mx-auto flex max-w-2xl items-center justify-between gap-4 text-sm text-destructive">
+                  <p className="whitespace-pre-wrap">{error.split("\n")[0]}</p>
+                  {match && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 bg-background/50 hover:bg-background/80"
+                      onClick={() => handleInstallEngine(match[1])}
+                      disabled={installingEngine}
+                    >
+                      {installingEngine ? "Installing…" : "Install"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         {view === "agents" ? (
           <AgentsView onChat={handleChatWithAgent} engines={engines} />
+        ) : view === "skills" ? (
+          <SkillsView
+            projectDir={activeDir}
+            projectLabel={activeDir ? basename(activeDir) : undefined}
+          />
         ) : (
         <>
         {view === "home" ? (
@@ -601,6 +866,7 @@ export function App() {
                         }
                       }}
                       onSend={send}
+                      onUpdatePlan={updateTurnPlan}
                     />
                     )}
                   </>
@@ -608,7 +874,9 @@ export function App() {
                   <UserMessage
                     text={turn.text}
                     mentions={turn.mentions}
+                    images={turn.images}
                     onEdit={editPrompt}
+                    onViewImage={setLightboxImage}
                   />
                 )}
               </MessageContent>
@@ -623,42 +891,6 @@ export function App() {
             </Message>
           )}
 
-          {authRequired && (
-            <EngineAuthPanel
-              engineLabel={authRequired.engineLabel}
-              message={authRequired.message}
-              methods={authRequired.methods}
-              operation={
-                authOperation?.engineId === authRequired.engineId
-                  ? authOperation
-                  : null
-              }
-              onStart={(methodId) => startAuth(authRequired.engineId, methodId)}
-              onCancel={cancelAuth}
-              onDismiss={clearAuth}
-            />
-          )}
-
-          {error && (() => {
-            const match = error.match(/is not installed \((.*?)\)/);
-            return (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-md bg-destructive/15 px-3 py-2 text-sm text-destructive">
-                <p className="whitespace-pre-wrap">{error.split("\n")[0]}</p>
-                {match && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0 bg-background/50 hover:bg-background/80"
-                    onClick={() => handleInstallEngine(match[1])}
-                    disabled={installingEngine}
-                  >
-                    {installingEngine ? "Installing…" : "Install"}
-                  </Button>
-                )}
-              </div>
-            );
-          })()}
           <div ref={bottomRef} />
         </div>
         )}
@@ -684,46 +916,101 @@ export function App() {
               : "px-[var(--spacing-app-panel-gutter-inline)]",
           )}
         >
-          <div className="relative flex flex-col gap-2.5 rounded-composer bg-surface-chat-composer p-3 [-webkit-backdrop-filter:var(--backdrop-composer-glass)] [backdrop-filter:var(--backdrop-composer-glass)]">
+          <div
+            onDragOver={(e) => {
+              if (!e.dataTransfer.types.includes("Files")) return;
+              e.preventDefault();
+              setIsDraggingImage(true);
+            }}
+            onDragLeave={(e) => {
+              // Crossing into a child fires dragleave on the composer too.
+              if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+              setIsDraggingImage(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDraggingImage(false);
+              if (e.dataTransfer.files.length) void addImageFiles(e.dataTransfer.files);
+            }}
+            className={cn(
+              "relative flex flex-col gap-2.5 rounded-composer bg-surface-chat-composer p-3 [-webkit-backdrop-filter:var(--backdrop-composer-glass)] [backdrop-filter:var(--backdrop-composer-glass)]",
+              isDraggingImage && "outline outline-2 outline-offset-[-2px] outline-primary",
+            )}
+          >
             {mentionMatches.length > 0 && (
               <div className="absolute bottom-full left-0 z-20 mb-2 w-80 overflow-hidden rounded-2xl border border-agent-border bg-agent-surface-raised p-2 shadow-[0_20px_56px_rgba(0,0,0,0.5)]">
                 <div className="flex items-center gap-1 px-1 pb-2 text-sm">
-                  <span className="rounded-full bg-agent-surface-hover px-3 py-1 text-agent-text-bright">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearFileMatches();
+                      setMentionQuery("");
+                    }}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-xs transition-colors",
+                      !fileMode
+                        ? "bg-agent-surface-hover text-agent-text-bright"
+                        : "text-agent-text-faint hover:text-agent-text-bright",
+                    )}
+                  >
                     Agents <span className="text-agent-text-faint">@</span>
-                  </span>
-                  <span className="px-2 py-1 text-agent-text-faint">
-                    Files @
-                  </span>
-                  <span className="px-2 py-1 text-agent-text-faint">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMentionQuery("/");
+                      requestFiles("");
+                    }}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-xs transition-colors",
+                      fileMode
+                        ? "bg-agent-surface-hover text-agent-text-bright"
+                        : "text-agent-text-faint hover:text-agent-text-bright",
+                    )}
+                  >
+                    Files <span className="text-agent-text-faint">@</span>
+                  </button>
+                  <span className="px-2 py-1 text-xs text-agent-text-faint">
                     Skills /
                   </span>
                 </div>
-                {mentionMatches.map((a, i) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onMouseEnter={() => setMentionIndex(i)}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      pickMention(a);
-                    }}
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-sm",
-                      i === mentionIndex && "bg-agent-surface-hover",
-                    )}
-                  >
-                    <AgentAvatar
-                      name={a.name}
-                      tint={a.tint}
-                      icon={a.icon}
-                      size="sm"
-                      className="size-7 shrink-0"
-                    />
-                    <span className="min-w-0 flex-1 truncate text-agent-text-bright">
-                      {a.name}
-                    </span>
-                  </button>
-                ))}
+                <div className="max-h-72 overflow-y-auto pr-1">
+                  {mentionMatches.map((a, i) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      ref={(el) => {
+                        mentionItemRefs.current[i] = el;
+                      }}
+                      onMouseEnter={() => setMentionIndex(i)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        pickMention(a);
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-sm transition-colors",
+                        i === mentionIndex && "bg-agent-surface-hover",
+                      )}
+                    >
+                      <AgentAvatar
+                        name={a.name}
+                        seed={a.id}
+                        tint={a.tint}
+                        icon={a.icon}
+                        size="sm"
+                        className="size-7 shrink-0"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-agent-text-bright">
+                        {a.name}
+                      </span>
+                      {!a.builtin && (
+                        <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                          Custom
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             {fileMode && fileMatches.length > 0 && (
@@ -731,41 +1018,112 @@ export function App() {
                 <div className="px-2 pb-2 text-xs text-agent-text-faint">
                   Files matching “{mentionQuery}”
                 </div>
-                {fileMatches.map((path, i) => (
+                <div className="max-h-72 overflow-y-auto pr-1">
+                  {fileMatches.map((path, i) => (
+                    <button
+                      key={path}
+                      type="button"
+                      onMouseEnter={() => setMentionIndex(i)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        pickFile(path);
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left font-mono text-xs transition-colors",
+                        i === mentionIndex && "bg-agent-surface-hover",
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 truncate text-agent-text-bright">
+                        {path}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {imgQuery !== null && (
+              <div className="absolute bottom-full left-0 z-20 mb-2 w-96 overflow-hidden rounded-2xl border border-agent-border bg-agent-surface-raised p-2 shadow-[0_20px_56px_rgba(0,0,0,0.5)]">
+                <div className="flex items-center justify-between gap-2 px-2 pb-2 text-xs text-agent-text-faint">
+                  <span>
+                    {imageLibrary.length === 0
+                      ? "No images uploaded yet"
+                      : "Uploaded images"}
+                  </span>
                   <button
-                    key={path}
                     type="button"
-                    onMouseEnter={() => setMentionIndex(i)}
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      pickFile(path);
+                      imageInputRef.current?.click();
                     }}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left font-mono text-xs",
-                      i === mentionIndex && "bg-agent-surface-hover",
-                    )}
+                    className="text-agent-text-bright hover:underline"
                   >
-                    <span className="min-w-0 flex-1 truncate text-agent-text-bright">
-                      {path}
-                    </span>
+                    Upload new
                   </button>
-                ))}
+                </div>
+                <div className="max-h-72 overflow-y-auto pr-1">
+                  {imgMatches.map((image) => {
+                    const attached = imageAttachments.some(
+                      (a) => a.previewUrl === image.previewUrl,
+                    );
+                    return (
+                      <button
+                        key={image.id}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          attachFromLibrary(image);
+                        }}
+                        className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-agent-surface-hover"
+                      >
+                        <img
+                          src={image.previewUrl}
+                          alt=""
+                          className="size-9 shrink-0 rounded object-cover"
+                        />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate text-agent-text-bright">
+                            {image.name}
+                          </span>
+                          <span className="truncate text-xs text-agent-text-faint">
+                            {image.prompt || "No instructions yet"}
+                          </span>
+                        </span>
+                        {attached && (
+                          <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                            Attached
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
             {mentioned.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {mentioned.map((a) => (
                   <span
                     key={a.id}
-                    className="flex items-center gap-1 rounded-full bg-agent-accent-wash px-2 py-0.5 text-agent-accent text-xs"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-agent-surface-raised py-0.5 pl-1 pr-2 text-xs text-foreground shadow-sm"
                   >
-                    @{a.name}
+                    <AgentAvatar
+                      name={a.name}
+                      seed={a.id}
+                      tint={a.tint}
+                      icon={a.icon}
+                      size="sm"
+                      className="size-4 shrink-0 rounded-full"
+                    />
+                    <span className="font-medium">@{a.name}</span>
                     <button
                       type="button"
-                      onClick={() =>
-                        setMentioned((cur) => cur.filter((m) => m.id !== a.id))
-                      }
-                      className="hover:text-foreground"
+                      onClick={() => {
+                        setMentioned((cur) => cur.filter((m) => m.id !== a.id));
+                        if (selectedAgentId === a.id) setSelectedAgentId(null);
+                        setManualActive((cur) => cur.filter((id) => id !== a.id));
+                      }}
+                      className="ml-0.5 flex size-3.5 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      aria-label={`Remove @${a.name}`}
                     >
                       ×
                     </button>
@@ -773,6 +1131,66 @@ export function App() {
                 ))}
               </div>
             )}
+            {imageAttachments.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {imageAttachments.map((image) => (
+                  <div
+                    key={image.id}
+                    className="flex w-40 shrink-0 flex-col gap-1 rounded-lg border border-border/60 bg-agent-surface-raised p-1.5"
+                  >
+                    <div className="relative">
+                      <button
+                        type="button"
+                        title={`View ${image.name}`}
+                        aria-label={`View ${image.name}`}
+                        onClick={() => setLightboxImage(image)}
+                        className="block w-full"
+                      >
+                        <img
+                          src={image.previewUrl}
+                          alt={image.name}
+                          className="h-16 w-full rounded object-cover"
+                        />
+                      </button>
+                      <GlassButton
+                        type="button"
+                        size="icon-xs"
+                        title={`Remove ${image.name}`}
+                        aria-label={`Remove ${image.name}`}
+                        className="absolute right-1 top-1"
+                        onClick={() => removeImageAttachment(image.id)}
+                      >
+                        <XIcon />
+                      </GlassButton>
+                    </div>
+                    <input
+                      type="text"
+                      ref={(el) => {
+                        if (el && image.id === focusAttachmentId) {
+                          el.focus();
+                          setFocusAttachmentId(null);
+                        }
+                      }}
+                      value={image.prompt}
+                      onChange={(e) => setImageAttachmentPrompt(image.id, e.target.value)}
+                      placeholder="What should change in this image?"
+                      className="w-full rounded bg-transparent px-1 py-0.5 text-xs outline-none placeholder:text-placeholder-composer"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.length) void addImageFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
             <textarea
               ref={textareaRef}
               value={draft}
@@ -827,33 +1245,48 @@ export function App() {
                   setMentionQuery(null);
                   return;
                 }
+                if (event.key === "Escape" && imgQuery !== null) {
+                  setImgQuery(null);
+                  return;
+                }
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   submit();
                 }
               }}
-              placeholder={`Chat with ${ready && engineLabel ? engineLabel : "Agent"}…`}
+              placeholder={
+                selectedAgentId
+                  ? `Chat with ${agents.find((a) => a.id === selectedAgentId)?.name || "Agent"}…`
+                  : `Chat with ${ready && engineLabel ? engineLabel : "Agent"}…`
+              }
               rows={1}
               disabled={!ready}
               className="min-h-[44px] max-h-[200px] w-full resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none placeholder:text-placeholder-composer focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50"
             />
             <div className="flex items-center justify-between gap-2 px-1">
               <div className="flex flex-wrap items-center gap-2">
+                <ComposerActionButton
+                  type="button"
+                  size="icon-sm"
+                  title="Attach images"
+                  aria-label="Attach images"
+                  disabled={!ready}
+                  onClick={() => imageInputRef.current?.click()}
+                >
+                  <ImagePlusIcon />
+                </ComposerActionButton>
                 <EnginePicker
                   selectedEngineId={engineId || (project.status === "running" ? project.engineId : null) || undefined}
                   engines={engines}
                   modelOption={modelOption}
                   modelValue={modelOption ? configValues[modelOption.id] : undefined}
                   loading={project.status === "starting"}
+                  isSettingModel={isSettingConfig}
+                  pendingModelValue={pendingConfigValue}
+                  isSwitchingEngine={isSwitchingEngine}
+                  targetEngineId={targetEngineId}
                   onSelectModel={setConfig}
-                  onSelect={(id) => {
-                    const currentId =
-                      engineId ||
-                      (project.status === "running" ? project.engineId : null);
-                    if (id === currentId) return;
-                    if (ready) switchEngine(id);
-                    else if (activeDir) void startWith(activeDir, id);
-                  }}
+                  onSelect={handleSelectEngine}
                   onRequestManageProviders={() => setProvidersDialogOpen(true)}
                 />
                 {primaryConfigOption && (
@@ -868,25 +1301,14 @@ export function App() {
                 )}
               </div>
               {busy ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="subtle"
-                  className="rounded-full"
-                  onClick={cancel}
-                >
-                  Stop
-                </Button>
+                <ComposerSendButton state="stop" onClick={cancel} />
               ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="rounded-full"
+                <ComposerSendButton
+                  state="send"
                   onClick={submit}
-                  disabled={!ready || !draft.trim()}
-                >
-                  Send
-                </Button>
+                  showLabel={Boolean(draft.trim() || imageAttachments.length > 0)}
+                  disabled={!ready || (!draft.trim() && imageAttachments.length === 0)}
+                />
               )}
             </div>
           </div>
@@ -897,13 +1319,13 @@ export function App() {
 
         <div
           className={cn(
-            "shrink-0 self-start overflow-hidden transition-[width,opacity] duration-200 ease-out",
+            "shrink-0 overflow-hidden transition-[width,opacity] duration-200 ease-out",
             contextOpen && view === "chat"
               ? "w-72 opacity-100"
               : "w-0 opacity-0",
           )}
         >
-          <div className="w-72">
+          <div className="h-full w-72">
             <ContextPanel
               projectDir={activeDir ?? ""}
               git={git}
@@ -945,6 +1367,22 @@ export function App() {
       <ProvidersDialog
         open={providersDialogOpen}
         onOpenChange={setProvidersDialogOpen}
+        engines={engines}
+        currentEngineId={project.status === "running" ? project.engineId : engineId}
+        installingEngine={installingEngineId}
+        onInstall={handleInstallEngine}
+        onUninstall={handleUninstallEngine}
+        onSelectEngine={handleSelectEngine}
+        onRefresh={refreshEngines}
+      />
+      <ImageLightbox
+        src={lightboxImage?.previewUrl ?? ""}
+        alt={lightboxImage?.name}
+        downloadFilename={lightboxImage?.name}
+        open={lightboxImage !== null}
+        onOpenChange={(open) => {
+          if (!open) setLightboxImage(null);
+        }}
       />
     </div>
   );

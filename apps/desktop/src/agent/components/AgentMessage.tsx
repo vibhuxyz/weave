@@ -22,6 +22,8 @@ import { BlockErrorBoundary } from "./BlockErrorBoundary";
 import { CheckpointBlock } from "./CheckpointBlock";
 import { EvidenceBlock } from "./EvidenceBlock";
 import { ProjectOverviewBlockView } from "./ProjectOverviewBlock";
+import { PlanBlockView } from "./PlanBlockView";
+import type { TurnPlan } from "../../useAcpChat";
 
 const TABS: Array<{ id: AgentTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -37,6 +39,7 @@ const DEPTH_BLOCK_TYPES = new Set<AgentBlock["type"]>([
   "explanation",
   "project-overview",
   "safety-ask",
+  "plan",
   "code",
   "diff",
   "test",
@@ -54,6 +57,7 @@ function filterBlocksByDepth(blocks: AgentBlock[], depth: DepthLevel): AgentBloc
         b.type === "explanation" ||
         b.type === "project-overview" ||
         b.type === "safety-ask" ||
+        b.type === "plan" ||
         b.type === "markdown",
     );
   }
@@ -72,6 +76,7 @@ export function AgentMessage({
   running,
   onAction,
   onSend,
+  onUpdatePlan,
 }: {
   turn: ChatTurn;
   projectDir: string | null;
@@ -82,6 +87,7 @@ export function AgentMessage({
   running: boolean;
   onAction?: (action: BlockAction) => void;
   onSend?: (text: string) => void;
+  onUpdatePlan?: (turnId: string, plan: TurnPlan) => void;
 }) {
   const [tab, setTab] = useState<AgentTab>("overview");
   const [depth, setDepth] = useState<DepthLevel>("normal");
@@ -97,6 +103,7 @@ export function AgentMessage({
         configValues,
         engineId,
         engineLabel,
+        plan: turn.plan,
         sourceEventIds: turn.sourceEventIds,
         sourceSeq: turn.sourceSeq,
       }),
@@ -107,6 +114,7 @@ export function AgentMessage({
       git,
       running,
       turn.id,
+      turn.plan,
       turn.sourceEventIds,
       turn.sourceSeq,
       turn.text,
@@ -219,6 +227,8 @@ export function AgentMessage({
             onSend,
             depth,
             viewModel.meta.changed,
+            engineLabel,
+            onUpdatePlan,
           )
         )}
       </div>
@@ -233,6 +243,8 @@ function renderBlocks(
   onSend?: (text: string) => void,
   depth?: "brief" | "normal" | "deep",
   changed?: boolean,
+  engineLabel?: string,
+  onUpdatePlan?: (turnId: string, plan: TurnPlan) => void,
 ) {
   const toolBlocks = blocks.filter(
     (block): block is Extract<AgentBlock, { type: "tool" }> =>
@@ -291,6 +303,19 @@ function renderBlocks(
             break;
           case "project-overview":
             content = <ProjectOverviewBlockView key={block.id} block={block} />;
+            break;
+          case "plan":
+            content = (
+              <PlanBlockView
+                key={block.id}
+                block={block}
+                engineLabel={engineLabel}
+                onSend={onSend}
+                onUpdatePlan={(plan) =>
+                  onUpdatePlan?.(block.turnId ?? block.id, plan)
+                }
+              />
+            );
             break;
           default:
             return null;

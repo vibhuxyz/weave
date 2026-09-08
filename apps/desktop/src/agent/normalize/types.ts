@@ -306,6 +306,21 @@ export interface ProjectOverviewBlock extends AgentBlockBase {
   sections: Array<{ icon?: string; title: string; content: string }>;
 }
 
+export interface PlanBlockEntry {
+  id: string;
+  content: string;
+  priority?: "high" | "medium" | "low";
+  status?: "pending" | "in_progress" | "completed";
+}
+
+export interface PlanBlock extends AgentBlockBase {
+  type: "plan";
+  title?: string;
+  entries: PlanBlockEntry[];
+  approved?: boolean;
+  turnId?: string;
+}
+
 export type AgentBlock =
   | SummaryBlock
   | ExplanationBlock
@@ -321,7 +336,8 @@ export type AgentBlock =
   | SafetyAskBlock
   | EvidenceBlock
   | CheckpointBlock
-  | ProjectOverviewBlock;
+  | ProjectOverviewBlock
+  | PlanBlock;
 
 // ---------------------------------------------------------------------------
 // Activity + ViewModel

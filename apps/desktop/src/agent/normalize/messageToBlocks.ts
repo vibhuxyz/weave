@@ -1,5 +1,5 @@
 import type { GitStatus } from "../../../server/index.ts";
-import type { ToolEntry } from "../../useAcpChat";
+import type { ToolEntry, TurnPlan } from "../../useAcpChat";
 import { explanationFromKnownText } from "./explanation";
 import { findingsFromKnownText, makeFinding } from "./finding";
 import { projectOverviewFromText } from "./projectOverview";
@@ -8,7 +8,10 @@ import { splitSections } from "./sections";
 import {
   type AgentBlock,
   type AgentViewModel,
+  type BlockSource,
   emptySource,
+  type PlanBlock,
+  type PlanBlockEntry,
   type SafetyAskBlock,
   type TestRunBlock,
 } from "./types";
@@ -21,6 +24,73 @@ import {
  * fits, falling back to markdown so no prose is ever dropped. Tool/test state
  * is derived separately from the tool list.
  */
+function planFromText(
+  text: string,
+  turnId: string,
+  source: BlockSource,
+): PlanBlock | null {
+  const planTagMatch = /<plan>([\s\S]*?)<\/plan>/i.exec(text);
+  if (planTagMatch) {
+    const rawLines = planTagMatch[1].split("\n");
+    const entries: PlanBlockEntry[] = [];
+    for (const line of rawLines) {
+      const match = /^\s*(?:\d+[.)]|-|\*)\s+(.+)$/.exec(line);
+      if (match && match[1].trim()) {
+        entries.push({
+          id: `step-${entries.length + 1}`,
+          content: match[1].trim(),
+          priority: "medium",
+          status: "pending",
+        });
+      }
+    }
+    if (entries.length > 0) {
+      return {
+        id: `plan-${turnId}`,
+        schemaVersion: 1,
+        source,
+        type: "plan",
+        title: "Execution Plan",
+        entries,
+        turnId,
+      };
+    }
+  }
+
+  const headingMatch =
+    /(?:^|\n)##+ (?:Execution Plan|Implementation Plan|Proposed Plan|Plan)\b([\s\S]*?)(?=\n##+ |\n\n\n|$)/i.exec(
+      text,
+    );
+  if (headingMatch) {
+    const rawLines = headingMatch[1].split("\n");
+    const entries: PlanBlockEntry[] = [];
+    for (const line of rawLines) {
+      const match = /^\s*(?:\d+[.)]|-|\*)\s+(.+)$/.exec(line);
+      if (match && match[1].trim() && !match[1].startsWith("#")) {
+        entries.push({
+          id: `step-${entries.length + 1}`,
+          content: match[1].trim(),
+          priority: "medium",
+          status: "pending",
+        });
+      }
+    }
+    if (entries.length >= 2) {
+      return {
+        id: `plan-${turnId}`,
+        schemaVersion: 1,
+        source,
+        type: "plan",
+        title: "Execution Plan",
+        entries,
+        turnId,
+      };
+    }
+  }
+
+  return null;
+}
+
 export function messageToBlocks(options: {
   id: string;
   text: string;
@@ -30,6 +100,7 @@ export function messageToBlocks(options: {
   configValues: Record<string, string>;
   engineId: string;
   engineLabel: string;
+  plan?: TurnPlan;
   sourceEventIds?: string[];
   sourceSeq?: number;
 }): AgentViewModel {
@@ -49,6 +120,25 @@ export function messageToBlocks(options: {
 
   const blocks: AgentBlock[] = [];
   const text = options.text.trim();
+
+  // If a structured plan exists on the turn or can be detected in text, emit it.
+  if (options.plan && options.plan.entries.length > 0) {
+    blocks.push({
+      id: `plan-${options.id}`,
+      schemaVersion: 1,
+      source: src(),
+      type: "plan",
+      title: "Execution Plan",
+      entries: options.plan.entries,
+      approved: options.plan.approved,
+      turnId: options.id,
+    });
+  } else if (text) {
+    const textPlan = planFromText(options.text, options.id, src());
+    if (textPlan) {
+      blocks.push(textPlan);
+    }
+  }
 
   // A safety-ask turn is single-purpose — the whole message is the ask.
   const safetyAsk = text ? safetyAskFromText(options.text, options.tools) : null;
