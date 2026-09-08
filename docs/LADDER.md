@@ -54,6 +54,15 @@ desktop, that is a signal to think — not to create `packages/utils`.
    doesn't have, so that half stays open. See [FINDINGS](FINDINGS.md).
 5. **`berd` → `weave`**, orchestrator scope. Desktop app branding (logo,
    locale copy, Tauri bundle id) deliberately untouched — a separate call.
+6. **Desktop & engine integration**:
+   - `EngineSupervisor` managing live engine switching across 4 ACP engines (`antigravity`,
+     `claude-code`, `codex`, `amp`) with warm child pools.
+   - In-band engine authentication: `EngineAuthPanel` with interactive terminal auth, API keys,
+     OAuth, and live snapshot streaming (`auth-state`).
+   - Multimodal prompts with per-image instruction blocks and `ImageLightbox`.
+   - Skills view and plugins integration with prompt system block composition.
+   - Dev server and process tree termination (`kill_port` child tree recursion) with AirPlay filtering.
+   - Model quota island tracking live rate limits and spend caps.
 
 **Not yet run:** the actual 12×2×3 baseline matrix. Wiring is done and one real
 cell has been verified end to end; the full run is API cost and wall-clock

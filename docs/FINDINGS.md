@@ -400,3 +400,55 @@ session" rather than claiming success.
 
 **Related, unfixed:** `openSession` has no timeout. A slow or wedged engine
 hangs a switch forever with no feedback.
+
+---
+
+## Antigravity runs its own sandbox by default (`--no-sandbox`)
+
+`agy-acp` defaults to `sandbox: true`. In that mode, shell commands (even simple
+read-only probes like `node -v` or `git status`) are denied internally by
+Antigravity's runner — even after Weave's permission policy has evaluated the
+location and approved the tool call.
+
+Weave's `confineToTaskDir` already acts as the authoritative security boundary,
+confining every file write to the task directory. Running Antigravity with
+`args: ["--no-sandbox"]` drops the redundant internal sandbox so tool executions
+honour Weave's policy rather than failing with silent denials.
+
+---
+
+## Killing a dev server must terminate the whole process tree
+
+Calling `kill(pid, SIGTERM)` on the PID returned by `lsof -i :<port>` only kills
+the top-level listener (often a thin wrapper or parent CLI like `pnpm`). Any child
+processes (`node`, `vite`, worker processes) remain orphaned, keep sockets open,
+and prevent new servers from binding the port.
+
+In `apps/desktop/src-tauri/src/lib.rs`, `kill_port` now recursively enumerates child
+process IDs via `pgrep -P <pid>` from the leaves up before terminating the root PID.
+
+---
+
+## macOS AirPlay Receiver occupies ports 5000 and 7000
+
+On macOS Monterey and later, `ControlCenter` listens on `0.0.0.0:5000` and
+`0.0.0.0:7000` for AirPlay Receiver. Port scanning for active dev servers flagged
+these ports as user project servers, and clicking "Stop" attempted to terminate
+system services.
+
+Dev server discovery now explicitly ignores listeners owned by system binaries
+(`ControlCenter` / AirPlay), keeping the running servers list clean.
+
+---
+
+## Multimodal ACP prompts: prefix instructions per image
+
+When users attach multiple screenshots with distinct annotations (e.g. "fix this
+button" on image 1, "update this padding" on image 2), packing the notes in a single
+preamble leads to attribution errors where vision models confuse which directive
+applies to which screenshot.
+
+The desktop server decomposes user input into ACP `PromptBlock[]` entries and
+prefixes each image directly with its numbered directive (`Image N: <note>`). This
+ensures prompt-to-image binding remains unambiguous in the model's attention window.
+

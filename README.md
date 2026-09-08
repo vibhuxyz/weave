@@ -120,10 +120,11 @@ Tauri window ──ws:8137──▶ desktop/server ──▶ @weave/core ──�
   weave CLI ─────────────────────────────────────┘                │
                                                           stdio (ndjson)
                                                                   ▼
-                                                        claude-agent-acp
+                                                      agy-acp / claude-agent-acp
+                                                      codex-acp / amp-acp
                                                                   │ https
                                                                   ▼
-                                                        api.anthropic.com
+                                                      Model provider APIs
 ```
 
 Both entry points write the same ledger. The desktop is a **reader** over the

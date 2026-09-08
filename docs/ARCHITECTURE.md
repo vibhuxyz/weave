@@ -53,10 +53,17 @@ grep -rn "@tauri-apps\|from \"react\"\|apps/desktop" packages/ --include=*.ts
 
 ### `agent` — one engine process, nothing more
 
-- `engines.ts` — the registry. The only file that names an engine.
-- `spawn.ts` — resolve the bin from its manifest, spawn, handle EPIPE.
-- `session.ts` — `initialize · newSession · loadSession · prompt · cancel`,
-  plus the ACP client (permission, file I/O) that reports through a `SessionSink`.
+- `engines-registry.ts` / `engines.ts` — registry of supported engines (`antigravity`,
+  `claude-code`, `codex`, `amp`), their manifests, capability flags, and CLI arguments.
+- `supervisor.ts` — `EngineSupervisor`. Keeps warm engine child processes and manages
+  per-session engine switches with prompt supersession.
+- `auth.ts` — engine authentication handling: terminal login runners (`runTerminalAuth`),
+  API keys, OAuth, and ACP `authenticate` dispatch.
+- `spawn.ts` — resolve the bin from its manifest, probe PATH via interactive shell,
+  spawn child processes, handle EPIPE.
+- `session.ts` — `initialize · newSession · loadSession · prompt · cancel`, plus
+  the ACP client (permission, file I/O). Supports multimodal `PromptBlock[]` (text
+  and images) and handles `AuthRequiredError`.
 - `permissions.ts` — `PermissionPolicy`, `confineToTaskDir`, `rejectAll`,
   `isInside` (symlink-resolving — see [FINDINGS](FINDINGS.md)).
 - `config-options.ts` — apply `model`/`mode`/`effort`/`fast`, report refusals.
@@ -115,10 +122,34 @@ sources), `inject/` (harness-owned files, e.g. a test suite the repo lacks).
 
 ### `apps/desktop`
 
-React + Tauri. `server/index.ts` is a **WebSocket adapter**: no spawn logic, no
-permission decisions, no file I/O. It holds a long-lived session (many prompts,
-streaming, cancel), which is why it drives `openSession` directly rather than
-core's one-shot `runTask`. Both write the same ledger.
+React + Tauri. Built in three layers:
+
+1. **`server/index.ts` — WebSocket adapter.** Bridges the UI to `@weave/agent`
+   and `@weave/core`. Holds a long-lived session (many prompts, streaming, cancel),
+   driving `openSession` and `EngineSupervisor`. Owns:
+   - Live engine switching with warm child reuse and in-flight prompt supersession.
+   - In-band engine authentication: receives `start-auth` / `cancel-auth` from the UI,
+     runs terminal logins or API key submissions, and broadcasts `auth-state` snapshots.
+   - Multimodal prompt formatting: turns images and per-image instructions into `PromptBlock[]`.
+   - `<system>` preamble composition: persona framing + skills catalog (`discoverSkills`,
+     `formatSkillCatalog`) + project-level context.
+   - `@file` fuzzy search (`list-files` -> `files`).
+2. **React UI surfaces:**
+   - `HomeView`: canvas view with project overview and widgets.
+   - `ChatView`: transcript rendering with `AgentMessage`, `ThinkingBlock`, `ToolSteps`,
+     and `UserMessage`.
+   - `AgentsView` & `SkillsView`: persona management and skill plugins.
+   - `EnginePicker`, `ProvidersDialog`, and `EngineAuthPanel`: engine selection,
+     install status, and credential/terminal sign-in.
+   - `ContextPanel`: project git status, running dev servers with stop controls,
+     standing and manual project agents.
+   - `UsageLimitIsland`: live model rate limit and spend quota monitor.
+   - `ImageLightbox`: screenshot attachment preview and full-screen view.
+3. **`src-tauri/src/lib.rs` — Native host layer:**
+   - Spawns and supervises the Node ACP server on port 8137.
+   - Dev server discovery with system listener exclusion (macOS AirPlay receiver).
+   - Process tree termination: `kill_port` recursively terminates child processes (`pgrep -P`)
+     to eliminate orphaned dev server workers.
 
 ---
 
