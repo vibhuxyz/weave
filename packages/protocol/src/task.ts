@@ -53,6 +53,16 @@ export interface TaskContract {
    * would score a one-line `tsc --noEmit` at the top of the ladder and make it
    * incomparable with an actual suite. Same rule as `Fixture.verifyRung`.
    */
+  /**
+   * Run the agent under sandboxing constraints.
+   *
+   * When true:
+   * - On macOS, child processes are wrapped with sandbox-exec denying access to
+   *   sensitive credentials (~/.ssh, ~/.aws, etc.) and confining writes to cwd.
+   * - For Antigravity, the `--no-sandbox` bypass is omitted so its internal sandbox
+   *   locks execution to cwd.
+   */
+  sandboxed?: boolean;
   verifyRung?: VerificationRung;
 }
 

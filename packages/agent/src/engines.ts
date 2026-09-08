@@ -1,8 +1,9 @@
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { ENGINES, DEFAULT_ENGINE_ID, type EngineDescriptor } from "./engines-registry.ts";
+import { ENGINES, DEFAULT_ENGINE_ID, resolveEngineArgs, type EngineDescriptor } from "./engines-registry.ts";
 
-export { ENGINES, DEFAULT_ENGINE_ID, type EngineDescriptor };
+export { ENGINES, DEFAULT_ENGINE_ID, resolveEngineArgs, type EngineDescriptor };
 
 /** Resolution from this file — the workspace. Correct in dev, useless in a bundle. */
 const localRequire = createRequire(import.meta.url);
@@ -24,7 +25,8 @@ function appDataRequire(): NodeRequire | null {
 }
 
 export function getEngine(id: string = DEFAULT_ENGINE_ID): EngineDescriptor {
-  const engine = ENGINES[id];
+  const normalizedId = id === "agy" ? "antigravity" : id;
+  const engine = ENGINES[normalizedId];
   if (!engine) {
     throw new Error(
       `Unknown engine "${id}". Known: ${Object.keys(ENGINES).join(", ")}`,
@@ -43,9 +45,8 @@ export function getEngine(id: string = DEFAULT_ENGINE_ID): EngineDescriptor {
 export function resolveEngineEntry(engine: EngineDescriptor): string {
   // App data first. A packaged app must never resolve a workspace copy that
   // happens to be on disk — that is how "works on my machine" ships.
-  const roots = [appDataRequire(), localRequire].filter(
-    (candidate): candidate is NodeRequire => candidate !== null,
-  );
+  const appData = appDataRequire();
+  const roots = appData ? [appData] : [localRequire];
 
   let manifestPath: string | null = null;
   let resolver: NodeRequire | null = null;
@@ -82,9 +83,86 @@ export function resolveEngineEntry(engine: EngineDescriptor): string {
   return resolve(dirname(manifestPath), relative);
 }
 
-/** Engines whose package is actually present. */
+/**
+ * Resolve the Codex CLI executable (native platform binary or JavaScript entry).
+ *
+ * @agentclientprotocol/codex-acp delegates to an underlying Codex app-server.
+ * When `CODEX_PATH` is unset and bare `codex` is not on PATH, spawning fails.
+ * This resolver discovers either the platform-specific native binary or
+ * @openai/codex/bin/codex.js so that Codex works out of the box.
+ */
+export function resolveCodexCliEntry(engine?: EngineDescriptor): string {
+  if (process.env.CODEX_PATH) {
+    return process.env.CODEX_PATH;
+  }
+
+  const descriptor = engine ?? getEngine("codex");
+  const appData = appDataRequire();
+  const roots = appData ? [appData] : [localRequire];
+
+  const targetTriple =
+    process.platform === "darwin"
+      ? process.arch === "arm64"
+        ? "aarch64-apple-darwin"
+        : "x86_64-apple-darwin"
+      : process.platform === "linux"
+      ? process.arch === "arm64"
+        ? "aarch64-unknown-linux-musl"
+        : "x86_64-unknown-linux-musl"
+      : process.platform === "win32"
+      ? process.arch === "arm64"
+        ? "aarch64-pc-windows-msvc"
+        : "x86_64-pc-windows-msvc"
+      : null;
+
+  const platformPackage = targetTriple
+    ? process.platform === "darwin"
+      ? `@openai/codex-darwin-${process.arch}`
+      : process.platform === "linux"
+      ? `@openai/codex-linux-${process.arch}`
+      : process.platform === "win32"
+      ? `@openai/codex-win32-${process.arch}`
+      : null
+    : null;
+
+  for (const root of roots) {
+    try {
+      const acpManifest = root.resolve(`${descriptor.packageName}/package.json`);
+      const acpReq = createRequire(acpManifest);
+      const codexManifest = acpReq.resolve("@openai/codex/package.json");
+      const codexReq = createRequire(codexManifest);
+
+      // Try platform native binary first
+      if (platformPackage && targetTriple) {
+        try {
+          const pkgJson = codexReq.resolve(`${platformPackage}/package.json`);
+          const binName = process.platform === "win32" ? "codex.exe" : "codex";
+          const nativeBin = resolve(dirname(pkgJson), "vendor", targetTriple, "bin", binName);
+          if (existsSync(nativeBin)) {
+            return nativeBin;
+          }
+        } catch {}
+      }
+
+      // Try @openai/codex/bin/codex.js
+      try {
+        const codexJs = codexReq.resolve("@openai/codex/bin/codex.js");
+        if (existsSync(codexJs)) {
+          return codexJs;
+        }
+      } catch {}
+    } catch {}
+  }
+
+  return "codex";
+}
+
+/** Engines whose package is actually present, deduplicated by engine.id. */
 export function installedEngines(): EngineDescriptor[] {
-  return Object.values(ENGINES).filter((engine) => {
+  const uniqueEngines = Array.from(
+    new Map(Object.values(ENGINES).map((e) => [e.id, e])).values(),
+  );
+  return uniqueEngines.filter((engine) => {
     try {
       resolveEngineEntry(engine);
       return true;

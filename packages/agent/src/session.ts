@@ -10,6 +10,7 @@ import type {
 } from "@weave/protocol";
 import { isAuthRequiredError } from "@weave/protocol";
 import { spawnAgent, type SpawnedAgent } from "./spawn.ts";
+import { resolveCodexCliEntry } from "./engines.ts";
 import {
   confineToTaskDir,
   isInside,
@@ -41,6 +42,8 @@ export interface OpenSessionOptions {
   resumeSessionId?: string | null;
   /** Which ACP engine to run. Defaults to Claude Code. */
   engineId?: string;
+  /** Enforce OS and engine sandboxing restrictions. */
+  sandboxed?: boolean;
 }
 
 /**
@@ -63,6 +66,11 @@ export class AuthRequiredError extends Error {
   }
 }
 
+/** One piece of a prompt: text, or an image the agent should look at. */
+export type PromptBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string };
+
 export interface AgentSession {
   /** Which engine is on the other end. */
   engineId: string;
@@ -78,7 +86,7 @@ export interface AgentSession {
    * needs its command run first — see `runTerminalAuth`.
    */
   authenticate(methodId: string): Promise<void>;
-  prompt(text: string): Promise<{ stopReason: string }>;
+  prompt(blocks: PromptBlock[]): Promise<{ stopReason: string }>;
   cancel(): Promise<void>;
   setConfigOption(configId: string, value: string): Promise<void>;
   newSession(): Promise<string>;
@@ -137,7 +145,7 @@ class SessionClient implements acp.Client {
   async requestPermission(
     params: acp.RequestPermissionRequest,
   ): Promise<acp.RequestPermissionResponse> {
-    const decision = this.policy(this.task, params);
+    const decision = await Promise.resolve(this.policy(this.task, params));
     // On a permission request `toolCall` is a ToolCallUpdate: every field is
     // optional. Fall back to the id so the ledger always has a handle.
     this.sink.onPermission(
@@ -197,7 +205,10 @@ export async function openSession(
   const { task, sink } = options;
   const policy = options.policy ?? confineToTaskDir;
 
-  const spawned: SpawnedAgent = spawnAgent(task.cwd, options.engineId);
+  const isSandboxed = options.sandboxed ?? options.task.sandboxed ?? false;
+  const spawned: SpawnedAgent = spawnAgent(task.cwd, options.engineId, {
+    sandboxed: isSandboxed,
+  });
   sink.onSpawned(spawned.child.pid ?? -1, spawned.entry);
 
   const client = new SessionClient(task, sink, policy);
@@ -212,6 +223,9 @@ export async function openSession(
     clientCapabilities: {
       // Without these the agent can read and suggest, but never apply a fix.
       fs: { readTextFile: true, writeTextFile: true },
+      auth: { terminal: true },
+      elicitation: { url: {} },
+      _meta: { "terminal-auth": true },
     },
   });
 
@@ -255,7 +269,88 @@ export async function openSession(
       // would otherwise leak one process per switch attempt.
       if (isAuthRequiredError(error)) {
         spawned.stop();
-        throw new AuthRequiredError(spawned.engine.id, authMethods, error);
+        let methods =
+          (error as { data?: { authMethods?: AuthMethod[] } })?.data
+            ?.authMethods ?? authMethods;
+        if (methods.length === 0 && (spawned.engine.id === "agy" || spawned.engine.id === "antigravity")) {
+          methods = [
+            {
+              id: "agy-login",
+              name: "Sign in with Google Antigravity",
+              type: "terminal",
+              _meta: {
+                "terminal-auth": {
+                  command: "agy",
+                  args: ["auth", "login"],
+                },
+              },
+            } as unknown as AuthMethod,
+          ];
+        } else if (methods.length === 0 && spawned.engine.id === "claude-code") {
+          methods = [
+            {
+              id: "claude-ai-login",
+              name: "Claude Subscription",
+              type: "terminal",
+              description: "Use Claude subscription",
+              args: ["--cli", "auth", "login", "--claudeai"],
+            } as unknown as AuthMethod,
+            {
+              id: "console-login",
+              name: "Anthropic Console",
+              type: "terminal",
+              description: "Use Anthropic Console (API usage billing)",
+              args: ["--cli", "auth", "login", "--console"],
+            } as unknown as AuthMethod,
+          ];
+        } else if (spawned.engine.id === "codex") {
+          const codexCli = resolveCodexCliEntry(spawned.engine);
+          const isNative = !codexCli.endsWith(".js");
+          const cmd = isNative ? codexCli : process.execPath;
+          const baseArgs = isNative ? [] : [codexCli];
+          methods = [
+            {
+              id: "chat-gpt-device-code",
+              name: "Sign in with Device Code",
+              type: "terminal",
+              description: "Sign in using one-time verification code (recommended)",
+              _meta: {
+                "terminal-auth": {
+                  command: cmd,
+                  args: [...baseArgs, "login", "--device-auth"],
+                  label: "ChatGPT Device Auth",
+                },
+              },
+            } as unknown as AuthMethod,
+            {
+              id: "chat-gpt",
+              name: "Sign in with Browser",
+              type: "terminal",
+              description: "Sign in using your OpenAI ChatGPT account in browser",
+              _meta: {
+                "terminal-auth": {
+                  command: cmd,
+                  args: [...baseArgs, "login"],
+                  label: "ChatGPT Login",
+                },
+              },
+            } as unknown as AuthMethod,
+            {
+              id: "api-key",
+              name: "OpenAI API Key",
+              type: "terminal",
+              description: "Authenticate using an OpenAI API Key",
+              _meta: {
+                "terminal-auth": {
+                  command: cmd,
+                  args: [...baseArgs, "login", "--with-api-key"],
+                  label: "OpenAI API Key Login",
+                },
+              },
+            } as unknown as AuthMethod,
+          ];
+        }
+        throw new AuthRequiredError(spawned.engine.id, methods, error);
       }
       throw error;
     }
@@ -283,10 +378,10 @@ export async function openSession(
     async authenticate(methodId: string) {
       await connection.authenticate({ methodId });
     },
-    async prompt(text: string) {
+    async prompt(blocks: PromptBlock[]) {
       const result = await connection.prompt({
         sessionId,
-        prompt: [{ type: "text", text }],
+        prompt: blocks,
       });
       return { stopReason: result.stopReason };
     },
@@ -297,13 +392,55 @@ export async function openSession(
       await connection.setSessionConfigOption({ sessionId, configId, value });
     },
     async newSession() {
-      const created = await connection.newSession({
-        cwd: task.cwd,
-        mcpServers: [],
-      });
-      sessionId = created.sessionId;
-      resumed = false;
-      return sessionId;
+      try {
+        const created = await connection.newSession({
+          cwd: task.cwd,
+          mcpServers: [],
+        });
+        sessionId = created.sessionId;
+        resumed = false;
+        return sessionId;
+      } catch (error) {
+        if (isAuthRequiredError(error)) {
+          let methods =
+            (error as { data?: { authMethods?: AuthMethod[] } })?.data
+              ?.authMethods ?? authMethods;
+          if (methods.length === 0 && (spawned.engine.id === "agy" || spawned.engine.id === "antigravity")) {
+            methods = [
+              {
+                id: "agy-login",
+                name: "Sign in with Google Antigravity",
+                type: "terminal",
+                _meta: {
+                  "terminal-auth": {
+                    command: "agy",
+                    args: ["auth", "login"],
+                  },
+                },
+              } as unknown as AuthMethod,
+            ];
+          } else if (methods.length === 0 && spawned.engine.id === "claude-code") {
+            methods = [
+              {
+                id: "claude-ai-login",
+                name: "Claude Subscription",
+                type: "terminal",
+                description: "Use Claude subscription",
+                args: ["--cli", "auth", "login", "--claudeai"],
+              } as unknown as AuthMethod,
+              {
+                id: "console-login",
+                name: "Anthropic Console",
+                type: "terminal",
+                description: "Use Anthropic Console (API usage billing)",
+                args: ["--cli", "auth", "login", "--console"],
+              } as unknown as AuthMethod,
+            ];
+          }
+          throw new AuthRequiredError(spawned.engine.id, methods, error);
+        }
+        throw error;
+      }
     },
     async resumeSession(id: string) {
       if (!canLoadSession) return false;

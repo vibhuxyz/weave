@@ -20,6 +20,8 @@ export interface ProjectEntry {
   notes?: string;
   /** Standing agents for this project (their instructions steer new chats). */
   agents?: ProjectAgent[];
+  /** Whether this project enforces sandbox constraints. */
+  sandboxed?: boolean;
 }
 
 export interface ProjectMeta {
@@ -28,6 +30,7 @@ export interface ProjectMeta {
   icon?: string;
   notes?: string;
   agents?: ProjectAgent[];
+  sandboxed?: boolean;
 }
 
 /**

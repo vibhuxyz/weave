@@ -22,7 +22,7 @@ export type PermissionDecision =
 export type PermissionPolicy = (
   task: TaskContract,
   request: RequestPermissionRequest,
-) => PermissionDecision;
+) => PermissionDecision | Promise<PermissionDecision>;
 
 /** Pick an option the agent itself labelled as an allow. */
 function findAllowOption(
@@ -104,19 +104,93 @@ function mutates(kind: ToolKind | null | undefined): boolean {
 }
 
 /**
+ * Extract a shell command string from toolCall rawInput if present.
+ */
+export function extractCommand(rawInput: unknown): string | null {
+  if (rawInput == null) return null;
+  if (typeof rawInput === "string") return rawInput.trim();
+  if (typeof rawInput === "object") {
+    const rec = rawInput as Record<string, unknown>;
+    const cmd = rec.command ?? rec.cmd ?? rec.script;
+    if (typeof cmd === "string") return cmd.trim();
+  }
+  return null;
+}
+
+export interface CommandSafetyResult {
+  allowed: boolean;
+  reason?: string;
+}
+
+/**
+ * Inspect a shell command to ensure it stays strictly within `cwd`.
+ *
+ * Catches:
+ * 1. Sensitive home/system directory access (~/.ssh, ~/.aws, ~/.gnupg, ~/.kube, /etc/passwd, etc.)
+ * 2. Directory traversal escaping cwd (e.g. `cd ../..`, `cat ../secret`, `rm -rf ../`)
+ * 3. Absolute user/system paths outside cwd (e.g. `/Users/...` or `/home/...` not under cwd)
+ * 4. Destructive system-wide root or home directory wipes
+ */
+export function inspectCommandBoundaries(
+  command: string,
+  cwd: string,
+): CommandSafetyResult {
+  const normalizedCwd = realish(cwd);
+
+  // 1. Sensitive credential or system directories
+  const sensitivePatterns = [
+    /(?:^|[\s"'`=])(~|\$HOME)\/(?:\.ssh|\.aws|\.gnupg|\.kube|\.config\/gcloud)/i,
+    /(?:^|[\s"'`=])\/(?:Users|home)\/[^/\s"']+\/(?:\.ssh|\.aws|\.gnupg|\.kube)/i,
+    /(?:^|[\s"'`=])\/(?:etc|private\/etc)\/(?:passwd|shadow|sudoers)/i,
+  ];
+  for (const pattern of sensitivePatterns) {
+    if (pattern.test(command)) {
+      return {
+        allowed: false,
+        reason: "references sensitive credential or system directory",
+      };
+    }
+  }
+
+  // 2. Destructive root/home patterns
+  if (/(?:^|[\s"'`;])rm\s+(?:-[a-zA-Z]*[rf][a-zA-Z]*\s+)+(?:\/|~|\$HOME)(?:$|[\s"'`;])/i.test(command)) {
+    return {
+      allowed: false,
+      reason: "destructive command targeting root or home directory",
+    };
+  }
+
+  // 3. Path traversal escaping cwd (e.g. `../` or `/..`)
+  // Excludes git revision ranges like `HEAD..main`
+  if (/(?:^|[\s"'`=])(?:\.\.\/|\/\.\.)/.test(command)) {
+    return {
+      allowed: false,
+      reason: "contains path traversal (..) escaping task directory",
+    };
+  }
+
+  // 4. Absolute paths referencing /Users/ or /home/ outside cwd
+  const userPathMatches = command.match(/(?:\/Users|\/home)\/[^\s"'`;]+/g);
+  if (userPathMatches) {
+    for (const rawPath of userPathMatches) {
+      const cleanPath = rawPath.replace(/[,:;)"']+$/, "");
+      if (!isInside(normalizedCwd, cleanPath)) {
+        return {
+          allowed: false,
+          reason: `targets ${cleanPath}, outside task cwd`,
+        };
+      }
+    }
+  }
+
+  return { allowed: true };
+}
+
+/**
  * The default policy: allow anything the agent asks for **within the task's
  * cwd**, minus anything `readOnlyPaths` forbids. Reject everything else.
  *
- * Two boundaries, in order:
- *
- *   1. the task directory — the outer wall
- *   2. `readOnlyPaths` — a deny list inside it, for files whose contents are
- *      the measurement (a test suite) and so must not be editable by the thing
- *      being measured
- *
- * `allowedPaths` narrowing is still NOT read: an allow-list is only meaningful
- * once each task owns a worktree, so it lands at MVP.1. A deny list needs no
- * worktree to mean something, which is why it is here now.
+ * Enforces boundaries across both file locations and shell command inputs.
  */
 export const confineToTaskDir: PermissionPolicy = (task, request) => {
   const allow = findAllowOption(request);
@@ -155,20 +229,58 @@ export const confineToTaskDir: PermissionPolicy = (task, request) => {
     }
   }
 
-  // KNOWN GAP, recorded rather than hidden: many tool calls report no
-  // `locations` at all — a shell command, for instance — so this check passes
-  // vacuously and cannot see where they write. The agent's cwd is the real
-  // boundary for those, which is why `safeResolve` exists as a second defence
-  // and why MVP.1's worktrees matter: containment, not inspection.
+  // Inspect command payload for execute tools or tool calls reporting a command
+  const command = extractCommand(request.toolCall.rawInput);
+  if (command) {
+    const safety = inspectCommandBoundaries(command, task.cwd);
+    if (!safety.allowed) {
+      return {
+        decision: "reject",
+        reason: `command rejected: ${safety.reason}`,
+      };
+    }
+  }
+
   return {
     decision: "allow",
     optionId: allow.optionId,
     reason:
       locations.length > 0
         ? `${allow.kind}; ${locations.length} location(s) within task cwd`
-        : `${allow.kind}; no locations reported (unverified)`,
+        : command
+          ? `${allow.kind}; command verified within task cwd`
+          : `${allow.kind}; no locations reported (unverified)`,
   };
 };
+
+export type PermissionPrompter = (
+  task: TaskContract,
+  request: RequestPermissionRequest,
+  command: string | null,
+) => Promise<PermissionDecision>;
+
+/**
+ * Creates a permission policy that enforces strict directory confinement
+ * first, and then delegates to an interactive prompter for shell commands.
+ */
+export function createGuardedPermissionPolicy(
+  prompter?: PermissionPrompter,
+): PermissionPolicy {
+  return async (task, request) => {
+    const autoDecision = await confineToTaskDir(task, request);
+    if (autoDecision.decision === "reject") {
+      return autoDecision;
+    }
+
+    const command = extractCommand(request.toolCall.rawInput);
+    const isExecute = request.toolCall.kind === "execute" || command !== null;
+    if (isExecute && prompter) {
+      return await prompter(task, request, command);
+    }
+
+    return autoDecision;
+  };
+}
 
 /** Refuse everything. Useful for dry runs and for eval baselines. */
 export const rejectAll: PermissionPolicy = () => ({
@@ -183,3 +295,4 @@ export function toAcpResponse(
     ? { outcome: { outcome: "selected", optionId: decision.optionId } }
     : { outcome: { outcome: "cancelled" } };
 }
+

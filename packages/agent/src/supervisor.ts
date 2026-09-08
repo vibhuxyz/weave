@@ -49,6 +49,7 @@ export interface CreateSupervisorOptions {
   resumeSessionId?: string | null;
   /** How long an unreferenced engine child lives before it is killed. */
   idleGraceMs?: number;
+  sandboxed?: boolean;
 }
 
 export async function createEngineSupervisor(
@@ -66,6 +67,7 @@ export async function createEngineSupervisor(
       policy: options.policy,
       engineId,
       resumeSessionId,
+      sandboxed: options.sandboxed ?? options.task.sandboxed,
     });
 
   const first = await open(currentEngineId, options.resumeSessionId);

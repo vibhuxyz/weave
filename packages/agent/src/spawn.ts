@@ -2,6 +2,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import {
   DEFAULT_ENGINE_ID,
   getEngine,
+  resolveCodexCliEntry,
+  resolveEngineArgs,
   resolveEngineEntry,
   type EngineDescriptor,
 } from "./engines.ts";
@@ -12,6 +14,64 @@ export interface SpawnedAgent {
   entry: string;
   /** End stdin, then SIGKILL if it has not exited within `graceMs`. */
   stop(graceMs?: number): void;
+}
+
+export interface SpawnAgentOptions {
+  sandboxed?: boolean;
+}
+
+/**
+ * Build a macOS Sandbox Profile (SBPL) that restricts the agent process.
+ *
+ * Denies:
+ * - Read and write access to sensitive credentials: ~/.ssh, ~/.aws, ~/.gnupg, ~/.kube
+ * - Write access globally, except cwd, temporary folders (/tmp, /var/folders),
+ *   /dev, and standard agent caches (~/.claude, ~/.codex, ~/.gemini, ~/.cache).
+ */
+export function buildMacOsSandboxProfile(cwd: string): string {
+  const home = process.env.HOME ?? "";
+  const allowedWritePaths = [
+    cwd,
+    "/tmp",
+    "/private/tmp",
+    "/var/folders",
+    "/private/var/folders",
+    "/dev",
+  ];
+  if (home) {
+    allowedWritePaths.push(
+      `${home}/.cache`,
+      `${home}/.local`,
+      `${home}/.claude`,
+      `${home}/.codex`,
+      `${home}/.gemini`,
+      `${home}/.config`,
+    );
+  }
+
+  const sensitivePaths = home
+    ? [
+        `${home}/.ssh`,
+        `${home}/.aws`,
+        `${home}/.gnupg`,
+        `${home}/.kube`,
+      ]
+    : [];
+
+  const allowedWritesSbpl = allowedWritePaths
+    .map((p) => `(allow file-write* (subpath "${p}"))`)
+    .join("\n");
+
+  const sensitiveDeniesSbpl = sensitivePaths
+    .map((p) => `(deny file-read* file-write* (subpath "${p}"))`)
+    .join("\n");
+
+  return `(version 1)
+(allow default)
+(deny file-write*)
+${allowedWritesSbpl}
+${sensitiveDeniesSbpl}
+`;
 }
 
 /**
@@ -31,21 +91,69 @@ export interface SpawnedAgent {
  * stats, which we do not consume, so the noise is pure.
  */
 const STDERR_NOISE = [/^\[agy-acp\] WARN: failed to decode gen_metadata /];
+export function augmentPathWithUserDirs(basePath?: string): string {
+  const home = process.env.HOME ?? "";
+  const extraPaths = [
+    home ? `${home}/.local/bin` : null,
+    home ? `${home}/.cargo/bin` : null,
+    home ? `${home}/bin` : null,
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+  ].filter((p): p is string => Boolean(p));
+
+  const currentPath = basePath ?? process.env.PATH ?? "";
+  const segments = currentPath.split(":");
+  const toPrepend = extraPaths.filter((p) => !segments.includes(p));
+  return [...toPrepend, currentPath].filter(Boolean).join(":");
+}
+
 export function spawnAgent(
   cwd: string,
-  engineId: string = DEFAULT_ENGINE_ID,
+  engineIdOrOptions: string | (SpawnAgentOptions & { engineId?: string }) = DEFAULT_ENGINE_ID,
+  options?: SpawnAgentOptions,
 ): SpawnedAgent {
-  const engine = getEngine(engineId);
-  const entry = resolveEngineEntry(engine);
+  const resolvedEngineId =
+    typeof engineIdOrOptions === "string"
+      ? engineIdOrOptions
+      : engineIdOrOptions.engineId ?? DEFAULT_ENGINE_ID;
+  const resolvedOptions =
+    typeof engineIdOrOptions === "object"
+      ? engineIdOrOptions
+      : options ?? {};
 
-  const child = spawn(process.execPath, [entry, ...(engine.args ?? [])], {
+  const engine = getEngine(resolvedEngineId);
+  const entry = resolveEngineEntry(engine);
+  const engineArgs = resolveEngineArgs(engine, resolvedOptions);
+
+  const extraEnv: Record<string, string> = { ...(engine.env ?? {}) };
+  if (engine.id === "codex" && !process.env.CODEX_PATH) {
+    try {
+      const codexPath = resolveCodexCliEntry(engine);
+      if (codexPath) {
+        extraEnv.CODEX_PATH = codexPath;
+      }
+    } catch {}
+  }
+
+  let spawnBin = process.execPath;
+  let spawnArgs = [entry, ...engineArgs];
+
+  // When sandboxed on macOS, wrap execution under sandbox-exec
+  if (resolvedOptions.sandboxed && process.platform === "darwin") {
+    const profile = buildMacOsSandboxProfile(cwd);
+    spawnBin = "/usr/bin/sandbox-exec";
+    spawnArgs = ["-p", profile, process.execPath, entry, ...engineArgs];
+  }
+
+  const child = spawn(spawnBin, spawnArgs, {
     cwd,
     stdio: ["pipe", "pipe", "pipe"],
     env: {
       ...process.env,
       // Lets this work when the host binary is Electron rather than plain Node.
       ELECTRON_RUN_AS_NODE: "1",
-      ...engine.env,
+      PATH: augmentPathWithUserDirs(process.env.PATH),
+      ...extraEnv,
     },
   });
 

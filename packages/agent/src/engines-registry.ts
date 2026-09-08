@@ -57,16 +57,6 @@ export const ENGINES: Record<string, EngineDescriptor> = {
     install: "pnpm -F @weave/agent add @sourcegraph/amp",
     capabilities: FULL_CAPABILITIES,
   },
-  gemini: {
-    id: "gemini",
-    label: "Gemini CLI",
-    packageName: "@google/gemini-cli",
-    binName: "gemini",
-    provider: "google",
-    args: ["--experimental-acp"],
-    install: "pnpm -F @weave/agent add @google/gemini-cli",
-    capabilities: FULL_CAPABILITIES,
-  },
   antigravity: {
     id: "antigravity",
     label: "Antigravity",
@@ -85,4 +75,34 @@ export const ENGINES: Record<string, EngineDescriptor> = {
   },
 };
 
+// Convenience alias: 'agy' points to 'antigravity' without creating duplicate enumerable keys.
+Object.defineProperty(ENGINES, "agy", {
+  value: ENGINES.antigravity,
+  enumerable: false,
+  configurable: true,
+  writable: true,
+});
+
 export const DEFAULT_ENGINE_ID = "antigravity";
+
+/**
+ * Compute CLI arguments for an engine run, factoring in sandboxing.
+ *
+ * For Antigravity: `agy-acp` defaults to its internal platform sandbox.
+ * When `sandboxed` is true, omit `--no-sandbox` to lock shell execution down.
+ * When false, keep `--no-sandbox` so general development commands run smoothly.
+ */
+export function resolveEngineArgs(
+  engine: EngineDescriptor,
+  options?: { sandboxed?: boolean },
+): string[] {
+  const base = engine.args ?? [];
+  if (engine.id === "antigravity" || engine.id === "agy") {
+    if (options?.sandboxed) {
+      return base.filter((arg) => arg !== "--no-sandbox");
+    }
+    return base.includes("--no-sandbox") ? base : [...base, "--no-sandbox"];
+  }
+  return [...base];
+}
+
