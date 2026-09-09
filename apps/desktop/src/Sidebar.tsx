@@ -74,34 +74,50 @@ function SectionLabel({
 }) {
   const collapsible = onToggleCollapsed !== undefined;
   return (
-    // `group` so the section's add button stays hidden until the row is
-    // hovered or the button itself takes focus — the heading reads as a label,
-    // not a toolbar, which is how it looks at rest.
-    <div className="group flex items-center justify-between px-3 pt-5 pb-1.5">
+    // Sections are separated by whitespace, not rules: ~26px above the
+    // heading, ~10px below it before the first row.
+    <div className="flex items-center justify-between px-2.5 pt-[26px] pb-2.5">
       {collapsible ? (
         <button
           type="button"
           onClick={onToggleCollapsed}
           aria-expanded={!collapsed}
-          className="-ml-1 flex items-center gap-1 rounded text-muted-foreground text-sm transition-colors hover:text-foreground"
+          className="-ml-1 flex items-center gap-1 rounded text-[13px] text-sidebar-text-secondary transition-colors duration-150 ease-out hover:text-sidebar-text-primary"
         >
           <ChevronDownIcon
             className={cn(
-              "size-3.5 transition-transform",
+              "size-3.5 transition-transform duration-150",
               collapsed && "-rotate-90",
             )}
           />
           {children}
         </button>
       ) : (
-        <p className="text-muted-foreground text-sm">{children}</p>
+        <p className="text-[13px] text-sidebar-text-secondary">{children}</p>
       )}
-      {action ? (
-        <span className="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-          {action}
-        </span>
-      ) : null}
+      {action}
     </div>
+  );
+}
+
+/** The quiet "+" beside a section heading — no border, surface only on hover. */
+function SectionAction({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="flex size-6 items-center justify-center rounded-full text-sidebar-text-tertiary transition-colors duration-150 ease-out hover:bg-sidebar-hover hover:text-sidebar-text-primary"
+    >
+      <PlusIcon className="size-[18px]" />
+    </button>
   );
 }
 
@@ -122,8 +138,8 @@ export function Sidebar({
   const [chatsCollapsed, setChatsCollapsed] = useState(false);
 
   return (
-    <aside className="flex max-h-full w-full shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-agent-surface-raised p-2">
-      <nav className="flex flex-col gap-0.5 pt-2">
+    <aside className="flex h-full max-h-full w-full shrink-0 flex-col overflow-hidden rounded-[11px] border border-sidebar-shell-border bg-sidebar-shell px-3 py-4 shadow-[var(--sidebar-shell-shadow)]">
+      <nav className="flex flex-col gap-0.5">
         {NAV.map(({ id, label, icon: Icon, view: navView }) => {
           const active = navView === view;
           return (
@@ -132,13 +148,18 @@ export function Sidebar({
               type="button"
               onClick={() => onViewChange(navView)}
               className={cn(
-                "flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm transition-colors",
+                "flex h-[38px] items-center gap-[11px] rounded-lg px-2.5 text-left text-sm transition-colors duration-150 ease-out",
                 active
-                  ? "bg-secondary text-foreground"
-                  : "text-foreground/80 hover:bg-secondary/60 hover:text-foreground",
+                  ? "bg-sidebar-selected text-sidebar-text-primary"
+                  : "text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text-primary",
               )}
             >
-              <Icon className="size-4" />
+              <Icon
+                className={cn(
+                  "size-[18px] shrink-0 transition-colors duration-150 ease-out",
+                  active ? "text-sidebar-accent-project" : "text-sidebar-text-tertiary",
+                )}
+              />
               {label}
             </button>
           );
@@ -146,28 +167,19 @@ export function Sidebar({
       </nav>
 
       <SectionLabel
-        action={
-          <button
-            type="button"
-            onClick={onAddProject}
-            title="Open another project"
-            className="text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <PlusIcon className="size-4" />
-          </button>
-        }
+        action={<SectionAction label="Open another project" onClick={onAddProject} />}
       >
         Projects
       </SectionLabel>
 
-      <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col gap-1">
         {projects.length === 0 && (
           <button
             type="button"
             onClick={onAddProject}
-            className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-muted-foreground text-sm hover:bg-secondary/60 hover:text-foreground"
+            className="flex h-[38px] items-center gap-[11px] rounded-lg px-2.5 text-left text-sidebar-text-secondary text-sm transition-colors duration-150 ease-out hover:bg-sidebar-hover hover:text-sidebar-text-primary"
           >
-            <DefaultProjectGlyphIcon className="size-4 shrink-0" />
+            <DefaultProjectGlyphIcon className="size-[18px] shrink-0" />
             Create a project
           </button>
         )}
@@ -177,41 +189,54 @@ export function Sidebar({
             <div
               key={entry.dir}
               className={cn(
-                "group relative rounded-lg transition-colors",
-                active
-                  ? "bg-secondary"
-                  : "hover:bg-secondary/60",
+                "group relative overflow-hidden rounded-[10px] transition-colors duration-150 ease-out",
+                active ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
               )}
             >
+              {/* Selection reads from the accent rail, not from a colour wash. */}
+              {active && (
+                <span className="absolute top-1 bottom-1 left-0 w-[3px] rounded-full bg-sidebar-accent-project" />
+              )}
               <button
                 type="button"
                 onClick={() => onSelectProject(entry.dir)}
                 className={cn(
-                  "flex w-full flex-col rounded-lg px-3 py-1.5 pr-9 text-left text-sm transition-colors",
-                  active
-                    ? "text-foreground"
-                    : "text-foreground/80 group-hover:text-foreground",
+                  "flex w-full flex-col justify-center gap-0.5 px-2.5 pr-9 text-left transition-colors duration-150 ease-out",
+                  active ? "h-[60px]" : "h-[38px]",
                 )}
               >
-                <span className="flex items-center gap-2.5">
+                <span className="flex items-center gap-[11px]">
                   {entry.icon ? (
                     <img
                       src={entry.icon}
                       alt=""
-                      className="size-4 shrink-0 rounded-[4px] object-cover"
+                      className="size-[18px] shrink-0 rounded-[4px] object-cover"
                     />
                   ) : (
                     <FolderIcon
-                      className="size-4 shrink-0"
+                      className={cn(
+                        "size-[18px] shrink-0 transition-colors duration-150 ease-out",
+                        !entry.tint &&
+                          (active
+                            ? "text-sidebar-accent-project"
+                            : "text-sidebar-text-tertiary group-hover:text-sidebar-text-secondary"),
+                      )}
                       style={entry.tint ? { color: entry.tint } : undefined}
                     />
                   )}
-                  <span className="truncate">
+                  <span
+                    className={cn(
+                      "truncate text-sm transition-colors duration-150 ease-out",
+                      active
+                        ? "font-medium text-sidebar-text-primary"
+                        : "text-sidebar-text-secondary group-hover:text-sidebar-text-primary",
+                    )}
+                  >
                     {entry.name || basename(entry.dir)}
                   </span>
                 </span>
                 {active && (
-                  <span className="truncate pl-[26px] text-muted-foreground text-xs">
+                  <span className="truncate pl-[29px] text-[11px] text-sidebar-text-tertiary">
                     {tildeHome(entry.dir)}
                   </span>
                 )}
@@ -221,7 +246,7 @@ export function Sidebar({
                   <button
                     type="button"
                     aria-label={`${entry.name || basename(entry.dir)} options`}
-                    className="absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-black/20 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                    className="absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded-md text-sidebar-text-tertiary opacity-0 transition-opacity duration-150 ease-out hover:bg-sidebar-hover hover:text-sidebar-text-primary group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
                   >
                     <MoreHorizontalIcon className="size-3.5" />
                   </button>
@@ -248,31 +273,22 @@ export function Sidebar({
       <SectionLabel
         collapsed={chatsCollapsed}
         onToggleCollapsed={() => setChatsCollapsed((open) => !open)}
-        action={
-          <button
-            type="button"
-            onClick={onNewChat}
-            title="New chat"
-            className="text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <PlusIcon className="size-4" />
-          </button>
-        }
+        action={<SectionAction label="New chat" onClick={onNewChat} />}
       >
         Chats
       </SectionLabel>
 
       <div
         hidden={chatsCollapsed}
-        className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto"
+        className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto"
       >
         {chats.length === 0 && (
           <button
             type="button"
             onClick={onNewChat}
-            className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-muted-foreground text-sm hover:bg-secondary/60 hover:text-foreground"
+            className="flex h-11 items-center gap-[11px] rounded-lg px-2.5 text-left text-sidebar-text-secondary text-sm transition-colors duration-150 ease-out hover:bg-sidebar-hover hover:text-sidebar-text-primary"
           >
-            <MessageSquareIcon className="size-4 shrink-0" />
+            <MessageSquareIcon className="size-[18px] shrink-0" />
             Start a chat
           </button>
         )}
@@ -284,19 +300,43 @@ export function Sidebar({
               type="button"
               onClick={() => onSelectChat(chat.id)}
               className={cn(
-                "group relative flex items-center gap-2 rounded-lg py-1.5 pr-2 pl-3 text-left text-sm transition-colors",
+                "group relative flex h-11 items-center gap-[11px] overflow-hidden rounded-[9px] px-2.5 text-left text-sm transition-colors duration-150 ease-out",
+                // Orange is reserved for the selected conversation — hover
+                // never borrows it.
                 active
-                  ? "bg-[linear-gradient(90deg,rgba(255,122,82,0.16),rgba(255,122,82,0.03))] text-foreground"
-                  : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                  ? "bg-[image:var(--sidebar-selected-chat-bg)]"
+                  : "hover:bg-sidebar-hover",
               )}
             >
               {active && (
-                <span className="absolute top-1 bottom-1 left-0 w-[3px] rounded-full bg-[#ff7a52]" />
+                <span className="absolute top-1 bottom-1 left-0 w-[3px] rounded-full bg-sidebar-accent-chat" />
               )}
-              <span className="min-w-0 flex-1 truncate">
+              <MessageSquareIcon
+                className={cn(
+                  "size-[18px] shrink-0 transition-colors duration-150 ease-out",
+                  active
+                    ? "text-sidebar-accent-chat"
+                    : "text-sidebar-text-tertiary group-hover:text-sidebar-text-secondary",
+                )}
+              />
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate transition-colors duration-150 ease-out",
+                  active
+                    ? "text-sidebar-text-primary"
+                    : "text-sidebar-text-secondary group-hover:text-sidebar-text-primary",
+                )}
+              >
                 {chat.title || "New chat"}
               </span>
-              <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+              <span
+                className={cn(
+                  "shrink-0 text-[11px] tabular-nums transition-colors duration-150 ease-out",
+                  active
+                    ? "text-sidebar-text-secondary"
+                    : "text-sidebar-text-tertiary group-hover:text-sidebar-text-secondary",
+                )}
+              >
                 {ago(chat.updatedAt)}
               </span>
             </button>
@@ -304,13 +344,14 @@ export function Sidebar({
         })}
       </div>
 
-      <div className="mt-6 border-border/60 border-t pt-3">
+      {/* The only rule in the panel — everything else groups by whitespace. */}
+      <div className="mt-4 border-sidebar-shell-border border-t pt-3">
         <button
           type="button"
           disabled
-          className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm disabled:opacity-40"
+          className="flex h-[38px] w-full items-center gap-[11px] rounded-lg px-2.5 text-left text-sidebar-text-secondary text-sm transition-colors duration-150 ease-out hover:bg-sidebar-hover hover:text-sidebar-text-primary disabled:pointer-events-none disabled:opacity-45"
         >
-          <SettingsIcon className="size-4" />
+          <SettingsIcon className="size-[18px] shrink-0 text-sidebar-text-tertiary" />
           Settings
         </button>
       </div>

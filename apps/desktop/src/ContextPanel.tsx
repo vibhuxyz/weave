@@ -9,21 +9,32 @@ import type { Agent } from "./useAgents";
 import { ProjectAgentsPicker } from "./agents/ProjectAgentsPicker";
 import { AgentAvatar } from "./agents/AgentAvatar";
 import { FilesList } from "./features/chat/ui/FilesList";
+import { relativePath, type TurnDiffEntry } from "./agent/diff/turnDiff";
+import { FileDiffIcon } from "lucide-react";
 
-const TABS = ["Context", "Changes", "Files"] as const;
-type Tab = (typeof TABS)[number];
+export const CONTEXT_PANEL_TABS = ["Context", "Changes", "Files"] as const;
+export type ContextPanelTab = (typeof CONTEXT_PANEL_TABS)[number];
+const TABS = CONTEXT_PANEL_TABS;
+type Tab = ContextPanelTab;
 
 export interface ContextPanelProps {
   projectDir: string;
   git: GitStatus;
   onRefresh: () => void;
   servers: RunningServer[];
-  onStopServer: (port: number) => void;
+  onStopServer: (server: RunningServer) => void;
   agents: Agent[];
   projectAgents: ProjectAgent[];
   onProjectAgentsChange: (next: ProjectAgent[]) => void;
   manualActive: string[];
   onToggleManual: (id: string) => void;
+  /** Controlled tab — the diff reader hands the panel back on a chosen tab. */
+  tab?: Tab;
+  onTabChange?: (tab: Tab) => void;
+  /** Turns that edited files, newest last. Drives the Changes tab. */
+  turnDiffs?: TurnDiffEntry[];
+  /** Open the diff reader on a turn — the inspector's Files state. */
+  onOpenDiff?: (turnId: string, path?: string) => void;
 }
 
 /** Porcelain codes → a short human word. */
@@ -46,9 +57,17 @@ export function ContextPanel({
   onProjectAgentsChange,
   manualActive,
   onToggleManual,
+  tab: controlledTab,
+  onTabChange,
+  turnDiffs = [],
+  onOpenDiff,
 }: ContextPanelProps) {
-  const [tab, setTab] = useState<Tab>("Context");
+  const [ownTab, setOwnTab] = useState<Tab>("Context");
+  const tab = controlledTab ?? ownTab;
+  const setTab = onTabChange ?? setOwnTab;
   const [editAgents, setEditAgents] = useState(false);
+
+  const latestDiff = turnDiffs.at(-1);
 
   const attached = projectAgents
     .map((pa) => ({ pa, agent: agents.find((a) => a.id === pa.id) }))
@@ -68,7 +87,7 @@ export function ContextPanel({
           </p>
           {servers.map((s) => (
             <div
-              key={s.port}
+              key={s.key}
               className="flex items-center gap-2.5 rounded-lg border border-agent-border bg-agent-surface-inset px-3 py-2"
             >
               <span
@@ -97,11 +116,19 @@ export function ContextPanel({
                 </p>
                 <p className="truncate font-mono text-[11px] text-agent-text-faint">
                   {s.project ? `${s.project} · ` : ""}:{s.port}
+                  {s.leftover && (
+                    <span
+                      className="ml-1.5 text-agent-text-faint/70"
+                      title="Started by an earlier session and still running"
+                    >
+                      · left over
+                    </span>
+                  )}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => onStopServer(s.port)}
+                onClick={() => onStopServer(s)}
                 disabled={s.stopping}
                 className={cn(
                   "shrink-0 rounded-md border px-2.5 py-1 text-xs transition-colors",
@@ -259,26 +286,78 @@ export function ContextPanel({
         )}
 
         {tab === "Changes" && (
-          <div className="flex flex-col gap-1">
-            {git.changes.length === 0 ? (
-              <p className="text-muted-foreground text-xs">
-                {git.branch
-                  ? "No uncommitted changes."
-                  : "Not a git repository."}
-              </p>
-            ) : (
-              git.changes.map((change) => (
-                <div
-                  key={change.path}
-                  className="flex items-baseline gap-2 rounded-md px-2 py-1 text-xs hover:bg-secondary/60"
-                >
-                  <span className="w-14 shrink-0 text-muted-foreground">
-                    {describe(change.code)}
+          <div className="flex flex-col gap-3">
+            {/* What the agent edited this run, with the totals next to the
+                action that opens them — not repeated in the run header. */}
+            {latestDiff && onOpenDiff && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-xs">
+                    {latestDiff.diff.files.length} changed file
+                    {latestDiff.diff.files.length === 1 ? "" : "s"}
                   </span>
-                  <span className="truncate font-mono">{change.path}</span>
+                  <span className="font-mono text-[11px]">
+                    <span className="text-agent-success">
+                      +{latestDiff.diff.additions}
+                    </span>{" "}
+                    <span className="text-agent-critical-fg">
+                      −{latestDiff.diff.deletions}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onOpenDiff(latestDiff.turnId)}
+                    className="ml-auto flex shrink-0 items-center gap-1.5 rounded-lg bg-secondary/70 px-2.5 py-1 text-xs transition-colors hover:bg-secondary"
+                  >
+                    <FileDiffIcon className="size-3.5" />
+                    Open diff
+                  </button>
                 </div>
-              ))
+                {latestDiff.diff.files.map((file) => (
+                  <button
+                    key={file.path}
+                    type="button"
+                    onClick={() => onOpenDiff(latestDiff.turnId, file.path)}
+                    className="flex items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors hover:bg-secondary/60"
+                  >
+                    <span className="truncate font-mono" title={file.path}>
+                      {relativePath(file.path, projectDir)}
+                    </span>
+                    <span className="ml-auto shrink-0 font-mono text-[11px]">
+                      <span className="text-agent-success">+{file.additions}</span>{" "}
+                      <span className="text-agent-critical-fg">−{file.deletions}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
             )}
+
+            <div className="flex flex-col gap-1">
+              {latestDiff && (
+                <p className="px-2 pt-1 text-muted-foreground text-xs">
+                  Working tree
+                </p>
+              )}
+              {git.changes.length === 0 ? (
+                <p className="text-muted-foreground text-xs">
+                  {git.branch
+                    ? "No uncommitted changes."
+                    : "Not a git repository."}
+                </p>
+              ) : (
+                git.changes.map((change) => (
+                  <div
+                    key={change.path}
+                    className="flex items-baseline gap-2 rounded-md px-2 py-1 text-xs hover:bg-secondary/60"
+                  >
+                    <span className="w-14 shrink-0 text-muted-foreground">
+                      {describe(change.code)}
+                    </span>
+                    <span className="truncate font-mono">{change.path}</span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
 

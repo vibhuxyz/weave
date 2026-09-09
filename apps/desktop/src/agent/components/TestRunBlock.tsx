@@ -1,5 +1,15 @@
 import { useState } from "react";
-import { CheckIcon, ChevronRightIcon, CircleIcon, XIcon } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  CircleIcon,
+  ClockIcon,
+  LayersIcon,
+  Loader2Icon,
+  TriangleAlertIcon,
+  XIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import type { TestRunBlock as TestRunBlockModel } from "../normalize/types";
 import { CodePanel } from "./CodePanel";
@@ -26,32 +36,45 @@ const BADGE_TONE: Record<NonNullable<Step["badgeTone"]>, string> = {
   neutral: "bg-agent-surface-hover text-agent-text-muted",
 };
 
-function Tile({
+/**
+ * One stat in the run's summary row — an icon and a single line, sized to sit
+ * four-across above the run log rather than as a stack of tall cards.
+ */
+function Chip({
+  icon: Icon,
   label,
-  value,
-  tone,
+  tone = "neutral",
+  iconClassName,
 }: {
+  icon: LucideIcon;
   label: string;
-  value: string;
-  tone: "success" | "critical" | "running" | "neutral";
+  tone?: "success" | "critical" | "running" | "neutral";
+  iconClassName?: string;
 }) {
-  const toneClass =
+  const iconClass =
     tone === "success"
-      ? "border-agent-success/25 bg-agent-success-bg text-agent-success"
+      ? "text-agent-success"
       : tone === "critical"
-        ? "border-agent-critical/25 bg-agent-critical-bg text-agent-critical-fg"
+        ? "text-agent-critical"
         : tone === "running"
-          ? "border-agent-running/25 bg-agent-running-bg text-agent-running"
-          : "border-agent-border bg-agent-surface-inset text-agent-text-muted";
+          ? "text-agent-running"
+          : "text-agent-progress-fg";
   return (
-    <div className={cn("rounded-lg border p-4", toneClass)}>
-      <p className="font-mono text-[11px] uppercase tracking-[0.08em]">{label}</p>
-      <p className="mt-2 font-mono text-sm text-agent-text-bright">{value}</p>
+    <div className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-agent-border bg-agent-surface-inset px-2.5">
+      <Icon className={cn("size-3.5 shrink-0", iconClass, iconClassName)} />
+      <span className="truncate text-agent-text text-xs">{label}</span>
     </div>
   );
 }
 
-export function TestRunBlock({ block }: { block: TestRunBlockModel }) {
+export function TestRunBlock({
+  block,
+  onSend,
+}: {
+  block: TestRunBlockModel;
+  /** Lets the failure banner hand a follow-up prompt back to the agent. */
+  onSend?: (text: string) => void;
+}) {
   const failing = block.steps.filter((s) => s.status === "failed" || s.badgeTone === "crit").length;
   const [problemsOnly, setProblemsOnly] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -67,6 +90,9 @@ export function TestRunBlock({ block }: { block: TestRunBlockModel }) {
       : block.steps;
 
   const totalMs = block.steps.reduce((sum, s) => sum + (s.durationMs ?? 0), 0);
+  const firstFailure = block.steps.find(
+    (s) => s.status === "failed" || s.badgeTone === "crit",
+  );
   const heading = block.title && block.title !== "Test run" ? block.title : "Run log";
 
   function toggleExpand(id: string) {
@@ -78,11 +104,23 @@ export function TestRunBlock({ block }: { block: TestRunBlockModel }) {
   }
 
   return (
-    <section className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Tile
-          label="Status"
-          value={block.status}
+    <section className="space-y-3">
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-2",
+          totalMs > 0 ? "sm:grid-cols-4" : "sm:grid-cols-3",
+        )}
+      >
+        <Chip
+          icon={
+            block.status === "passed"
+              ? CheckIcon
+              : block.status === "failed"
+                ? CircleIcon
+                : Loader2Icon
+          }
+          iconClassName={block.status === "failed" ? "fill-current" : undefined}
+          label={block.status[0].toUpperCase() + block.status.slice(1)}
           tone={
             block.status === "passed"
               ? "success"
@@ -91,25 +129,71 @@ export function TestRunBlock({ block }: { block: TestRunBlockModel }) {
                 : "running"
           }
         />
-        <Tile label="Steps" value={`${block.steps.length}`} tone="neutral" />
-        <Tile
-          label="Problems"
-          value={`${failing}`}
+        <Chip
+          icon={LayersIcon}
+          label={`${block.steps.length} step${block.steps.length === 1 ? "" : "s"}`}
+        />
+        <Chip
+          icon={TriangleAlertIcon}
+          label={`${failing} problem${failing === 1 ? "" : "s"}`}
           tone={failing > 0 ? "critical" : "neutral"}
         />
+        {totalMs > 0 && (
+          <Chip icon={ClockIcon} label={formatDuration(totalMs) ?? ""} />
+        )}
       </div>
 
-      <div className="space-y-2">
+      {/* A failure is a prompt for the next action, not just a red row. */}
+      {failing > 0 && onSend && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-agent-critical/40 bg-agent-critical-bg px-3 py-2.5">
+          <p className="min-w-0 flex-1 text-agent-text-bright text-xs">
+            {firstFailure
+              ? `${firstFailure.label} failed.`
+              : `${failing} step${failing === 1 ? "" : "s"} failed.`}
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                onSend(
+                  firstFailure
+                    ? `Retry the failed step: ${firstFailure.label}`
+                    : "Retry the failed steps.",
+                )
+              }
+              className="rounded-lg border border-agent-border bg-agent-surface-hover px-2.5 py-1 text-agent-text text-xs transition-colors duration-150 ease-out hover:text-agent-text-bright"
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                onSend(
+                  firstFailure
+                    ? `The step "${firstFailure.label}" failed. Diagnose the failure and fix it.`
+                    : "Diagnose the failed steps and fix them.",
+                )
+              }
+              className="rounded-lg border border-agent-border bg-agent-surface-hover px-2.5 py-1 text-agent-text text-xs transition-colors duration-150 ease-out hover:text-agent-text-bright"
+            >
+              Fix automatically
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Hairline between the metrics and the log, as in the reference. */}
+      <div className="space-y-1.5 border-agent-border border-t pt-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => setListOpen((v) => !v)}
-              className="flex items-center gap-1.5 font-mono text-agent-text-muted text-[11px] uppercase tracking-[0.08em] transition-colors hover:text-agent-text-strong"
+              className="flex items-center gap-1.5 text-agent-text-strong text-sm transition-colors hover:text-agent-text-bright"
             >
               <ChevronRightIcon
                 className={cn(
-                  "size-3 transition-transform",
+                  "size-4 transition-transform duration-150",
                   listOpen && "rotate-90",
                 )}
               />
@@ -140,7 +224,7 @@ export function TestRunBlock({ block }: { block: TestRunBlockModel }) {
               </div>
             )}
           </div>
-          <span className="font-mono text-agent-text-muted text-xs">
+          <span className="text-agent-text-faint text-xs">
             {failing} failing · {block.steps.length} steps
             {totalMs > 0 && ` · ${formatDuration(totalMs)}`}
           </span>
@@ -160,27 +244,27 @@ export function TestRunBlock({ block }: { block: TestRunBlockModel }) {
                   type="button"
                   onClick={() => toggleExpand(step.id)}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-lg border border-agent-border bg-agent-surface-inset px-3 py-2 font-mono text-xs text-left transition-colors hover:bg-agent-surface-hover",
+                    "flex h-12 w-full items-center gap-3 rounded-xl border border-agent-border bg-agent-surface-inset px-3.5 text-left text-xs transition-colors duration-150 ease-out hover:bg-agent-surface-hover",
                     failed && "border-agent-critical/50 bg-agent-critical-bg hover:bg-agent-critical-bg",
                     isExpanded && "rounded-b-none border-b-transparent",
                   )}
                 >
                   <ChevronRightIcon
                     className={cn(
-                      "size-3 shrink-0 text-agent-text-muted transition-transform duration-150",
+                      "size-4 shrink-0 text-agent-text-faint transition-transform duration-150",
                       isExpanded && "rotate-90",
                     )}
                   />
                   <Icon
                     className={cn(
-                      "size-3.5 shrink-0",
+                      "size-4 shrink-0",
                       step.status === "completed" && !failed && "text-agent-success",
                       failed && "text-agent-critical-fg",
                       (step.status === "pending" || step.status === "in_progress") &&
                         "text-agent-text-muted",
                     )}
                   />
-                  <span className="min-w-0 flex-1 truncate text-agent-text-strong">
+                  <span className="min-w-0 flex-1 truncate text-agent-text-bright text-sm">
                     {step.label}
                   </span>
                   {step.badge && (
@@ -194,7 +278,7 @@ export function TestRunBlock({ block }: { block: TestRunBlockModel }) {
                     </span>
                   )}
                   {duration && (
-                    <span className="shrink-0 font-mono text-[10px] text-agent-text-muted/70 tabular-nums">
+                    <span className="shrink-0 font-mono text-[11px] text-agent-text-faint tabular-nums">
                       {duration}
                     </span>
                   )}
@@ -203,7 +287,7 @@ export function TestRunBlock({ block }: { block: TestRunBlockModel }) {
                 {isExpanded && (() => {
                   const clean = step.output ? cleanOutput(step.output) : "";
                   return (
-                  <div className="rounded-b-lg border border-t-0 border-agent-border">
+                  <div className="rounded-b-xl border border-t-0 border-agent-border">
                     {clean ? (
                       <CodePanel
                         code={clean}

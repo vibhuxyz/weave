@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { cn } from "@/shared/lib/cn";
 import type { GitStatus } from "../../../server/index.ts";
-import { useCopyToClipboard } from "../../hooks/use-copy-to-clipboard";
 import type { ChatTurn } from "../../useAcpChat";
 import { type AgentBlock, type BlockAction, emptySource } from "../normalize/types";
 import { messageToBlocks } from "../normalize/messageToBlocks";
@@ -17,33 +17,15 @@ import { SafetyAskBlock } from "./SafetyAskBlock";
 import { SummaryBlock } from "./SummaryBlock";
 import { TestRunBlock } from "./TestRunBlock";
 import { ToolStepBlock } from "./ToolStepBlock";
-import { tabBlocks, type AgentTab } from "./AgentTabs";
 import { BlockErrorBoundary } from "./BlockErrorBoundary";
 import { CheckpointBlock } from "./CheckpointBlock";
 import { EvidenceBlock } from "./EvidenceBlock";
 import { ProjectOverviewBlockView } from "./ProjectOverviewBlock";
 import { PlanBlockView } from "./PlanBlockView";
+import { TurnDiffBar } from "./TurnDiffBar";
+import { WorkingRow } from "./WorkingRow";
+import { turnDiff } from "../diff/turnDiff";
 import type { TurnPlan } from "../../useAcpChat";
-
-const TABS: Array<{ id: AgentTab; label: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "activity", label: "Activity" },
-  { id: "files", label: "Files" },
-  { id: "git", label: "Git" },
-];
-
-/** Block types the depth toggle actually filters — see filterBlocksByDepth. */
-const DEPTH_BLOCK_TYPES = new Set<AgentBlock["type"]>([
-  "summary",
-  "finding",
-  "explanation",
-  "project-overview",
-  "safety-ask",
-  "plan",
-  "code",
-  "diff",
-  "test",
-]);
 
 /** Filter blocks by presentation depth — no re-normalization, purely visual. */
 function filterBlocksByDepth(blocks: AgentBlock[], depth: DepthLevel): AgentBlock[] {
@@ -78,6 +60,9 @@ export function AgentMessage({
   onSend,
   onUpdatePlan,
   onExitPlanMode,
+  onOpenDiff,
+  diffOpen,
+  depth = "normal",
 }: {
   turn: ChatTurn;
   projectDir: string | null;
@@ -91,10 +76,13 @@ export function AgentMessage({
   onUpdatePlan?: (turnId: string, plan: TurnPlan) => void;
   /** Take the engine out of plan mode — called when a plan is approved. */
   onExitPlanMode?: () => void;
+  /** Hand this turn's file changes to the side panel, optionally one file. */
+  onOpenDiff?: (path?: string) => void;
+  /** The side panel is currently showing this turn's diff. */
+  diffOpen?: boolean;
+  /** How much of the run to render — set from the composer. */
+  depth?: DepthLevel;
 }) {
-  const [tab, setTab] = useState<AgentTab>("overview");
-  const [depth, setDepth] = useState<DepthLevel>("normal");
-  const { copyToClipboard } = useCopyToClipboard();
   const viewModel = useMemo(
     () =>
       messageToBlocks({
@@ -127,37 +115,20 @@ export function AgentMessage({
     ],
   );
 
+  const diff = useMemo(() => turnDiff(turn), [turn.tools]);
+
   const stopRun = onAction ? () => onAction({ type: "cancel_run" }) : undefined;
   const toolStepBlocks = viewModel.blocks.filter(
     (block): block is Extract<AgentBlock, { type: "tool" }> => block.type === "tool",
   );
 
-  // Which tabs actually have something. Overview always; the rest only when
-  // populated, so a plain answer doesn't sprout four empty tabs.
-  const availableTabs = TABS.filter((t) => {
-    if (t.id === "overview") return true;
-    if (t.id === "activity") return viewModel.activity.length > 0;
-    return git.changes.length > 0; // files + git
-  });
-  const activeTab = availableTabs.some((t) => t.id === tab) ? tab : "overview";
-
-  const rawVisibleBlocks = tabBlocks({
-    tab: activeTab,
-    overview: viewModel.blocks,
-    activity: viewModel.activity,
-    git,
-  });
-  const visibleBlocks =
-    activeTab === "overview"
-      ? filterBlocksByDepth(rawVisibleBlocks, depth)
-      : rawVisibleBlocks;
-  const bodyBlocks =
-    activeTab === "overview"
-      ? visibleBlocks.filter((b) => b.type !== "tool")
-      : visibleBlocks;
+  // One surface, no tab layer: the run card is the run. Files and git state
+  // live in the right-hand inspector.
+  const bodyBlocks = filterBlocksByDepth(viewModel.blocks, depth).filter(
+    (b) => b.type !== "tool",
+  );
 
   const hasBody = bodyBlocks.length > 0 || viewModel.rawText.trim().length > 0;
-  const showDepth = viewModel.blocks.some((b) => DEPTH_BLOCK_TYPES.has(b.type));
 
   const stepStrip =
     toolStepBlocks.length > 0 ? (
@@ -182,38 +153,15 @@ export function AgentMessage({
   }
 
   return (
-    <article className="dark w-full overflow-hidden rounded-xl border border-agent-border bg-agent-surface-base text-agent-text shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+    <article className="dark flex w-full flex-col overflow-hidden rounded-xl border border-agent-border bg-agent-surface-base text-agent-text shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
       {stepStrip && (
-        <div className="border-agent-border border-b bg-agent-surface-raised px-5 py-3">
+        <div className="border-agent-border border-b bg-agent-surface-raised px-4 py-2.5">
           {stepStrip}
         </div>
       )}
-      <AgentHeader
-        meta={viewModel.meta}
-        depth={depth}
-        onDepthChange={setDepth}
-        showDepth={showDepth}
-        onCopy={() => copyToClipboard(viewModel.rawText)}
-      />
-      {availableTabs.length > 1 && (
-        <div className="flex items-center gap-1 border-agent-border border-b bg-agent-surface-raised px-5 py-2">
-          {availableTabs.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setTab(item.id)}
-              className={
-                activeTab === item.id
-                  ? "rounded-md bg-agent-surface-hover px-3 py-1 text-xs text-agent-text-bright"
-                  : "rounded-md px-3 py-1 text-agent-text-faint text-xs hover:text-agent-text-bright"
-              }
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="space-y-5 bg-[linear-gradient(180deg,var(--agent-accent-wash),transparent_200px)] p-5">
+      <AgentHeader meta={viewModel.meta} engineId={engineId} />
+      {running && <WorkingRow turn={turn} projectDir={projectDir} />}
+      <div className="space-y-4 p-4">
         {bodyBlocks.length === 0 ? (
           <MarkdownBlock
             block={{
@@ -235,7 +183,18 @@ export function AgentMessage({
             engineLabel,
             onUpdatePlan,
             onExitPlanMode,
+            stopRun,
           )
+        )}
+        {diff.files.length > 0 && (
+          <BlockErrorBoundary>
+            <TurnDiffBar
+              diff={diff}
+              onOpenDiff={onOpenDiff}
+              active={diffOpen}
+              projectDir={projectDir}
+            />
+          </BlockErrorBoundary>
         )}
       </div>
     </article>
@@ -252,6 +211,7 @@ function renderBlocks(
   engineLabel?: string,
   onUpdatePlan?: (turnId: string, plan: TurnPlan) => void,
   onExitPlanMode?: () => void,
+  onStop?: () => void,
 ) {
   const toolBlocks = blocks.filter(
     (block): block is Extract<AgentBlock, { type: "tool" }> =>
@@ -288,7 +248,7 @@ function renderBlocks(
             content = <DiffBlock key={block.id} block={block} />;
             break;
           case "test":
-            content = <TestRunBlock key={block.id} block={block} />;
+            content = <TestRunBlock key={block.id} block={block} onSend={onSend} />;
             break;
           case "error":
             content = <ErrorBlock key={block.id} block={block} />;
@@ -319,6 +279,7 @@ function renderBlocks(
                 engineLabel={engineLabel}
                 onSend={onSend}
                 onExitPlanMode={onExitPlanMode}
+                onStop={onStop}
                 onUpdatePlan={(plan) =>
                   onUpdatePlan?.(block.turnId ?? block.id, plan)
                 }

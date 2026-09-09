@@ -25,10 +25,24 @@ import { readGitStatus } from "./git.ts";
 
 export type PackageManager = "pnpm" | "yarn" | "bun" | "npm";
 
+/**
+ * Undo whatever a rung's command brought up.
+ *
+ * Some rungs are not read-only: `docker compose up` leaves a database running
+ * long after the rung has passed, and nothing else in the system will ever
+ * stop it. `skipIfOutput` is the guard against tearing down a stack the user
+ * started by hand — if it prints anything *before* the rung runs, the state
+ * predates us and is not ours to remove.
+ */
+export interface RungTeardown {
+  command: string;
+  skipIfOutput: string;
+}
+
 /** How one rung gets executed. Not every rung is a shell exit code. */
 export type RungExecution =
   /** Run a command; exit 0 is a pass. */
-  | { via: "command"; command: string }
+  | { via: "command"; command: string; teardown?: RungTeardown }
   /** Start a long-lived process; staying up for `holdMs` is a pass. */
   | { via: "boot"; command: string; holdMs: number }
   /** Structural sanity, computed in-process. No command to run. */
@@ -201,7 +215,14 @@ export async function intake(
   if (compose) {
     add(
       "health",
-      { via: "command", command: "docker compose up --wait --quiet-pull" },
+      {
+        via: "command",
+        command: "docker compose up --wait --quiet-pull",
+        teardown: {
+          command: "docker compose stop",
+          skipIfOutput: "docker compose ps --status running --quiet",
+        },
+      },
       `${compose} with docker compose --wait`,
     );
   } else {

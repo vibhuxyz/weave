@@ -350,12 +350,27 @@ export function messageToBlocks(options: {
 
   if (options.usage) {
     const { usage } = options;
-    const used = usage.outputTokens ?? usage.contextUsed;
-    if (used != null || usage.contextSize != null || usage.costUsd != null) {
+    // Two independent channels: the live context window (`usage_update`) and
+    // the turn totals on the prompt response. Engines report either, both, or
+    // neither — keep whatever arrived and let the header decide what to show.
+    const reported =
+      usage.contextUsed != null ||
+      usage.contextSize != null ||
+      usage.totalTokens != null ||
+      usage.inputTokens != null ||
+      usage.outputTokens != null ||
+      usage.costUsd != null;
+    if (reported) {
       meta.usage = {
-        used,
+        used: usage.contextUsed,
         size: usage.contextSize,
         costUsd: usage.costUsd,
+        totalTokens: usage.totalTokens,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        thoughtTokens: usage.thoughtTokens,
+        cachedReadTokens: usage.cachedReadTokens,
+        cachedWriteTokens: usage.cachedWriteTokens,
       };
     }
   }

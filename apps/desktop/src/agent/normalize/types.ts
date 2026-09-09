@@ -381,9 +381,17 @@ export interface AgentRunMeta {
   changed?: boolean;
   status: AgentStatus;
   usage?: {
+    /** Context window: tokens in context, and its size. */
     used?: number;
     size?: number;
     costUsd?: number;
+    /** Per-turn totals, when the engine reports them. */
+    totalTokens?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    thoughtTokens?: number;
+    cachedReadTokens?: number;
+    cachedWriteTokens?: number;
   };
   checkpointId?: string;
 }

@@ -19,6 +19,14 @@ import type { ChatImageAttachmentDraft } from "@/shared/types/messages";
 
 export type { ConversationMeta };
 
+/** One file edit an ACP tool reported, as `{ type: "diff" }` content. */
+export interface ToolDiff {
+  path: string;
+  /** `null` when the file was created by this edit. */
+  oldText: string | null;
+  newText: string;
+}
+
 export interface ToolEntry {
   id: string;
   title: string;
@@ -29,6 +37,8 @@ export interface ToolEntry {
   output?: string;
   /** The tool's raw arguments (e.g. `{ command }`, `{ plan }`, `{ content }`). */
   rawInput?: unknown;
+  /** File edits this call reported, newest snapshot wins. */
+  diffs?: ToolDiff[];
   /** Epoch ms when the call first appeared, and when it finished. For timers. */
   startedAt?: number;
   endedAt?: number;
@@ -48,6 +58,23 @@ function toolText(content: unknown): string | undefined {
     }
   }
   return parts.length > 0 ? parts.join("") : undefined;
+}
+
+/** Pull the `{ type: "diff" }` entries out of an ACP tool call's `content`. */
+function toolDiffs(content: unknown): ToolDiff[] | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const diffs: ToolDiff[] = [];
+  for (const item of content) {
+    if (item?.type !== "diff") continue;
+    const path = typeof item.path === "string" ? item.path : undefined;
+    if (!path || typeof item.newText !== "string") continue;
+    diffs.push({
+      path,
+      oldText: typeof item.oldText === "string" ? item.oldText : null,
+      newText: item.newText,
+    });
+  }
+  return diffs.length > 0 ? diffs : undefined;
 }
 
 /** An image attached to a prompt, with the per-image fix/build instructions. */
@@ -79,9 +106,12 @@ export interface TurnUsage {
   contextUsed?: number;
   contextSize?: number;
   costUsd?: number;
+  totalTokens?: number;
   inputTokens?: number;
   outputTokens?: number;
   thoughtTokens?: number;
+  cachedReadTokens?: number;
+  cachedWriteTokens?: number;
 }
 
 export interface ChatTurn {
@@ -102,14 +132,25 @@ export interface ChatTurn {
 }
 
 /**
- * Strip the `<system>…</system>` preamble the composer prepends for @-mentioned
- * and standing agents, so a replayed user turn reads as what the person typed.
+ * Reduce a sent prompt back to what the person typed: drop the
+ * `<system>…</system>` persona preamble the composer prepends, the
+ * `[Planning Mode]` wrapper `submit()` adds for `/plan`, and a leading
+ * `/plan`. Used on replay and for the optimistic turn.
  */
 function stripSystemPreamble(text: string): string {
-  const end = text.indexOf("\n</system>\n\n");
-  return text.startsWith("<system>\n") && end !== -1
-    ? text.slice(end + "\n</system>\n\n".length)
-    : text;
+  let out = text.replace(/^\/plan\s+/, "");
+
+  const sysEnd = out.indexOf("\n</system>\n\n");
+  if (out.startsWith("<system>\n") && sysEnd !== -1) {
+    out = out.slice(sysEnd + "\n</system>\n\n".length);
+  }
+
+  if (out.startsWith("[Planning Mode]\n")) {
+    const taskStart = out.indexOf("\n\n");
+    out = taskStart !== -1 ? out.slice(taskStart + 2) : "Plan this.";
+  }
+
+  return out.trim();
 }
 
 export type ConnectionState =
@@ -269,6 +310,7 @@ export function useAcpChat(port: number | null) {
                 status: startStatus,
                 kind: update.kind ?? "other",
                 output: toolText(update.content),
+                diffs: toolDiffs(update.content),
                 rawInput: update.rawInput,
                 startedAt: now,
                 endedAt: TERMINAL_STATUS.has(startStatus) ? now : undefined,
@@ -301,6 +343,7 @@ export function useAcpChat(port: number | null) {
                 // Updates carry the full content each time; keep the last
                 // non-empty snapshot so a status-only update never wipes it.
                 output: toolText(update.content) ?? tool.output,
+                diffs: toolDiffs(update.content) ?? tool.diffs,
                 startedAt: tool.startedAt ?? (replay ? undefined : Date.now()),
                 endedAt: nowEnded ? Date.now() : tool.endedAt,
                 sourceEventIds: sourceEventIds ?? tool.sourceEventIds,
@@ -460,9 +503,12 @@ export function useAcpChat(port: number | null) {
                 ...turn,
                 usage: {
                   ...turn.usage,
+                  totalTokens: usage.totalTokens,
                   inputTokens: usage.inputTokens,
                   outputTokens: usage.outputTokens,
                   thoughtTokens: usage.thoughtTokens ?? undefined,
+                  cachedReadTokens: usage.cachedReadTokens ?? undefined,
+                  cachedWriteTokens: usage.cachedWriteTokens ?? undefined,
                 },
               }));
             }
@@ -623,7 +669,7 @@ export function useAcpChat(port: number | null) {
         {
           id: crypto.randomUUID(),
           role: "user",
-          text: trimmed,
+          text: stripSystemPreamble(trimmed),
           mentions: opts?.mentions?.length ? opts.mentions : undefined,
           images: images?.map((image) => ({
             previewUrl: image.previewUrl,

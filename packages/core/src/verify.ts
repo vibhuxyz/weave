@@ -279,6 +279,13 @@ async function execute(
 ): Promise<RungRun> {
   const started = Date.now();
   const exec = entry.execution;
+  const teardown = exec.via === "command" ? exec.teardown : undefined;
+
+  // Ask *before* the rung runs: anything already up predates us, so tearing it
+  // down afterwards would stop a stack the user is using.
+  const preexisting = teardown
+    ? (await runCommand(teardown.skipIfOutput, cwd, options.timeoutMs)).output.trim().length > 0
+    : false;
 
   const result =
     exec.via === "command"
@@ -286,6 +293,12 @@ async function execute(
       : exec.via === "boot"
         ? await runBoot(exec.command, cwd, exec.holdMs)
         : await runDiffReview(cwd, options.baseline);
+
+  const wallMs = Date.now() - started;
+
+  if (teardown && !preexisting) {
+    await runCommand(teardown.command, cwd, options.timeoutMs);
+  }
 
   return {
     rung: entry.rung,
@@ -296,7 +309,7 @@ async function execute(
         : exec.command,
     ok: result.ok,
     code: result.code,
-    wallMs: Date.now() - started,
+    wallMs,
     output: result.output,
   };
 }

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { CheckIcon, CopyIcon, PencilIcon } from "lucide-react";
 import { AgentAvatar } from "./agents/AgentAvatar";
 import { useCopyToClipboard } from "./hooks/use-copy-to-clipboard";
@@ -28,10 +28,17 @@ export function UserMessage({
 }) {
   const { isCopied, copyToClipboard } = useCopyToClipboard();
 
+  const [expanded, setExpanded] = useState(false);
+  // A long prompt is a task header, not a wall of text: two lines, then the
+  // user opens it.
+  const clamped = !expanded && text.split("\n").length + text.length / 90 > 2.2;
+
   return (
-    <div className="flex flex-col items-end gap-1.5">
+    // Full width, left aligned, low-key surface: the request reads as the
+    // task this run belongs to rather than as a chat bubble.
+    <div className="group flex w-full flex-col gap-1.5 rounded-[13px] bg-secondary/50 px-4 py-2.5">
       {images && images.length > 0 && (
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap gap-2">
           {images.map((image, i) => (
             <div
               key={i}
@@ -58,7 +65,7 @@ export function UserMessage({
         </div>
       )}
       {mentions && mentions.length > 0 && (
-        <div className="flex flex-wrap justify-end gap-1">
+        <div className="flex flex-wrap gap-1">
           {mentions.map((name) => (
             <span
               key={name}
@@ -70,8 +77,27 @@ export function UserMessage({
           ))}
         </div>
       )}
-      {text && <div className="whitespace-pre-wrap">{text}</div>}
-      <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      {text && (
+        <div
+          className={cn(
+            "whitespace-pre-wrap text-foreground text-sm leading-relaxed",
+            clamped && "line-clamp-2",
+          )}
+        >
+          {text}
+        </div>
+      )}
+      <div className="flex items-center gap-0.5">
+        {(clamped || expanded) && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="mr-auto rounded px-1 text-muted-foreground text-xs transition-colors hover:text-foreground"
+          >
+            {expanded ? "Show less" : "Show more"}
+          </button>
+        )}
+        <div className="ml-auto flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         <ActionButton
           label={isCopied ? "Copied" : "Copy"}
           onClick={() => copyToClipboard(text)}
@@ -87,6 +113,7 @@ export function UserMessage({
             <PencilIcon className="size-3.5" />
           </ActionButton>
         )}
+        </div>
       </div>
     </div>
   );

@@ -7,17 +7,29 @@ import {
   WrenchIcon,
   XIcon,
 } from "lucide-react";
-import {
-  Task,
-  TaskContent,
-  TaskItem,
-  TaskTrigger,
-} from "@/shared/ui/ai-elements/task";
+import { TaskItem } from "@/shared/ui/ai-elements/task";
 import { Shimmer } from "@/shared/ui/ai-elements/shimmer";
 import { cn } from "@/shared/lib/cn";
 import { formatElapsed, useNow } from "./agent/lib/elapsed";
 import { KIND_ICONS, activeTitle, shorten } from "./agent/lib/toolTitle";
 import type { ToolEntry } from "./useAcpChat";
+
+/** Completed operations kept visible before the rest folds away. */
+const RECENT_STEPS = 3;
+
+/** What each ACP tool kind is called in the activity list. */
+const KIND_LABEL: Record<string, string> = {
+  read: "Read",
+  edit: "Edit",
+  delete: "Delete",
+  move: "Move",
+  search: "Search",
+  execute: "Terminal",
+  think: "Plan",
+  fetch: "Fetch",
+  switch_mode: "Mode",
+  other: "Tool",
+};
 
 /** A running command past this many seconds is probably stuck — nudge the user. */
 const SLOW_AFTER_S = 60;
@@ -106,9 +118,12 @@ function ToolRow({
           type="button"
           disabled={!hasLog}
           onClick={() => setOpen((v) => !v)}
-          className={cn("flex min-w-0 flex-1 items-center gap-1.5 text-left", tone)}
+          className={cn("flex min-w-0 flex-1 items-center gap-2 text-left", tone)}
           title={tool.title}
         >
+          <span className="w-14 shrink-0 text-agent-text-faint text-[11px]">
+            {KIND_LABEL[tool.kind] ?? "Tool"}
+          </span>
           {running ? (
             <Shimmer className="min-w-0 truncate">
               {isSubagent
@@ -175,8 +190,10 @@ function ToolRow({
 }
 
 /**
- * Renders what the agent is doing: finished work folds into one "N previous
- * steps" line, and whatever is running stays visible with a live timer.
+ * Renders what the agent is doing. The whole activity list lives under one
+ * collapsible header — open, it shows the most recent operations (with the
+ * rest a click away); collapsed, it is a single line. Anything still running
+ * stays visible either way, since that is the live state of the turn.
  */
 export function ToolSteps({
   tools,
@@ -187,31 +204,58 @@ export function ToolSteps({
   projectDir: string | null;
   onStop?: () => void;
 }) {
+  const [open, setOpen] = useState(true);
+  const [showAll, setShowAll] = useState(false);
+
   if (tools.length === 0) return null;
 
   const done = tools.filter(
     (tool) => tool.status === "completed" || tool.status === "failed",
   );
   const active = tools.filter(isRunning);
+  const shown = showAll ? done : done.slice(-RECENT_STEPS);
+  const hidden = done.length - shown.length;
 
   return (
     <div className="flex flex-col gap-2">
       {done.length > 0 && (
-        <Task defaultOpen={false}>
-          <TaskTrigger title="">
-            <div className="flex cursor-pointer items-center gap-2 text-agent-text-muted text-sm transition-colors hover:text-agent-text-bright">
-              <span>
-                {done.length} previous step{done.length === 1 ? "" : "s"}
-              </span>
-              <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180" />
-            </div>
-          </TaskTrigger>
-          <TaskContent>
-            {done.map((tool) => (
-              <ToolRow key={tool.id} tool={tool} projectDir={projectDir} />
-            ))}
-          </TaskContent>
-        </Task>
+        <>
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            className="flex items-center gap-2 self-start text-agent-text-muted text-sm transition-colors duration-150 ease-out hover:text-agent-text-bright"
+          >
+            <span>
+              {active.length > 0
+                ? `Step ${done.length + 1} of ${tools.length}`
+                : `${done.length} step${done.length === 1 ? "" : "s"}`}
+            </span>
+            <ChevronDownIcon
+              className={cn(
+                "size-4 transition-transform duration-150",
+                !open && "-rotate-90",
+              )}
+            />
+          </button>
+
+          {open && (
+            <>
+              {hidden > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAll(true)}
+                  className="self-start px-1 text-agent-text-faint text-xs transition-colors duration-150 ease-out hover:text-agent-text-bright"
+                >
+                  Show {hidden} earlier step{hidden === 1 ? "" : "s"}
+                </button>
+              )}
+              {shown.map((tool) => (
+                <ToolRow key={tool.id} tool={tool} projectDir={projectDir} />
+              ))}
+            </>
+          )}
+        </>
       )}
 
       {active.map((tool) => (

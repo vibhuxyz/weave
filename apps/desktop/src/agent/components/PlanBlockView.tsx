@@ -31,12 +31,14 @@ export function PlanBlockView({
   onSend,
   onUpdatePlan,
   onExitPlanMode,
+  onStop,
 }: {
   block: PlanBlock;
   engineLabel?: string;
   onSend?: (text: string) => void;
   onUpdatePlan?: (plan: TurnPlan) => void;
   onExitPlanMode?: () => void;
+  onStop?: () => void;
 }) {
   const isMarkdown = typeof block.markdown === "string";
   const [modalOpen, setModalOpen] = useState(false);
@@ -93,13 +95,13 @@ export function PlanBlockView({
     onSend?.(prompt);
   };
 
-  const handleReject = (feedback?: string) => {
+  const handleReject = () => {
     setDecision("rejected");
-    onSend?.(
-      feedback
-        ? `Plan rejected. Feedback: ${feedback}\n\nRethink the approach from scratch — do not re-propose this same plan.`
-        : `Plan rejected. Rethink the approach from scratch — do not re-propose this same plan.`,
-    );
+    lastDecisionAt = Date.now();
+    // Reject = stop. Don't nudge the agent to keep going — cancel the run and
+    // leave plan mode. The user drives the next step themselves.
+    onExitPlanMode?.();
+    onStop?.();
   };
 
   if (decision === "rejected") {

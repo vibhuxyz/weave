@@ -5,6 +5,7 @@
 //! Rust side spawns, supervises, and kills; the renderer only talks to it over
 //! a localhost WebSocket.
 
+use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -15,6 +16,13 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, RunEvent, State};
 
 const SERVER_PORT: u16 = 8137;
+
+/// How long the ACP server gets to shut down cleanly before it is SIGKILLed.
+const SERVER_SHUTDOWN: Duration = Duration::from_secs(3);
+
+/// How long quit will wait for container teardown. A wedged Docker daemon
+/// must never hold the app open.
+const QUIT_TEARDOWN: Duration = Duration::from_secs(5);
 
 /// The bundled server is compiled to plain ESM, so this is the real floor.
 /// Dev additionally needs 22.6+ for `--experimental-strip-types`, which the
@@ -217,6 +225,9 @@ fn child_path(node: &Path) -> String {
 #[derive(Default)]
 struct AgentServer {
     child: Mutex<Option<Child>>,
+    /// The project this server is currently pointed at. Used to tell a real
+    /// project switch (the end of a session) from a restart of the same one.
+    project_dir: Mutex<Option<String>>,
 }
 
 /// Where the server lives and how to start it. Differs between a dev checkout
@@ -300,6 +311,18 @@ impl AgentServer {
 
     fn stop(&self) {
         if let Some(mut child) = self.child.lock().unwrap().take() {
+            // SIGTERM first. The server spawns engines into their own process
+            // groups, so it is the only thing that can reap them — a straight
+            // SIGKILL here would leave every engine, and anything an engine
+            // backgrounded, running after we quit.
+            #[cfg(unix)]
+            {
+                let _ = Command::new("kill").arg(child.id().to_string()).status();
+                let deadline = Instant::now() + SERVER_SHUTDOWN;
+                while Instant::now() < deadline && !matches!(child.try_wait(), Ok(Some(_))) {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            }
             let _ = child.kill();
             let _ = child.wait();
         }
@@ -550,6 +573,208 @@ fn port_info(port: u16) -> Option<PortInfo> {
     Some(PortInfo { pid, command: comm })
 }
 
+// ---------------------------------------------------------------------------
+// Docker-backed services
+//
+// Containers are the one thing this app can leak. A dev server the agent
+// starts lives inside our process tree and dies with it; a container is owned
+// by the Docker daemon and outlives quit. So the running-services list has to
+// come from `docker ps` rather than from the chat transcript — a transcript is
+// per-session, and the container is not — and quit has to take down whatever
+// came up while we were running.
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DockerService {
+    id: String,
+    name: String,
+    image: String,
+    /// Published host ports, in the order Docker reports them.
+    ports: Vec<u16>,
+    compose_project: Option<String>,
+    /// `com.docker.compose.project.working_dir`, when the container came from
+    /// a compose file. This is what ties a container to a Weave project.
+    working_dir: Option<String>,
+}
+
+/// Which containers this app is responsible for.
+///
+/// Everything already up at launch belongs to whoever started it — a stack the
+/// user runs by hand in a terminal must survive us quitting. Only ids that
+/// appear *after* that first snapshot are ours to stop.
+#[derive(Default)]
+struct ContainerRegistry {
+    /// `None` until the first `docker ps` that actually answered.
+    baseline: Mutex<Option<HashSet<String>>>,
+    ours: Mutex<HashSet<String>>,
+}
+
+const PS_FORMAT: &str = "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Ports}}\t\
+                         {{.Label \"com.docker.compose.project\"}}\t\
+                         {{.Label \"com.docker.compose.project.working_dir\"}}";
+
+/// Host-side ports out of a `{{.Ports}}` cell, which reads like
+/// `0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp`. Unpublished ports have no
+/// `->` and are skipped: nothing on the host can reach them.
+fn published_ports(ports: &str) -> Vec<u16> {
+    let mut out: Vec<u16> = Vec::new();
+    for mapping in ports.split(',') {
+        let Some((host, _)) = mapping.split_once("->") else {
+            continue;
+        };
+        let Some(port) = host.rsplit(':').next() else {
+            continue;
+        };
+        if let Ok(n) = port.trim().parse::<u16>() {
+            if !out.contains(&n) {
+                out.push(n);
+            }
+        }
+    }
+    out
+}
+
+/// `None` when Docker could not be asked at all (not installed, daemon down),
+/// which is different from "asked, nothing running" and must not be allowed to
+/// poison the baseline.
+/// One tab-separated `docker ps` row. Missing trailing fields are normal:
+/// a container with no compose labels simply has empty cells.
+fn parse_ps_line(line: &str) -> Option<DockerService> {
+    let nonempty = |s: &str| (!s.trim().is_empty()).then(|| s.trim().to_string());
+    let mut f = line.split('\t');
+    let id = f.next()?.trim().to_string();
+    if id.is_empty() {
+        return None;
+    }
+    Some(DockerService {
+        id,
+        name: f.next().unwrap_or_default().trim().to_string(),
+        image: f.next().unwrap_or_default().trim().to_string(),
+        ports: published_ports(f.next().unwrap_or_default()),
+        compose_project: f.next().and_then(nonempty),
+        working_dir: f.next().and_then(nonempty),
+    })
+}
+
+fn docker_ps() -> Option<Vec<DockerService>> {
+    let out = Command::new("docker")
+        .args(["ps", "--format", PS_FORMAT])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter_map(parse_ps_line)
+            .collect(),
+    )
+}
+
+/// Every running container, and a note of which ones arrived on our watch.
+///
+/// Polled by the renderer. Returns an empty list rather than an error when
+/// Docker is absent — plenty of projects never touch it, and an error here
+/// would surface as a broken panel.
+#[tauri::command]
+fn docker_services(registry: State<'_, ContainerRegistry>) -> Vec<DockerService> {
+    let Some(services) = docker_ps() else {
+        return Vec::new();
+    };
+
+    let mut baseline = registry.baseline.lock().unwrap();
+    match baseline.as_ref() {
+        None => *baseline = Some(services.iter().map(|s| s.id.clone()).collect()),
+        Some(pre) => {
+            let mut ours = registry.ours.lock().unwrap();
+            for service in &services {
+                if !pre.contains(&service.id) {
+                    ours.insert(service.id.clone());
+                }
+            }
+        }
+    }
+
+    services
+}
+
+/// Stop `service` — the whole compose stack when it has one, since a
+/// compose-started Postgres rarely wants to outlive its Redis.
+///
+/// `stop`, never `rm -f`: the container is kept, named volumes survive, and
+/// `docker compose up` brings the data straight back.
+fn stop_service(service: &DockerService) {
+    match service.compose_project.as_deref() {
+        Some(project) => {
+            let _ = Command::new("docker")
+                .args(["compose", "-p", project, "stop"])
+                .status();
+        }
+        None => {
+            let _ = Command::new("docker").args(["stop", &service.id]).status();
+        }
+    }
+}
+
+/// Stop one container by id, from the Stop button on a container row.
+///
+/// Distinct from `kill_port`: there we only know a port and have to work back
+/// through the proxy process to find the container. Here the renderer already
+/// polled `docker_services` and knows exactly which one it means.
+#[tauri::command]
+fn stop_container(id: String) -> Result<(), String> {
+    let services = docker_ps().ok_or("Docker is not available")?;
+    let service = services
+        .iter()
+        .find(|s| s.id == id)
+        .ok_or_else(|| format!("Container {id} is no longer running"))?;
+    stop_service(service);
+    Ok(())
+}
+
+/// Take down the containers that came up on our watch.
+///
+/// Called at both boundaries that end a session: switching to another project,
+/// and quitting. Afterwards the registry is reset, so anything still standing
+/// (a stack the user started by hand, or one that refused to stop) counts as
+/// pre-existing from here on and is never touched again.
+fn stop_our_containers(registry: &ContainerRegistry) {
+    let ours = std::mem::take(&mut *registry.ours.lock().unwrap());
+    if ours.is_empty() {
+        return;
+    }
+
+    let worker = std::thread::spawn(move || {
+        let Some(services) = docker_ps() else {
+            return;
+        };
+        // One `compose stop` covers every container in its stack, so key the
+        // work by project and fall back to the id for standalone containers.
+        let mut handled: HashSet<String> = HashSet::new();
+        for service in services.iter().filter(|s| ours.contains(&s.id)) {
+            let key = service
+                .compose_project
+                .clone()
+                .unwrap_or_else(|| service.id.clone());
+            if handled.insert(key) {
+                stop_service(service);
+            }
+        }
+    });
+
+    let deadline = Instant::now() + QUIT_TEARDOWN;
+    while !worker.is_finished() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    // Re-baseline against whatever survived.
+    if let Some(remaining) = docker_ps() {
+        *registry.baseline.lock().unwrap() =
+            Some(remaining.into_iter().map(|s| s.id).collect());
+    }
+}
+
 /// macOS squats on well-known ports for its own services — 5000 and 7000 are
 /// AirPlay Receiver (Control Center), which is why a freshly started dev
 /// server on 5000 can show *that* as the listener instead of `node`. Never
@@ -646,22 +871,15 @@ fn kill_port(port: u16, server: State<'_, AgentServer>) -> Result<(), String> {
         || info.command.contains("vpnkit");
 
     if is_docker_proxy {
-        if let Ok(out) = Command::new("docker")
-            .args(["ps", "--format", "{{.ID}}\t{{.Ports}}"])
-            .output()
-        {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            for line in stdout.lines() {
-                let mut parts = line.split('\t');
-                if let (Some(id), Some(ports)) = (parts.next(), parts.next()) {
-                    if ports.contains(&format!(":{port}->")) || ports.contains(&format!(":{port}/")) {
-                        let _ = Command::new("docker").args(["rm", "-f", id]).status();
-                        return Ok(());
-                    }
-                }
-            }
+        let services = docker_ps().unwrap_or_default();
+        if let Some(service) = services.iter().find(|s| s.ports.contains(&port)) {
+            stop_service(service);
+            return Ok(());
         }
-        return Err(format!("Port {port} is held by a container proxy, but no matching Docker container was found to stop."));
+        return Err(format!(
+            "Port {port} is held by a container proxy, but no matching Docker \
+             container was found to stop."
+        ));
     }
 
     #[cfg(unix)]
@@ -822,6 +1040,7 @@ fn server_launch(app: &tauri::AppHandle) -> Result<ServerLaunch, String> {
 fn start_agent_server(
     app: tauri::AppHandle,
     server: State<'_, AgentServer>,
+    containers: State<'_, ContainerRegistry>,
     project_dir: String,
     engine_id: Option<String>,
 ) -> Result<u16, String> {
@@ -829,11 +1048,21 @@ fn start_agent_server(
         return Err(format!("Not a folder: {project_dir}"));
     }
 
+    // Moving to a different project ends the session that was running. Take
+    // its containers down before the next one starts — but not when the same
+    // project is merely restarting (an engine switch), where the user is still
+    // sitting in front of the database they just built.
+    let previous = server.project_dir.lock().unwrap().clone();
+    if previous.is_some_and(|dir| dir != project_dir) {
+        stop_our_containers(&containers);
+    }
+
     let launch = server_launch(&app)?;
     let engines = engines_dir(&app)?;
 
     server.restart(&launch, &project_dir, engine_id.as_deref(), &engines)?;
     server.wait_until_listening(SERVER_PORT, Duration::from_secs(20))?;
+    *server.project_dir.lock().unwrap() = Some(project_dir.clone());
 
     if let Ok(path) = settings_path(&app) {
         let settings = Settings {
@@ -854,6 +1083,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(AgentServer::default())
+        .manage(ContainerRegistry::default())
         .invoke_handler(tauri::generate_handler![
             get_saved_project,
             save_engine_id,
@@ -863,14 +1093,65 @@ pub fn run() {
             start_agent_server,
             port_info,
             kill_port,
+            docker_services,
+            stop_container,
             list_directory_entries
         ])
         .build(tauri::generate_context!())
         .expect("error building the app")
         .run(|app, event| {
-            // Never leave an orphaned node process behind.
+            // Never leave an orphaned node process behind — nor a
+            // container, which the daemon would otherwise keep running long
+            // after the app that started it is gone.
             if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
                 app.state::<AgentServer>().stop();
+                stop_our_containers(&app.state::<ContainerRegistry>());
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_a_compose_row() {
+        let line = "16f7fd6ec45a\ttodo-redis\tredis:7-alpine\t                    0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp\t                    todo-app\t/Users/xyz/Coding/todo-app";
+        let service = parse_ps_line(line).expect("row should parse");
+        assert_eq!(service.id, "16f7fd6ec45a");
+        assert_eq!(service.name, "todo-redis");
+        assert_eq!(service.image, "redis:7-alpine");
+        // Both the v4 and v6 mappings publish 6379; it is one port, not two.
+        assert_eq!(service.ports, vec![6379]);
+        assert_eq!(service.compose_project.as_deref(), Some("todo-app"));
+        assert_eq!(
+            service.working_dir.as_deref(),
+            Some("/Users/xyz/Coding/todo-app")
+        );
+    }
+
+    #[test]
+    fn a_container_without_compose_labels_has_no_project() {
+        let line = "abc123\tpg\tpostgres:16\t0.0.0.0:5432->5432/tcp\t\t";
+        let service = parse_ps_line(line).expect("row should parse");
+        assert_eq!(service.ports, vec![5432]);
+        assert!(service.compose_project.is_none());
+        assert!(service.working_dir.is_none());
+    }
+
+    /// An unpublished port is unreachable from the host, so it is not a port
+    /// the user could have been using — and `kill_port` could never match it.
+    #[test]
+    fn unpublished_ports_are_ignored() {
+        assert!(published_ports("5432/tcp").is_empty());
+        assert_eq!(published_ports("127.0.0.1:8080->80/tcp, 9229/tcp"), vec![8080]);
+    }
+
+    #[test]
+    fn multiple_published_ports_are_all_reported() {
+        assert_eq!(
+            published_ports("0.0.0.0:5672->5672/tcp, 0.0.0.0:15672->15672/tcp"),
+            vec![5672, 15672]
+        );
+    }
 }

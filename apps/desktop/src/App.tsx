@@ -21,6 +21,7 @@ import type { ChatImageAttachmentDraft } from "@/shared/types/messages";
 import { JumpToLatestButton } from "@/shared/ui/jump-to-latest-button";
 import { usePersistedState } from "@/shared/hooks/usePersistedState";
 import { useResizableSidebar } from "@/shared/hooks/useResizableSidebar";
+import { useResizablePanel } from "@/shared/hooks/useResizablePanel";
 import { useTextareaAutosize } from "@/shared/hooks/useTextareaAutosize";
 import { cn } from "@/shared/lib/cn";
 import { flattenConfigValues, splitConfigOptions } from "@/shared/lib/sessionConfig";
@@ -38,7 +39,14 @@ import { ENGINES, DEFAULT_ENGINE_ID } from "@weave/agent/engines-registry.ts";
 import { ConfigPicker } from "./ConfigPicker";
 import { EnginePicker } from "./EnginePicker";
 import { ProvidersDialog } from "./ProvidersDialog";
-import { ContextPanel } from "./ContextPanel";
+import { ContextPanel, type ContextPanelTab } from "./ContextPanel";
+
+/** Inspector width: the spec's 400px to start, dragged from its left edge. */
+const INSPECTOR_DEFAULT_WIDTH = 400;
+import { TurnDiffPanel } from "./agent/components/TurnDiffPanel";
+import { DepthPicker } from "./agent/components/DepthPicker";
+import type { DepthLevel } from "./agent/components/AgentHeader";
+import { collectTurnDiffs } from "./agent/diff/turnDiff";
 import { Sidebar } from "./Sidebar";
 import { CreateProjectDialog, toneColor } from "./CreateProjectDialog";
 import { AgentsView } from "./agents/AgentsView";
@@ -178,9 +186,13 @@ export function App() {
     [openChat, setView, activeSessionId, turns.length],
   );
 
+  // Every project dir Weave knows about, so a container started for one of
+  // them still shows up (and stays stoppable) from any other session.
+  const knownDirs = useMemo(() => projects.map((p) => p.dir), [projects]);
   const { servers, stop: stopServer } = useRunningServers(
     turns,
     project.status === "running" ? project.dir : undefined,
+    knownDirs,
   );
 
   // Keep the running project at the top of the sidebar list.
@@ -321,6 +333,36 @@ export function App() {
   );
   const sidebarOpen = panels.sidebar;
   const contextOpen = panels.context;
+  /**
+   * The turn whose file changes the side panel is reading, set by "Open diff"
+   * on an assistant card. `null` leaves the panel on the context tabs.
+   */
+  const [diffTurnId, setDiffTurnId] = useState<string | null>(null);
+  /** A single file the chat asked the inspector to open. */
+  const [diffFocusPath, setDiffFocusPath] = useState<string | undefined>();
+  /** How much of each run the cards render — a composer setting. */
+  const [depth, setDepth] = usePersistedState<DepthLevel>(
+    "berd:chat:depth",
+    "normal",
+    (value, defaults) =>
+      value === "brief" || value === "normal" || value === "deep"
+        ? value
+        : defaults,
+  );
+  const [contextTab, setContextTab] = useState<ContextPanelTab>("Context");
+
+  // Turns that touched files, for the side-panel diff reader.
+  const turnDiffEntries = useMemo(() => collectTurnDiffs(turns), [turns]);
+  const diffPanelOpen =
+    view === "chat" &&
+    diffTurnId !== null &&
+    turnDiffEntries.some((entry) => entry.turnId === diffTurnId);
+  const sidePanelOpen = view === "chat" && (contextOpen || diffPanelOpen);
+
+  // A different chat has its own turns — drop the diff the panel was reading.
+  useEffect(() => {
+    setDiffTurnId(null);
+  }, [activeSessionId]);
   const setSidebarOpen = useCallback(
     (next: boolean | ((v: boolean) => boolean)) =>
       setPanels((p) => ({
@@ -343,6 +385,13 @@ export function App() {
     [setSidebarOpen],
   );
   const sidebarResize = useResizableSidebar(collapseSidebar);
+  const inspectorResize = useResizablePanel({
+    storageKey: "berd:inspector:width",
+    defaultWidth: INSPECTOR_DEFAULT_WIDTH,
+    minWidth: 320,
+    maxWidth: 720,
+    edge: "left",
+  });
 
   const onTranscriptScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -706,8 +755,19 @@ export function App() {
             type="button"
             className={iconBtn}
             disabled={view !== "chat"}
-            onClick={() => setContextOpen((v) => !v)}
-            aria-label={contextOpen ? "Hide context panel" : "Show context panel"}
+            onClick={() => {
+              // While a diff is up, the toggle puts the panel back on context
+              // rather than leaving the reader stuck open.
+              if (diffPanelOpen) {
+                setDiffTurnId(null);
+                setContextOpen(true);
+                return;
+              }
+              setContextOpen((v) => !v);
+            }}
+            aria-label={
+              sidePanelOpen ? "Hide context panel" : "Show context panel"
+            }
           >
             <PanelRightIcon className="size-4" />
           </button>
@@ -718,7 +778,7 @@ export function App() {
       <div className="flex min-h-0 flex-1 gap-[var(--spacing-app-panel-gutter-inline)] px-[var(--spacing-app-panel-gutter-inline)] pt-[var(--spacing-app-panel-gutter-bottom)] pb-[var(--spacing-app-panel-gutter-bottom)]">
         <div
           className={cn(
-            "relative shrink-0 self-start",
+            "relative h-full shrink-0",
             sidebarResize.resizing
               ? "transition-none"
               : "transition-[width] duration-200 ease-out",
@@ -726,7 +786,7 @@ export function App() {
           style={{ width: sidebarOpen ? sidebarResize.width : 0 }}
         >
           <div
-            className="overflow-hidden transition-opacity duration-200"
+            className="h-full overflow-hidden transition-opacity duration-200"
             style={{
               width: sidebarResize.width,
               opacity: sidebarOpen ? 1 : 0,
@@ -869,17 +929,29 @@ export function App() {
         <div
           ref={scrollRef}
           onScroll={onTranscriptScroll}
-          className="mx-auto flex w-full min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] py-6"
+          className="mx-auto flex w-full max-w-4xl min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] py-6"
         >
           {turns.length === 0 && ready && (
             <p className="mt-16 text-center text-sm text-muted-foreground">
               Send a message to start this chat.
             </p>
           )}
-          {turns.map((turn) => (
-            <Message key={turn.id} from={turn.role}>
-              <MessageContent>
-                {turn.role === "assistant" ? (
+          {turns.map((turn) =>
+            turn.role === "user" ? (
+              <UserMessage
+                key={turn.id}
+                text={turn.text}
+                mentions={turn.mentions}
+                images={turn.images}
+                onEdit={editPrompt}
+                onViewImage={setLightboxImage}
+              />
+            ) : (
+            // The run card owns the column: full width, like the user
+            // request above it — not a content-width chat bubble.
+            <Message key={turn.id} from={turn.role} className="max-w-full">
+              <MessageContent className="w-full">
+                {(
                   <>
                     {busy && turn === turns.at(-1) && (
                       <AgentStatusLine
@@ -929,21 +1001,22 @@ export function App() {
                       onSend={send}
                       onUpdatePlan={updateTurnPlan}
                       onExitPlanMode={exitPlanMode}
+                      depth={depth}
+                      diffOpen={diffTurnId === turn.id}
+                      onOpenDiff={(path) => {
+                        setDiffFocusPath(path);
+                        setDiffTurnId((cur) =>
+                          cur === turn.id && !path ? null : turn.id,
+                        );
+                      }}
                     />
                     )}
                   </>
-                ) : (
-                  <UserMessage
-                    text={turn.text}
-                    mentions={turn.mentions}
-                    images={turn.images}
-                    onEdit={editPrompt}
-                    onViewImage={setLightboxImage}
-                  />
                 )}
               </MessageContent>
             </Message>
-          ))}
+            ),
+          )}
 
           {busy && turns.at(-1)?.role === "user" && (
             <Message from="assistant">
@@ -987,7 +1060,8 @@ export function App() {
             "relative z-10 mt-auto w-full shrink-0 pb-6",
             view === "home"
               ? "ml-auto max-w-md px-[var(--spacing-app-panel-gutter-inline)]"
-              : "px-[var(--spacing-app-panel-gutter-inline)]",
+              // Same cap as the transcript so the composer lines up with the cards.
+              : "mx-auto max-w-4xl px-[var(--spacing-app-panel-gutter-inline)]",
           )}
         >
           <div
@@ -1007,7 +1081,9 @@ export function App() {
               if (e.dataTransfer.files.length) void addImageFiles(e.dataTransfer.files);
             }}
             className={cn(
-              "relative flex flex-col gap-2.5 rounded-composer bg-surface-chat-composer p-3 [-webkit-backdrop-filter:var(--backdrop-composer-glass)] [backdrop-filter:var(--backdrop-composer-glass)]",
+              // 18px radius and a ~104px resting height: a floating input
+              // surface, not a pill.
+              "relative flex min-h-[104px] flex-col gap-2.5 rounded-[18px] bg-surface-chat-composer p-3 [-webkit-backdrop-filter:var(--backdrop-composer-glass)] [backdrop-filter:var(--backdrop-composer-glass)]",
               isDraggingImage && "outline outline-2 outline-offset-[-2px] outline-primary",
             )}
           >
@@ -1339,16 +1415,6 @@ export function App() {
             />
             <div className="flex items-center justify-between gap-2 px-1">
               <div className="flex flex-wrap items-center gap-2">
-                <ComposerActionButton
-                  type="button"
-                  size="icon-sm"
-                  title="Attach images"
-                  aria-label="Attach images"
-                  disabled={!ready}
-                  onClick={() => imageInputRef.current?.click()}
-                >
-                  <ImagePlusIcon />
-                </ComposerActionButton>
                 <EnginePicker
                   selectedEngineId={engineId || (project.status === "running" ? project.engineId : null) || undefined}
                   engines={engines}
@@ -1363,6 +1429,7 @@ export function App() {
                   onSelect={handleSelectEngine}
                   onRequestManageProviders={() => setProvidersDialogOpen(true)}
                 />
+                <DepthPicker value={depth} onChange={setDepth} disabled={!ready} />
                 {primaryConfigOption && (
                   <ConfigPicker
                     option={primaryConfigOption}
@@ -1374,16 +1441,30 @@ export function App() {
                   />
                 )}
               </div>
-              {busy ? (
-                <ComposerSendButton state="stop" onClick={cancel} />
-              ) : (
-                <ComposerSendButton
-                  state="send"
-                  onClick={submit}
-                  showLabel={Boolean(draft.trim() || imageAttachments.length > 0)}
-                  disabled={!ready || (!draft.trim() && imageAttachments.length === 0)}
-                />
-              )}
+              {/* One action cluster: attach sits immediately left of send, and
+                  keeps its place when send becomes stop. */}
+              <div className="flex shrink-0 items-center gap-2">
+                <ComposerActionButton
+                  type="button"
+                  size="icon-sm"
+                  title="Attach images"
+                  aria-label="Attach images"
+                  disabled={!ready}
+                  onClick={() => imageInputRef.current?.click()}
+                >
+                  <ImagePlusIcon />
+                </ComposerActionButton>
+                {busy ? (
+                  <ComposerSendButton state="stop" onClick={cancel} />
+                ) : (
+                  <ComposerSendButton
+                    state="send"
+                    onClick={submit}
+                    showLabel={Boolean(draft.trim() || imageAttachments.length > 0)}
+                    disabled={!ready || (!draft.trim() && imageAttachments.length === 0)}
+                  />
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1393,14 +1474,59 @@ export function App() {
 
         <div
           className={cn(
-            "shrink-0 overflow-hidden transition-[width,opacity] duration-200 ease-out",
-            contextOpen && view === "chat"
-              ? "w-72 opacity-100"
-              : "w-0 opacity-0",
+            "relative h-full shrink-0 overflow-hidden",
+            // A drag in progress must track the pointer, not ease behind it.
+            inspectorResize.resizing
+              ? "transition-none"
+              : "transition-[width,opacity] duration-200 ease-out",
+            sidePanelOpen ? "opacity-100" : "w-0 opacity-0",
           )}
+          style={
+            sidePanelOpen
+              ? { width: diffPanelOpen ? inspectorResize.width : 288 }
+              : undefined
+          }
         >
-          <div className="h-full w-72">
+          {sidePanelOpen && diffPanelOpen && (
+            <div
+              onMouseDown={inspectorResize.onResizeStart}
+              onDoubleClick={inspectorResize.onResizeDoubleClick}
+              title="Drag to resize · double-click to reset"
+              className="group absolute top-0 bottom-0 -left-1.5 z-20 w-3 cursor-ew-resize"
+              aria-hidden
+            >
+              <div className="absolute top-1/2 left-1/2 h-8 w-px -translate-x-1/2 -translate-y-1/2 rounded-full bg-transparent transition-colors group-hover:bg-border" />
+            </div>
+          )}
+          <div
+            className="h-full"
+            style={{ width: diffPanelOpen ? inspectorResize.width : 288 }}
+          >
+            {diffPanelOpen ? (
+            <TurnDiffPanel
+              entries={turnDiffEntries}
+              turnId={diffTurnId!}
+              focusPath={diffFocusPath}
+              onSelectTurn={(id) => {
+                setDiffTurnId(id);
+                setDiffFocusPath(undefined);
+              }}
+              onClose={(tab) => {
+                setDiffTurnId(null);
+                setContextOpen(true);
+                if (tab) setContextTab(tab);
+              }}
+              projectDir={activeDir}
+            />
+            ) : (
             <ContextPanel
+              tab={contextTab}
+              onTabChange={setContextTab}
+              turnDiffs={turnDiffEntries}
+              onOpenDiff={(id, path) => {
+                setDiffFocusPath(path);
+                setDiffTurnId(id);
+              }}
               projectDir={activeDir ?? ""}
               git={git}
               onRefresh={refreshGit}
@@ -1420,6 +1546,7 @@ export function App() {
                 )
               }
             />
+            )}
           </div>
         </div>
       </div>

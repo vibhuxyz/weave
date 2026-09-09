@@ -33,7 +33,7 @@ interface PlanApprovalModalProps {
   entries: PlanBlockEntry[];
   engineLabel?: string;
   onApprove: (approved: { markdown?: string; entries: PlanBlockEntry[] }, note?: string) => void;
-  onReject: (feedback?: string) => void;
+  onReject: () => void;
 }
 
 export function PlanApprovalModal({
@@ -98,7 +98,7 @@ export function PlanApprovalModal({
   };
 
   const handleReject = () => {
-    onReject(note.trim() || undefined);
+    onReject();
     onOpenChange(false);
   };
 
@@ -220,12 +220,12 @@ export function PlanApprovalModal({
 
           <div className="space-y-1.5 pt-2">
             <label className="text-xs font-medium text-muted-foreground">
-              Additional instructions / rejection reason (optional):
+              Extra instructions for the agent on approval (optional):
             </label>
             <Input
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. run typecheck after step 2 — or why you’re rejecting…"
+              placeholder="e.g. run typecheck after step 2, commit each step separately…"
               className="text-xs"
             />
           </div>

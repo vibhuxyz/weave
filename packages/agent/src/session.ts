@@ -15,6 +15,7 @@ import { resolveCodexCliEntry } from "./engines.ts";
 import {
   confineToTaskDir,
   isInside,
+  isPlanModeExit,
   relativeInside,
   toAcpResponse,
   type PermissionPolicy,
@@ -149,6 +150,37 @@ class SessionClient implements acp.Client {
     params: acp.RequestPermissionRequest,
   ): Promise<acp.RequestPermissionResponse> {
     const decision = await Promise.resolve(this.policy(this.task, params));
+
+    // The plan text only exists on the ExitPlanMode permission request — the
+    // engine never emits it as a normal tool call. Surface it as one so the
+    // client's approval modal has something to show.
+    if (isPlanModeExit(params)) {
+      const raw = params.toolCall.rawInput as Record<string, unknown> | undefined;
+      const planText =
+        typeof raw?.plan === "string"
+          ? raw.plan
+          : typeof raw?.content === "string"
+            ? raw.content
+            : null;
+      if (planText) {
+        this.sink.onUpdate(
+          {
+            sessionUpdate: "tool_call",
+            toolCallId: params.toolCall.toolCallId ?? "exit-plan-mode",
+            title: "Approve Plan",
+            kind: "other",
+            status: "failed",
+            rawInput: { plan: planText },
+            content: [
+              { type: "content", content: { type: "text", text: planText } },
+            ],
+          } as SessionUpdate,
+          this.replaying,
+        );
+      }
+    }
+
+
     // On a permission request `toolCall` is a ToolCallUpdate: every field is
     // optional. Fall back to the id so the ledger always has a handle.
     this.sink.onPermission(

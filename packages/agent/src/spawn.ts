@@ -148,6 +148,10 @@ export function spawnAgent(
   const child = spawn(spawnBin, spawnArgs, {
     cwd,
     stdio: ["pipe", "pipe", "pipe"],
+    // Its own process group, so `stop()` can take down the whole tree. A dev
+    // server the engine backgrounds is our *grand*child: killing the engine
+    // alone leaves it holding its port after the session is gone.
+    detached: true,
     env: {
       ...process.env,
       // Lets this work when the host binary is Electron rather than plain Node.
@@ -188,8 +192,34 @@ export function spawnAgent(
     entry,
     stop(graceMs = 2000) {
       child.stdin?.end();
-      const kill = setTimeout(() => child.kill("SIGKILL"), graceMs);
-      child.once("exit", () => clearTimeout(kill));
+      const kill = setTimeout(() => killGroup(child.pid), graceMs);
+      child.once("exit", () => {
+        clearTimeout(kill);
+        // The engine is gone but anything it backgrounded is not, and the
+        // group outlives its leader. Sweep it either way.
+        killGroup(child.pid);
+      });
     },
   };
+}
+
+/**
+ * SIGKILL a whole process group, falling back to the single pid when the
+ * spawn was never detached (or the group is already gone).
+ *
+ * Same shape as `killTree` in packages/core/src/verify.ts — a SIGTERM to the
+ * leader alone leaves its children holding their ports.
+ */
+function killGroup(pid: number | undefined): void {
+  if (!pid) return;
+  try {
+    // Negative pid = the process group, created by `detached: true`.
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // Already gone. Nothing to clean up.
+    }
+  }
 }

@@ -1174,10 +1174,40 @@ async function handleConnection(
     }
   });
 
+  if (supervisor) live.add(supervisor);
+
   socket.on("close", () => {
     ledger.append("run.finished", { status: "ok", wallMs: 0 });
     auth?.abort.abort();
+    if (supervisor) live.delete(supervisor);
     supervisor?.killAll();
+  });
+}
+
+/**
+ * Every supervisor with a live socket.
+ *
+ * Engines are spawned into their own process group (see `spawn.ts`) so that
+ * killing one takes down anything it backgrounded. The cost is that they no
+ * longer die with us by accident — only `killAll` reaps them — so a signal
+ * that ends this process has to run it first, or quitting the app leaks every
+ * engine still attached to a socket.
+ */
+const live = new Set<EngineSupervisor>();
+
+let sweeping = false;
+function sweep(): void {
+  if (sweeping) return;
+  sweeping = true;
+  for (const supervisor of live) supervisor.killAll();
+  live.clear();
+}
+
+process.on("exit", sweep);
+for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
+  process.on(signal, () => {
+    sweep();
+    process.exit(0);
   });
 }
 

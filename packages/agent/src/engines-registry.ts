@@ -7,6 +7,20 @@ export interface EngineCapabilities {
   handoff: boolean;
 }
 
+/**
+ * What an engine actually reports about token spend. ACP makes both channels
+ * optional and every adapter implements a different subset, so the UI reads
+ * this to explain an absent figure instead of rendering a dead progress bar.
+ */
+export interface EngineTokenReporting {
+  /** `session/update: usage_update` — live context-window used/size. */
+  contextWindow: boolean;
+  /** `PromptResponse.usage` — cumulative input / output / thought totals. */
+  turnTotals: boolean;
+  /** Cumulative session cost, carried on `usage_update`. */
+  cost: boolean;
+}
+
 export interface EngineDescriptor {
   id: string;
   label: string;
@@ -18,7 +32,22 @@ export interface EngineDescriptor {
   env?: Record<string, string>;
   install?: string;
   capabilities: EngineCapabilities;
+  tokens: EngineTokenReporting;
 }
+
+/** Reports the context window live, per-turn totals, and session cost. */
+const FULL_TOKEN_REPORTING: EngineTokenReporting = {
+  contextWindow: true,
+  turnTotals: true,
+  cost: true,
+};
+
+/** Reports nothing about tokens on either ACP channel. */
+const NO_TOKEN_REPORTING: EngineTokenReporting = {
+  contextWindow: false,
+  turnTotals: false,
+  cost: false,
+};
 
 const FULL_CAPABILITIES: EngineCapabilities = {
   streaming: true,
@@ -38,6 +67,7 @@ export const ENGINES: Record<string, EngineDescriptor> = {
     provider: "anthropic",
     install: "pnpm -F @weave/agent add @agentclientprotocol/claude-agent-acp",
     capabilities: FULL_CAPABILITIES,
+    tokens: FULL_TOKEN_REPORTING,
   },
   codex: {
     id: "codex",
@@ -47,6 +77,7 @@ export const ENGINES: Record<string, EngineDescriptor> = {
     provider: "openai",
     install: "pnpm -F @weave/agent add @agentclientprotocol/codex-acp",
     capabilities: FULL_CAPABILITIES,
+    tokens: FULL_TOKEN_REPORTING,
   },
   amp: {
     id: "amp",
@@ -56,6 +87,9 @@ export const ENGINES: Record<string, EngineDescriptor> = {
     provider: "sourcegraph",
     install: "pnpm -F @weave/agent add @sourcegraph/amp",
     capabilities: FULL_CAPABILITIES,
+    // Amp streams no usage_update; cumulative totals arrive with the prompt
+    // response when the adapter fills them in.
+    tokens: { contextWindow: false, turnTotals: true, cost: false },
   },
   antigravity: {
     id: "antigravity",
@@ -72,6 +106,7 @@ export const ENGINES: Record<string, EngineDescriptor> = {
     args: ["--no-sandbox"],
     install: "pnpm -F @weave/agent add agy-acp",
     capabilities: FULL_CAPABILITIES,
+    tokens: NO_TOKEN_REPORTING,
   },
 };
 
@@ -84,6 +119,12 @@ Object.defineProperty(ENGINES, "agy", {
 });
 
 export const DEFAULT_ENGINE_ID = "antigravity";
+
+/** What the given engine id is expected to report; unknown ids report nothing. */
+export function tokenReportingFor(engineId: string | null | undefined) {
+  if (!engineId) return NO_TOKEN_REPORTING;
+  return ENGINES[engineId]?.tokens ?? NO_TOKEN_REPORTING;
+}
 
 /**
  * Compute CLI arguments for an engine run, factoring in sandboxing.

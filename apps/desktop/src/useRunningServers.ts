@@ -4,6 +4,8 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import type { ChatTurn } from "./useAcpChat";
 
 export interface RunningServer {
+  /** Stable identity: `port:3000` for a process, `container:<id>` for Docker. */
+  key: string;
   port: number;
   /** Friendly label (the tool title, e.g. "Start Express server"). */
   label: string;
@@ -14,11 +16,28 @@ export interface RunningServer {
   alive: boolean;
   /** True between the confirm and the port going quiet. */
   stopping: boolean;
+  /** Set when this row is a Docker container rather than a process. */
+  container?: { id: string; name: string; composeProject?: string };
+  /**
+   * The current chat did not start this — it is left over from an earlier
+   * session (or from before the app was launched) and is still running.
+   */
+  leftover: boolean;
 }
 
 interface PortInfo {
   pid: number;
   command: string;
+}
+
+/** Mirrors `DockerService` in src-tauri/src/lib.rs. */
+interface DockerService {
+  id: string;
+  name: string;
+  image: string;
+  ports: number[];
+  composeProject?: string;
+  workingDir?: string;
 }
 
 /**
@@ -59,7 +78,10 @@ function extractPorts(text: string): number[] {
   return [...found];
 }
 
-type DetectedServer = Omit<RunningServer, "alive" | "stopping">;
+type DetectedServer = Pick<
+  RunningServer,
+  "port" | "label" | "command" | "project"
+>;
 
 const KNOWN_SERVICES: Record<number, string> = {
   27017: "MongoDB",
@@ -118,26 +140,57 @@ function detect(turns: ChatTurn[], fallbackProject?: string): DetectedServer[] {
   return [...byPort.values()];
 }
 
+const basename = (dir: string) =>
+  dir.replace(/\/+$/, "").split("/").pop() || undefined;
+
+/** Is `dir` at or below `root`? Both are absolute paths from Docker/Tauri. */
+function isUnder(dir: string, root: string): boolean {
+  const a = dir.replace(/\/+$/, "");
+  const b = root.replace(/\/+$/, "");
+  return a === b || a.startsWith(`${b}/`);
+}
+
+const POLL_MS = 4000;
+
 /**
- * Tracks dev servers the agent has spawned (from the tool log) and lets the
- * user kill them by port. The agent runs them inside its own process tree so
- * we have no PID — but the output almost always carries a port, and killing
- * whatever listens there is what the user wants.
+ * Tracks the services a session left running, and lets the user stop them.
+ *
+ * Two sources, because the two kinds of service fail differently:
+ *
+ * - **Dev servers** are scraped from the tool log. The agent runs them inside
+ *   its own process tree so we have no PID, but the output almost always
+ *   carries a port, and killing whatever listens there is what the user wants.
+ * - **Containers** come from `docker ps`, never from the transcript. A
+ *   transcript is per-session; a container outlives the session, the chat, and
+ *   the app itself, so a transcript-derived list would drop the row while the
+ *   container kept running — leaving it orphaned with no way to stop it.
  */
-export function useRunningServers(turns: ChatTurn[], projectDir?: string) {
-  const fallbackProject = projectDir
-    ? projectDir.replace(/\/+$/, "").split("/").pop() || undefined
-    : undefined;
+export function useRunningServers(
+  turns: ChatTurn[],
+  projectDir?: string,
+  knownDirs: string[] = [],
+) {
+  const fallbackProject = projectDir ? basename(projectDir) : undefined;
   const detected = useMemo(
     () => detect(turns, fallbackProject),
     [turns, fallbackProject],
   );
   const portKey = detected.map((s) => s.port).join(",");
   const [alive, setAlive] = useState<Record<number, boolean>>({});
-  const [stopping, setStopping] = useState<Record<number, boolean>>({});
+  const [stopping, setStopping] = useState<Record<string, boolean>>({});
+  const [containers, setContainers] = useState<DockerService[]>([]);
+
+  // Every directory a container may legitimately belong to. Anything running
+  // outside them is somebody else's and is not shown.
+  const roots = useMemo(() => {
+    const all = [...knownDirs, projectDir].filter(
+      (d): d is string => typeof d === "string" && d.length > 0,
+    );
+    return [...new Set(all)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [knownDirs.join("\n"), projectDir]);
 
   useEffect(() => {
-    if (detected.length === 0) return;
     let cancelled = false;
     const check = async () => {
       const entries = await Promise.all(
@@ -155,10 +208,20 @@ export function useRunningServers(turns: ChatTurn[], projectDir?: string) {
           }
         }),
       );
-      if (!cancelled) setAlive(Object.fromEntries(entries));
+
+      let running: DockerService[] = [];
+      try {
+        running = await invoke<DockerService[]>("docker_services");
+      } catch {
+        // Docker absent or daemon down — no containers to report, not an error.
+      }
+
+      if (cancelled) return;
+      setAlive(Object.fromEntries(entries));
+      setContainers(running);
     };
     void check();
-    const id = setInterval(check, 4000);
+    const id = setInterval(check, POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(id);
@@ -166,17 +229,87 @@ export function useRunningServers(turns: ChatTurn[], projectDir?: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portKey]);
 
-  const servers: RunningServer[] = detected
-    .map((s) => ({
-      ...s,
-      alive: alive[s.port] ?? true,
-      stopping: stopping[s.port] ?? false,
-    }))
-    // Drop a port once it's confirmed dead — unless we're mid-stop, so the
-    // "Stopping…" row stays visible until the kill actually lands.
-    .filter((s) => alive[s.port] !== false || stopping[s.port]);
+  const servers: RunningServer[] = useMemo(() => {
+    const sessionPorts = new Set(detected.map((s) => s.port));
 
-  const stop = useCallback(async (port: number) => {
+    const containerRows = containers
+      .filter((c) => c.workingDir && roots.some((r) => isUnder(c.workingDir!, r)))
+      // A container with nothing published is unreachable from the host, so
+      // there is nothing for the user to have been using.
+      .filter((c) => c.ports.length > 0)
+      .map<RunningServer>((c) => {
+        const port = c.ports[0];
+        return {
+          key: `container:${c.id}`,
+          port,
+          label: KNOWN_SERVICES[port] || c.image.split(":")[0] || c.name,
+          command: c.image,
+          project: c.composeProject || basename(c.workingDir!),
+          alive: true,
+          stopping: stopping[`container:${c.id}`] ?? false,
+          container: {
+            id: c.id,
+            name: c.name,
+            composeProject: c.composeProject,
+          },
+          leftover: !c.ports.some((p) => sessionPorts.has(p)),
+        };
+      });
+
+    // A port a shown container publishes is *its* row, not a transcript row
+    // too — otherwise Postgres appears twice, once scraped and once real.
+    const shown = new Set(containerRows.map((r) => r.container!.id));
+    const containerPorts = new Set(
+      containers.filter((c) => shown.has(c.id)).flatMap((c) => c.ports),
+    );
+
+    const processRows = detected
+      .filter((s) => !containerPorts.has(s.port))
+      .map<RunningServer>((s) => ({
+        ...s,
+        key: `port:${s.port}`,
+        alive: alive[s.port] ?? true,
+        stopping: stopping[`port:${s.port}`] ?? false,
+        leftover: false,
+      }))
+      // Drop a port once it's confirmed dead — unless we're mid-stop, so the
+      // "Stopping…" row stays visible until the kill actually lands.
+      .filter((s) => alive[s.port] !== false || s.stopping);
+
+    return [...processRows, ...containerRows];
+  }, [detected, containers, roots, alive, stopping]);
+
+  const stop = useCallback(async (server: RunningServer) => {
+    const { key, port, container } = server;
+
+    if (container) {
+      const stack = container.composeProject
+        ? ` and the rest of the "${container.composeProject}" stack`
+        : "";
+      const confirmed = await ask(
+        `Stop container "${container.name}"${stack}?\n\n` +
+          `Data in its volumes is kept — \`docker compose up\` brings it back.`,
+        { title: "Stop container", kind: "warning" },
+      );
+      if (!confirmed) return;
+
+      setStopping((s) => ({ ...s, [key]: true }));
+      try {
+        await invoke("stop_container", { id: container.id });
+      } catch {
+        // The next docker poll decides whether it worked.
+      }
+      // Clearing eagerly would flash the row back for up to one poll; leave
+      // "Stopping…" up until `docker ps` stops reporting it.
+      setContainers((current) => current.filter((c) => c.id !== container.id));
+      setStopping((s) => {
+        const next = { ...s };
+        delete next[key];
+        return next;
+      });
+      return;
+    }
+
     let info: PortInfo | null = null;
     try {
       info = await invoke<PortInfo | null>("port_info", { port });
@@ -193,7 +326,7 @@ export function useRunningServers(turns: ChatTurn[], projectDir?: string) {
     );
     if (!confirmed) return;
 
-    setStopping((s) => ({ ...s, [port]: true }));
+    setStopping((s) => ({ ...s, [key]: true }));
     try {
       await invoke("kill_port", { port });
     } catch {
@@ -213,7 +346,7 @@ export function useRunningServers(turns: ChatTurn[], projectDir?: string) {
         setAlive((a) => ({ ...a, [port]: false }));
         setStopping((s) => {
           const next = { ...s };
-          delete next[port];
+          delete next[key];
           return next;
         });
       } else {

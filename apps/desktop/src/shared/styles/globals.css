@@ -588,25 +588,48 @@
   --dot-size: 1px;
   --dot-spacing: 24px;
 
+  /* ═══ Sidebar shell — floating nav surface (see src/Sidebar.tsx) ═══ */
+  --sidebar-shell-bg: var(--card);
+  --sidebar-shell-border: rgba(0, 0, 0, 0.07);
+  --sidebar-shell-shadow: 0 18px 48px rgba(0, 0, 0, 0.06);
+  --sidebar-hover-bg: rgba(0, 0, 0, 0.045);
+  --sidebar-selected-bg: rgba(79, 92, 214, 0.09);
+  --sidebar-text-primary: #242424;
+  --sidebar-text-secondary: #55585f;
+  --sidebar-text-tertiary: #83868f;
+  --sidebar-accent-project: #5b62e8;
+  --sidebar-accent-chat: #ff7a52;
+  --sidebar-selected-chat-bg: linear-gradient(
+    90deg,
+    rgba(255, 122, 82, 0.14),
+    rgba(255, 122, 82, 0.02)
+  );
+
   /* ═══ Agent chat card — consolidated dark palette (used by src/agent/components/*) ═══ */
-  --agent-surface-sunken: #101015;
-  --agent-surface-base: #14141b;
-  --agent-surface-raised: #17171f;
-  --agent-surface-inset: #1b1b24;
-  --agent-surface-hover: #22222d;
-  --agent-code-bg: #0d0e13;
-  --agent-code-header-bg: #15151d;
-  --agent-code-border: #2b2b36;
-  --agent-border: rgba(255, 255, 255, 0.1);
-  --agent-border-strong: rgba(255, 255, 255, 0.16);
-  --agent-border-subtle: rgba(255, 255, 255, 0.06);
-  --agent-chip-bg: #24232d;
-  --agent-chip-border: #383341;
-  --agent-text: #d7d1dc;
-  --agent-text-bright: #ececf1;
-  --agent-text-strong: #ded8e4;
-  --agent-text-muted: #a8a2b3;
-  --agent-text-faint: #8b8794;
+  /* Neutral blue-black, matching the sidebar shell — the card carries no
+     warm cast of its own; colour comes from status icons only. */
+  --agent-surface-sunken: #0b0d12;
+  --agent-surface-base: #0f1116;
+  --agent-surface-raised: #12151b;
+  --agent-surface-inset: #161a21;
+  --agent-surface-hover: #1d222b;
+  --agent-code-bg: #0b0d12;
+  --agent-code-header-bg: #12151b;
+  --agent-code-border: #232833;
+  --agent-border: rgba(255, 255, 255, 0.08);
+  --agent-border-strong: rgba(255, 255, 255, 0.14);
+  --agent-border-subtle: rgba(255, 255, 255, 0.05);
+  --agent-chip-bg: #1a1f28;
+  --agent-chip-border: #2a303b;
+  --agent-text: #d4d7de;
+  --agent-text-bright: #eceef2;
+  --agent-text-strong: #dde0e6;
+  --agent-text-muted: #a6abb5;
+  --agent-text-faint: #838a96;
+  /* Progress fills and model-chip glyphs — the card's one cool accent. */
+  --agent-progress: #5b62e8;
+  --agent-progress-fg: #8f95f5;
+  --agent-progress-bg: rgba(91, 98, 232, 0.14);
   --agent-accent: #f0845d;
   --agent-accent-strong: #ff7a66;
   --agent-accent-fg: #1b1110;
@@ -1008,25 +1031,50 @@
 
   --dot-color-base: rgba(255, 255, 255, 0.12);
 
+  /* ═══ Sidebar shell — floating nav surface (see src/Sidebar.tsx) ═══ */
+  /* Blue-black, a step darker than the window canvas: the panel reads through
+     contrast rather than through its border. */
+  --sidebar-shell-bg: #0d1017;
+  --sidebar-shell-border: rgba(255, 255, 255, 0.06);
+  --sidebar-shell-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.055);
+  --sidebar-selected-bg: #202532;
+  --sidebar-text-primary: #e6e8ed;
+  --sidebar-text-secondary: #b0b4bd;
+  --sidebar-text-tertiary: #7f8490;
+  --sidebar-accent-project: #6b6ff0;
+  --sidebar-accent-chat: #ff7a52;
+  --sidebar-selected-chat-bg: linear-gradient(
+    90deg,
+    rgba(255, 122, 82, 0.16),
+    rgba(255, 122, 82, 0.03)
+  );
+
   /* ═══ Agent chat card — consolidated dark palette (used by src/agent/components/*) ═══ */
-  --agent-surface-sunken: #101015;
-  --agent-surface-base: #14141b;
-  --agent-surface-raised: #17171f;
-  --agent-surface-inset: #1b1b24;
-  --agent-surface-hover: #22222d;
-  --agent-code-bg: #0d0e13;
-  --agent-code-header-bg: #15151d;
-  --agent-code-border: #2b2b36;
-  --agent-border: rgba(255, 255, 255, 0.1);
-  --agent-border-strong: rgba(255, 255, 255, 0.16);
-  --agent-border-subtle: rgba(255, 255, 255, 0.06);
-  --agent-chip-bg: #24232d;
-  --agent-chip-border: #383341;
-  --agent-text: #d7d1dc;
-  --agent-text-bright: #ececf1;
-  --agent-text-strong: #ded8e4;
-  --agent-text-muted: #a8a2b3;
-  --agent-text-faint: #8b8794;
+  /* Neutral blue-black, matching the sidebar shell — the card carries no
+     warm cast of its own; colour comes from status icons only. */
+  --agent-surface-sunken: #0b0d12;
+  --agent-surface-base: #0f1116;
+  --agent-surface-raised: #12151b;
+  --agent-surface-inset: #161a21;
+  --agent-surface-hover: #1d222b;
+  --agent-code-bg: #0b0d12;
+  --agent-code-header-bg: #12151b;
+  --agent-code-border: #232833;
+  --agent-border: rgba(255, 255, 255, 0.08);
+  --agent-border-strong: rgba(255, 255, 255, 0.14);
+  --agent-border-subtle: rgba(255, 255, 255, 0.05);
+  --agent-chip-bg: #1a1f28;
+  --agent-chip-border: #2a303b;
+  --agent-text: #d4d7de;
+  --agent-text-bright: #eceef2;
+  --agent-text-strong: #dde0e6;
+  --agent-text-muted: #a6abb5;
+  --agent-text-faint: #838a96;
+  /* Progress fills and model-chip glyphs — the card's one cool accent. */
+  --agent-progress: #5b62e8;
+  --agent-progress-fg: #8f95f5;
+  --agent-progress-bg: rgba(91, 98, 232, 0.14);
   --agent-accent: #f0845d;
   --agent-accent-strong: #ff7a66;
   --agent-accent-fg: #1b1110;
@@ -1216,6 +1264,17 @@
 
   --color-placeholder-composer: var(--text-placeholder-composer);
 
+  /* Sidebar shell palette (see :root / .dark --sidebar-*) */
+  --color-sidebar-shell: var(--sidebar-shell-bg);
+  --color-sidebar-shell-border: var(--sidebar-shell-border);
+  --color-sidebar-hover: var(--sidebar-hover-bg);
+  --color-sidebar-selected: var(--sidebar-selected-bg);
+  --color-sidebar-text-primary: var(--sidebar-text-primary);
+  --color-sidebar-text-secondary: var(--sidebar-text-secondary);
+  --color-sidebar-text-tertiary: var(--sidebar-text-tertiary);
+  --color-sidebar-accent-project: var(--sidebar-accent-project);
+  --color-sidebar-accent-chat: var(--sidebar-accent-chat);
+
   /* Agent chat card palette (see :root / .dark --agent-*) */
   --color-agent-surface-sunken: var(--agent-surface-sunken);
   --color-agent-surface-base: var(--agent-surface-base);
@@ -1235,6 +1294,9 @@
   --color-agent-text-strong: var(--agent-text-strong);
   --color-agent-text-muted: var(--agent-text-muted);
   --color-agent-text-faint: var(--agent-text-faint);
+  --color-agent-progress: var(--agent-progress);
+  --color-agent-progress-fg: var(--agent-progress-fg);
+  --color-agent-progress-bg: var(--agent-progress-bg);
   --color-agent-accent: var(--agent-accent);
   --color-agent-accent-strong: var(--agent-accent-strong);
   --color-agent-accent-fg: var(--agent-accent-fg);
