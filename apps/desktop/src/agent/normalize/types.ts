@@ -1,6 +1,6 @@
 import type { ToolCallStatus, ToolKind } from "@agentclientprotocol/sdk";
 import type { GitStatus } from "../../../server/index.ts";
-import type { ToolEntry } from "../../useAcpChat";
+import type { ToolEntry, TurnPersona } from "../../useAcpChat";
 import type { EngineDescriptor } from "@weave/agent/engines-registry.ts";
 
 export type AgentBlockSchemaVersion = 1;
@@ -371,6 +371,8 @@ export interface AgentRunMeta {
   engine: "claude-code" | "gemini" | "codex" | "amp" | "antigravity" | string;
   engineLabel: string;
   model?: string;
+  /** Agents whose instructions were in force for this turn. */
+  personas?: TurnPersona[];
   sessionId?: string;
   durationMs?: number;
   filesRead: number;

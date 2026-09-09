@@ -247,7 +247,13 @@ function FileDiffView({
           )}
           {file.hunks.map((hunk, hi) => (
             <div key={hi}>
-              {hi > 0 && (
+              {(hunk.skippedBefore ?? 0) > 0 && (
+                <div className="border-agent-code-border/60 border-y bg-agent-surface-hover/30 py-1 text-center font-mono text-[10px] text-agent-text-faint">
+                  {hunk.skippedBefore} unmodified line
+                  {hunk.skippedBefore === 1 ? "" : "s"}
+                </div>
+              )}
+              {hi > 0 && (hunk.skippedBefore ?? 0) === 0 && (
                 <div className="py-0.5 text-center font-mono text-[11px] text-agent-text-faint">
                   ···
                 </div>

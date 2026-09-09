@@ -54,6 +54,7 @@ import { SkillsView } from "./skills/SkillsView";
 import { useSkillPlugins, formatSkillPluginsSystemPrompt } from "./useSkillPlugins";
 import { AgentAvatar } from "./agents/AgentAvatar";
 import {
+  activeAgents,
   useAgents,
   formatPersonaSystemPrompt,
   type Agent,
@@ -65,7 +66,7 @@ import { AgentStatusLine } from "./agent/components/AgentStatusLine";
 import { UserMessage } from "./UserMessage";
 import { HomeView } from "./home/canvas/ui/HomeView";
 import { basename } from "./paths";
-import { useAcpChat } from "./useAcpChat";
+import { useAcpChat, type ChatImageAttachment } from "./useAcpChat";
 import { useProject } from "./useProject";
 import { useProjects, type ProjectEntry } from "./useProjects";
 import { useRunningServers } from "./useRunningServers";
@@ -507,6 +508,30 @@ export function App() {
     });
   };
 
+  /**
+   * Send an edited copy of an earlier prompt, attachments included.
+   *
+   * The images come back as the data URIs the transcript is already showing,
+   * so a re-send carries the same screenshots rather than silently dropping
+   * them — the engine needs the bytes again, not the path it wrote.
+   */
+  const resendPrompt = (text: string, images: ChatImageAttachment[]) => {
+    send(text, {
+      images: images
+        .filter((image) => image.previewUrl.startsWith("data:"))
+        .map((image, i) => ({
+          id: `resend-${i}`,
+          kind: "image" as const,
+          name: image.path?.split("/").pop() ?? `image-${i + 1}`,
+          path: image.path,
+          mimeType: image.mimeType || "image/png",
+          base64: image.previewUrl.slice(image.previewUrl.indexOf(",") + 1),
+          previewUrl: image.previewUrl,
+          prompt: image.prompt,
+        })),
+    });
+  };
+
   const pickMention = (agent: Agent) => {
     const el = textareaRef.current;
     const caret = el?.selectionStart ?? draft.length;
@@ -625,10 +650,17 @@ export function App() {
     // Standing agents (`always` + manually toggled) plus this message's
     // @-mentions ride every prompt, so the persona can't drift over a chat.
     // The server merges this with the skills catalog into one <system> block.
-    const persona = formatPersonaSystemPrompt(activeProjectEntry?.agents, agents, [
-      ...manualActive,
-      ...mentioned.map((a) => a.id),
-    ]);
+    const extraIds = [...manualActive, ...mentioned.map((a) => a.id)];
+    const persona = formatPersonaSystemPrompt(
+      activeProjectEntry?.agents,
+      agents,
+      extraIds,
+    );
+    // The same set, as identity rather than instructions: the run card names
+    // who answered, so a standing agent is visible without opening settings.
+    const personas = activeAgents(activeProjectEntry?.agents, agents, extraIds).map(
+      (a) => ({ id: a.id, name: a.name, icon: a.icon, character: a.character }),
+    );
     const plugins = formatSkillPluginsSystemPrompt(skillPlugins, activeDir);
 
     let textToSend = draft;
@@ -653,6 +685,7 @@ export function App() {
     send(textToSend, {
       persona: [persona, plugins].filter(Boolean).join("\n\n") || undefined,
       mentions: mentioned.map((a) => a.name),
+      personas,
       images: imageAttachments,
     });
     setImageAttachments([]);
@@ -944,6 +977,7 @@ export function App() {
                 mentions={turn.mentions}
                 images={turn.images}
                 onEdit={editPrompt}
+                onResend={resendPrompt}
                 onViewImage={setLightboxImage}
               />
             ) : (
@@ -1147,6 +1181,7 @@ export function App() {
                         seed={a.id}
                         tint={a.tint}
                         icon={a.icon}
+                        character={a.character}
                         size="sm"
                         className="size-7 shrink-0"
                       />
@@ -1261,6 +1296,7 @@ export function App() {
                       seed={a.id}
                       tint={a.tint}
                       icon={a.icon}
+                      character={a.character}
                       size="sm"
                       className="size-4 shrink-0 rounded-full"
                     />

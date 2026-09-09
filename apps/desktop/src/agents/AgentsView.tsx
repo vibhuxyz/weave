@@ -5,6 +5,7 @@ import {
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
+  RotateCcwIcon,
   Trash2Icon,
 } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
@@ -27,7 +28,8 @@ export function AgentsView({
   onChat: (agent: Agent) => void;
   engines: { id: string; label: string; installed: boolean }[];
 }) {
-  const { agents, create, update, remove, duplicate } = useAgents();
+  const { agents, create, update, remove, duplicate, resetBuiltin, isBuiltinModified } =
+    useAgents();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Agent | null>(null);
 
@@ -76,6 +78,11 @@ export function AgentsView({
               onEdit={() => openEdit(agent)}
               onDuplicate={() => duplicate(agent.id)}
               onDelete={() => remove(agent.id)}
+              onReset={
+                agent.builtin && isBuiltinModified(agent.id)
+                  ? () => resetBuiltin(agent.id)
+                  : undefined
+              }
             />
           </motion.div>
         ))}
@@ -99,6 +106,7 @@ function AgentCard({
   onEdit,
   onDuplicate,
   onDelete,
+  onReset,
 }: {
   agent: Agent;
   onView: () => void;
@@ -106,6 +114,8 @@ function AgentCard({
   onEdit: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  /** Only for a built-in the user has changed — puts it back as it ships. */
+  onReset?: () => void;
 }) {
   return (
     <div className="group relative flex w-full flex-col gap-3 rounded-xl p-2">
@@ -115,6 +125,7 @@ function AgentCard({
           seed={agent.id}
           tint={agent.tint}
           icon={agent.icon}
+          character={agent.character}
           size="lg"
           className="transition-transform duration-200 group-hover:scale-[1.02]"
         />
@@ -166,12 +177,16 @@ function AgentCard({
               <CopyIcon className="size-3.5" />
               Duplicate
             </DropdownMenuItem>
-            {!agent.builtin && (
-              <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                <Trash2Icon className="size-3.5" />
-                Delete
+            {onReset && (
+              <DropdownMenuItem onClick={onReset}>
+                <RotateCcwIcon className="size-3.5" />
+                Reset to default
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem variant="destructive" onClick={onDelete}>
+              <Trash2Icon className="size-3.5" />
+              Delete
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

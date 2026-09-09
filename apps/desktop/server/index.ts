@@ -13,11 +13,12 @@
  * Run standalone:  PROJECT_DIR=/path/to/repo pnpm -F desktop server
  */
 
-import { readdir } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { readFile, readdir, stat } from "node:fs/promises";
+import { extname, relative, resolve } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
   confineToTaskDir,
+  isInside,
   createEngineSupervisor,
   getEngine,
   installedEngines,
@@ -80,8 +81,52 @@ export type ClientMessage =
   | { type: "cancel-auth" }
   /** Fuzzy path lookup for the `@file` mention menu. */
   | { type: "list-files"; query: string }
+  /** Read one image a past prompt attached, for the transcript's thumbnail. */
+  | { type: "read-attachment"; path: string }
   /** Refresh installed engines list. */
   | { type: "refresh-engines" };
+
+/** Images we will inline into the transcript, by extension. */
+const IMAGE_MIME: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".svg": "image/svg+xml",
+};
+
+/** Anything larger is a transcript thumbnail nobody wants over a socket. */
+const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
+
+/**
+ * One image from a past prompt, as a data URI.
+ *
+ * Engines save what the user attached under the project (Antigravity writes
+ * `.agy-acp/attachments/<uuid>.png`) and replay the prompt as a path, so a
+ * resumed conversation has only the path to show. Reading is confined to the
+ * project dir — the renderer must not be able to turn this into "read any file
+ * on the machine" by asking for one.
+ */
+async function readAttachment(
+  projectDir: string,
+  path: string,
+): Promise<string | null> {
+  try {
+    const absolute = resolve(projectDir, path);
+    if (!isInside(projectDir, absolute)) return null;
+    const mime = IMAGE_MIME[extname(absolute).toLowerCase()];
+    if (!mime) return null;
+    const info = await stat(absolute);
+    if (!info.isFile() || info.size > MAX_ATTACHMENT_BYTES) return null;
+    const bytes = await readFile(absolute);
+    return `data:${mime};base64,${bytes.toString("base64")}`;
+  } catch {
+    // A deleted or unreadable attachment is ordinary on an old conversation.
+    return null;
+  }
+}
 
 /** Messages we send the UI. */
 export type ServerMessage =
@@ -108,6 +153,8 @@ export type ServerMessage =
   | { type: "config-changed"; configId: string; value: string }
   | { type: "config-rejected"; configId: string; message: string }
   | { type: "git-status"; git: GitStatus }
+  /** An attachment as a data URI, or `null` when it could not be read. */
+  | { type: "attachment"; path: string; dataUri: string | null }
   | { type: "turn-end"; stopReason: string; usage?: Usage | null }
   | { type: "error"; message: string }
   /**
@@ -1002,6 +1049,13 @@ async function handleConnection(
           send({ type: "git-status", git }),
         );
         return;
+
+      case "read-attachment": {
+        void readAttachment(projectDir, message.path).then((dataUri) =>
+          send({ type: "attachment", path: message.path, dataUri }),
+        );
+        return;
+      }
 
       case "list-files": {
         const query = message.query;

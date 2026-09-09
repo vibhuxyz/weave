@@ -48,6 +48,7 @@ export const AgentPinWidget = memo(function AgentPinWidget({
           seed={resolvedId}
           tint={agent?.tint}
           icon={agent?.icon}
+          character={agent?.character}
           size="lg"
           className="pointer-events-none h-full w-full"
         />

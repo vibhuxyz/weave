@@ -462,6 +462,23 @@
   --surface-agent-tile-action-bg-hover: var(--foreground);
   --surface-agent-tile-action-fg-hover: var(--background);
   --message-user-bg: var(--color-gray-75);
+  /* The prompt bubble. A solid blue fill, white text, no border — the request
+     is the one thing in the transcript the user wrote, so it reads as theirs
+     at a glance rather than as another panel. The sheen is a single top-light,
+     not a gradient anyone should be able to name. */
+  --message-user-surface: #2f5fc9;
+  --message-user-fg: #ffffff;
+  --message-user-fg-muted: rgba(255, 255, 255, 0.72);
+  --message-user-glow: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0) 62%
+  );
+  --message-user-border: transparent;
+  --message-user-shadow: 0 6px 18px rgba(47, 95, 201, 0.25);
+  /* Editing the prompt: a neutral card, not the blue fill — while it is open
+     the turn is a field the user is typing in, not a message they sent. */
+  --message-edit-surface: #eef0f4;
 
   /* Default project cube fold lines on filled color swatches (sidebar, picker). */
   --project-glyph-fold-stroke: rgba(255, 255, 255, 0.92);
@@ -939,6 +956,17 @@
   --surface-agent-tile-action-bg-hover: var(--foreground);
   --surface-agent-tile-action-fg-hover: var(--color-black);
   --message-user-bg: var(--color-gray-700);
+  --message-user-surface: #2f5fc9;
+  --message-user-fg: #ffffff;
+  --message-user-fg-muted: rgba(255, 255, 255, 0.72);
+  --message-user-glow: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0) 62%
+  );
+  --message-user-border: transparent;
+  --message-user-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --message-edit-surface: #2c3038;
 
   --project-glyph-fold-stroke: rgba(0, 0, 0, 0.85);
 
@@ -1245,6 +1273,11 @@
     --app-top-bar-control-fg-disabled
   );
   --color-message-user-bg: var(--message-user-bg);
+  --color-message-user-surface: var(--message-user-surface);
+  --color-message-user-fg: var(--message-user-fg);
+  --color-message-user-fg-muted: var(--message-user-fg-muted);
+  --color-message-user-border: var(--message-user-border);
+  --color-message-edit-surface: var(--message-edit-surface);
 
   /* Composer chip tones */
   --color-chip-file-bg: var(--chip-file-bg);

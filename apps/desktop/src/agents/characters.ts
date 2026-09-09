@@ -44,11 +44,42 @@ const CHARACTER_BY_SEED: Record<string, string> = {
   "builtin:committer": gloopies16,
 };
 
-export const CHARACTERS: readonly string[] = [
-  fuzzies1, fuzzies4, fuzzies7, fuzzies10, fuzzies13, fuzzies16,
-  gloopies1, gloopies4, gloopies7, gloopies10, gloopies13, gloopies16,
-  pollies1, pollies5, pollies9, pollies13, pollies17, pollies21,
-];
+/**
+ * Every character by a stable key.
+ *
+ * Agents that pick one store the KEY, never the imported URL: the URL carries
+ * a content hash that changes on the next build, which would leave every
+ * chosen avatar pointing at a 404 after an update.
+ */
+const BY_KEY: Record<string, string> = {
+  "fuzzies-1": fuzzies1,
+  "fuzzies-4": fuzzies4,
+  "fuzzies-7": fuzzies7,
+  "fuzzies-10": fuzzies10,
+  "fuzzies-13": fuzzies13,
+  "fuzzies-16": fuzzies16,
+  "gloopies-1": gloopies1,
+  "gloopies-4": gloopies4,
+  "gloopies-7": gloopies7,
+  "gloopies-10": gloopies10,
+  "gloopies-13": gloopies13,
+  "gloopies-16": gloopies16,
+  "pollies-1": pollies1,
+  "pollies-5": pollies5,
+  "pollies-9": pollies9,
+  "pollies-13": pollies13,
+  "pollies-17": pollies17,
+  "pollies-21": pollies21,
+};
+
+export const CHARACTER_KEYS: readonly string[] = Object.keys(BY_KEY);
+
+export const CHARACTERS: readonly string[] = Object.values(BY_KEY);
+
+/** The art for a chosen character key, or undefined if the key is unknown. */
+export function characterByKey(key: string | undefined): string | undefined {
+  return key ? BY_KEY[key] : undefined;
+}
 
 /** An assigned character when the seed has one, else DJB2 over the seed. */
 export function resolveCharacter(seed: string): string {

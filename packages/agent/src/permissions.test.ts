@@ -4,6 +4,7 @@ import {
   confineToTaskDir,
   extractCommand,
   inspectCommandBoundaries,
+  toAcpResponse,
 } from "./permissions.ts";
 import { getEngine, resolveEngineArgs } from "./engines.ts";
 import { buildMacOsSandboxProfile } from "./spawn.ts";
@@ -114,4 +115,72 @@ test("buildMacOsSandboxProfile constructs valid SBPL with cwd and denials", () =
   assert.match(profile, new RegExp(FAKE_TASK.cwd));
   assert.match(profile, /\.ssh/);
   assert.match(profile, /\.aws/);
+});
+
+/** The four options Antigravity offers on a shell command. */
+function agyRequest(command: string): RequestPermissionRequest {
+  return {
+    sessionId: "s1",
+    options: [
+      { optionId: "agy-allow-once", name: "Yes", kind: "allow_once" },
+      {
+        optionId: "agy-allow-conversation",
+        name: "Yes, and always allow in this conversation",
+        kind: "allow_always",
+      },
+      {
+        optionId: "agy-allow-settings",
+        name: "Yes, and always allow (Persist to settings.json)",
+        kind: "allow_always",
+      },
+      { optionId: "agy-reject-once", name: "No", kind: "reject_once" },
+    ],
+    toolCall: {
+      toolCallId: "call_1",
+      kind: "execute",
+      title: "Check node and npm version",
+      rawInput: { CommandLine: command, Cwd: FAKE_TASK.cwd },
+    },
+  };
+}
+
+test("extractCommand reads Antigravity's CommandLine key", () => {
+  assert.equal(extractCommand({ CommandLine: "node -v" }), "node -v");
+  assert.equal(extractCommand({ command: "npm test" }), "npm test");
+  assert.equal(extractCommand({ Cwd: "/tmp" }), null);
+});
+
+test("allowing picks allow_once, never a persisted always rule", async () => {
+  const decision = await confineToTaskDir(FAKE_TASK, agyRequest("node -v && npm -v"));
+  assert.equal(decision.decision, "allow");
+  if (decision.decision === "allow") {
+    assert.equal(decision.optionId, "agy-allow-once");
+  }
+});
+
+test("rejecting selects the engine's reject option rather than cancelling", async () => {
+  const decision = await confineToTaskDir(FAKE_TASK, agyRequest("cat ~/.ssh/id_rsa"));
+  assert.equal(decision.decision, "reject");
+  assert.deepEqual(toAcpResponse(decision), {
+    outcome: { outcome: "selected", optionId: "agy-reject-once" },
+  });
+});
+
+test("the plan-mode hold still answers cancelled", async () => {
+  const request: RequestPermissionRequest = {
+    sessionId: "s1",
+    options: [
+      { optionId: "opt-1", name: "Yes", kind: "allow_once" },
+      { optionId: "opt-2", name: "No", kind: "reject_once" },
+    ],
+    toolCall: {
+      toolCallId: "tc-exitplanmode-1",
+      kind: "other",
+      title: "Exit plan mode",
+      rawInput: { plan: "1. do the thing" },
+    },
+  };
+
+  const decision = await confineToTaskDir(FAKE_TASK, request);
+  assert.deepEqual(toAcpResponse(decision), { outcome: { outcome: "cancelled" } });
 });

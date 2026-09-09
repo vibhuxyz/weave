@@ -232,8 +232,10 @@ export function ContextPanel({
                   >
                     <AgentAvatar
                       name={agent.name}
+                      seed={agent.id}
                       tint={agent.tint}
                       icon={agent.icon}
+                      character={agent.character}
                       size="sm"
                       className="size-6 shrink-0"
                     />
@@ -261,8 +263,10 @@ export function ContextPanel({
                     >
                       <AgentAvatar
                         name={agent.name}
+                        seed={agent.id}
                         tint={agent.tint}
                         icon={agent.icon}
+                        character={agent.character}
                         size="sm"
                         className="size-6 shrink-0"
                       />

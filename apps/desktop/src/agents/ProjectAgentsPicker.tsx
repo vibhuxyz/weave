@@ -49,8 +49,10 @@ export function ProjectAgentsPicker({
           >
             <AgentAvatar
               name={agent.name}
+              seed={agent.id}
               tint={agent.tint}
               icon={agent.icon}
+              character={agent.character}
               size="sm"
               className="shrink-0"
             />

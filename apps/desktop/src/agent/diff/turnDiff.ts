@@ -22,6 +22,8 @@ export interface DiffLine {
 
 export interface DiffHunk {
   lines: DiffLine[];
+  /** Unmodified lines skipped between the previous hunk and this one. */
+  skippedBefore?: number;
 }
 
 export type FileDiffStatus = "added" | "modified" | "deleted";
@@ -91,8 +93,19 @@ function lcsPairs(a: string[], b: string[]): Array<[number, number]> {
   return pairs;
 }
 
-/** Line-by-line diff of two file versions, as a flat list of tagged lines. */
-function diffLines(oldLines: string[], newLines: string[]): { lines: DiffLine[]; truncated: boolean } {
+/**
+ * Line-by-line diff of two file versions, as a flat list of tagged lines.
+ *
+ * `offset` is how many lines precede this text in the real file: zero for a
+ * whole-file snapshot, `StartLine - 1` for an engine that reports only the
+ * region it rewrote. It is added to every line number so the gutter matches
+ * the editor rather than counting from 1 inside the fragment.
+ */
+function diffLines(
+  oldLines: string[],
+  newLines: string[],
+  offset = 0,
+): { lines: DiffLine[]; truncated: boolean } {
   const lines: DiffLine[] = [];
 
   // Shared prefix / suffix — cheap and it's most of a typical edit.
@@ -112,7 +125,12 @@ function diffLines(oldLines: string[], newLines: string[]): { lines: DiffLine[];
   }
 
   for (let i = 0; i < start; i++) {
-    lines.push({ kind: "context", oldLine: i + 1, newLine: i + 1, text: oldLines[i] });
+    lines.push({
+      kind: "context",
+      oldLine: offset + i + 1,
+      newLine: offset + i + 1,
+      text: oldLines[i],
+    });
   }
 
   const midOld = oldLines.slice(start, endOld);
@@ -121,19 +139,23 @@ function diffLines(oldLines: string[], newLines: string[]): { lines: DiffLine[];
 
   if (truncated) {
     // Too big to align — report the changed region as a wholesale replacement.
-    midOld.forEach((text, i) => lines.push({ kind: "del", oldLine: start + i + 1, text }));
-    midNew.forEach((text, i) => lines.push({ kind: "add", newLine: start + i + 1, text }));
+    midOld.forEach((text, i) =>
+      lines.push({ kind: "del", oldLine: offset + start + i + 1, text }),
+    );
+    midNew.forEach((text, i) =>
+      lines.push({ kind: "add", newLine: offset + start + i + 1, text }),
+    );
   } else {
     const pairs = lcsPairs(midOld, midNew);
     let oi = 0;
     let ni = 0;
     const emitUpTo = (untilOld: number, untilNew: number) => {
       while (oi < untilOld) {
-        lines.push({ kind: "del", oldLine: start + oi + 1, text: midOld[oi] });
+        lines.push({ kind: "del", oldLine: offset + start + oi + 1, text: midOld[oi] });
         oi++;
       }
       while (ni < untilNew) {
-        lines.push({ kind: "add", newLine: start + ni + 1, text: midNew[ni] });
+        lines.push({ kind: "add", newLine: offset + start + ni + 1, text: midNew[ni] });
         ni++;
       }
     };
@@ -141,8 +163,8 @@ function diffLines(oldLines: string[], newLines: string[]): { lines: DiffLine[];
       emitUpTo(po, pn);
       lines.push({
         kind: "context",
-        oldLine: start + oi + 1,
-        newLine: start + ni + 1,
+        oldLine: offset + start + oi + 1,
+        newLine: offset + start + ni + 1,
         text: midOld[oi],
       });
       oi++;
@@ -154,8 +176,8 @@ function diffLines(oldLines: string[], newLines: string[]): { lines: DiffLine[];
   for (let k = 0; endOld + k < oldLines.length; k++) {
     lines.push({
       kind: "context",
-      oldLine: endOld + k + 1,
-      newLine: endNew + k + 1,
+      oldLine: offset + endOld + k + 1,
+      newLine: offset + endNew + k + 1,
       text: oldLines[endOld + k],
     });
   }
@@ -182,30 +204,62 @@ function toHunks(lines: DiffLine[]): DiffHunk[] {
 
   const hunks: DiffHunk[] = [];
   let current: DiffLine[] = [];
+  // Counted, not just elided: "1143 unmodified lines" tells the reader where
+  // in the file they are, which a bare separator does not.
+  let dropped = 0;
   lines.forEach((line, i) => {
     if (keep[i]) {
+      if (current.length === 0) {
+        hunks.push({ lines: current, skippedBefore: dropped || undefined });
+        dropped = 0;
+      }
       current.push(line);
       return;
     }
-    if (current.length > 0) {
-      hunks.push({ lines: current });
-      current = [];
-    }
+    dropped++;
+    if (current.length > 0) current = [];
   });
-  if (current.length > 0) hunks.push({ lines: current });
-  return hunks;
+  return hunks.filter((hunk) => hunk.lines.length > 0);
 }
 
-function foldToolDiffs(tools: ToolEntry[]): Map<string, { first: ToolDiff; last: ToolDiff }> {
-  const byPath = new Map<string, { first: ToolDiff; last: ToolDiff }>();
+/**
+ * One edited region of a file: the first and last snapshot an engine reported
+ * for it during the turn.
+ *
+ * Whole-file snapshots all share a segment (offset 0) and fold first→last, so
+ * a file rewritten five times still reads as one net change. Region edits —
+ * Antigravity reports the replaced span, not the file — get one segment per
+ * `startLine`, because folding two unrelated spans of the same file would diff
+ * one region's "before" against another's "after".
+ */
+interface DiffSegment {
+  offset: number;
+  first: ToolDiff;
+  last: ToolDiff;
+}
+
+function groupToolDiffs(tools: ToolEntry[]): Map<string, DiffSegment[]> {
+  const byPath = new Map<string, Map<number, DiffSegment>>();
   for (const tool of tools) {
     for (const diff of tool.diffs ?? []) {
-      const seen = byPath.get(diff.path);
+      const offset = diff.startLine && diff.startLine > 0 ? diff.startLine - 1 : 0;
+      let segments = byPath.get(diff.path);
+      if (!segments) {
+        segments = new Map();
+        byPath.set(diff.path, segments);
+      }
+      const seen = segments.get(offset);
       if (seen) seen.last = diff;
-      else byPath.set(diff.path, { first: diff, last: diff });
+      else segments.set(offset, { offset, first: diff, last: diff });
     }
   }
-  return byPath;
+
+  return new Map(
+    [...byPath].map(([path, segments]) => [
+      path,
+      [...segments.values()].sort((a, b) => a.offset - b.offset),
+    ]),
+  );
 }
 
 /** Build the diff model for one assistant turn. Empty when it changed nothing. */
@@ -214,25 +268,32 @@ export function turnDiff(turn: ChatTurn): TurnDiff {
   let additions = 0;
   let deletions = 0;
 
-  for (const [path, { first, last }] of foldToolDiffs(turn.tools)) {
-    const oldLines = splitLines(first.oldText ?? "");
-    const newLines = splitLines(last.newText);
-    const { lines, truncated } = diffLines(oldLines, newLines);
-    const hunks = toHunks(lines);
-    if (hunks.length === 0) continue;
+  for (const [path, segments] of groupToolDiffs(turn.tools)) {
+    const hunks: DiffHunk[] = [];
+    let fileAdds = 0;
+    let fileDels = 0;
+    let truncated = false;
+    let created = true;
+    let emptied = true;
 
-    const fileAdds = lines.filter((l) => l.kind === "add").length;
-    const fileDels = lines.filter((l) => l.kind === "del").length;
+    for (const segment of segments) {
+      const oldLines = splitLines(segment.first.oldText ?? "");
+      const newLines = splitLines(segment.last.newText);
+      const diffed = diffLines(oldLines, newLines, segment.offset);
+      truncated ||= diffed.truncated;
+      if (segment.first.oldText !== null && oldLines.length > 0) created = false;
+      if (newLines.length > 0) emptied = false;
+      fileAdds += diffed.lines.filter((l) => l.kind === "add").length;
+      fileDels += diffed.lines.filter((l) => l.kind === "del").length;
+      hunks.push(...toHunks(diffed.lines));
+    }
+
+    if (hunks.length === 0) continue;
     additions += fileAdds;
     deletions += fileDels;
     files.push({
       path,
-      status:
-        first.oldText === null || oldLines.length === 0
-          ? "added"
-          : newLines.length === 0
-            ? "deleted"
-            : "modified",
+      status: created ? "added" : emptied ? "deleted" : "modified",
       additions: fileAdds,
       deletions: fileDels,
       hunks,

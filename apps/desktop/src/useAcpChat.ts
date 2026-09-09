@@ -25,6 +25,11 @@ export interface ToolDiff {
   /** `null` when the file was created by this edit. */
   oldText: string | null;
   newText: string;
+  /**
+   * 1-based line in the file where `oldText` starts, for engines that report a
+   * region rather than the whole file. Absent means the texts are whole files.
+   */
+  startLine?: number;
 }
 
 export interface ToolEntry {
@@ -77,11 +82,57 @@ function toolDiffs(content: unknown): ToolDiff[] | undefined {
   return diffs.length > 0 ? diffs : undefined;
 }
 
+/**
+ * Reconstruct a diff from an edit tool's arguments.
+ *
+ * Antigravity never sends `{ type: "diff" }` content — its edit calls put the
+ * whole change in `rawInput` instead (`TargetFile` plus either
+ * `TargetContent`/`ReplacementContent` for a region or `CodeContent` for a
+ * whole-file write). Without this the diff panel had nothing to fold and every
+ * agy refactor showed up as "no file changes".
+ */
+function rawInputDiffs(rawInput: unknown): ToolDiff[] | undefined {
+  if (typeof rawInput !== "object" || rawInput === null) return undefined;
+  const raw = rawInput as Record<string, unknown>;
+  const str = (key: string): string | undefined =>
+    typeof raw[key] === "string" ? (raw[key] as string) : undefined;
+
+  const path = str("TargetFile") ?? str("target_file") ?? str("file_path") ?? str("path");
+  if (!path) return undefined;
+
+  const replacement = str("ReplacementContent");
+  if (replacement !== undefined) {
+    const startLine = typeof raw.StartLine === "number" ? raw.StartLine : undefined;
+    return [
+      {
+        path,
+        oldText: str("TargetContent") ?? "",
+        newText: replacement,
+        // `StartLine` is what keeps the gutter honest: without it a region
+        // edit at line 1147 would be numbered from 1.
+        startLine: startLine && startLine > 0 ? startLine : undefined,
+      },
+    ];
+  }
+
+  const written = str("CodeContent");
+  // A whole-file write reports no previous text, so it reads as a creation —
+  // which is what it is for a new file, and the best available account of an
+  // overwrite, since the engine never tells us what it replaced.
+  if (written !== undefined) return [{ path, oldText: null, newText: written }];
+
+  return undefined;
+}
+
 /** An image attached to a prompt, with the per-image fix/build instructions. */
 export interface ChatImageAttachment {
   previewUrl: string;
   mimeType: string;
   prompt: string;
+  /** Where the engine saved it. Set on replay, where there is no blob URL. */
+  path?: string;
+  /** The file is gone or unreadable — show the missing state, not a spinner. */
+  unavailable?: boolean;
 }
 
 export interface PlanItem {
@@ -114,12 +165,27 @@ export interface TurnUsage {
   cachedWriteTokens?: number;
 }
 
+/** An agent whose instructions were in force for a turn. */
+export interface TurnPersona {
+  id: string;
+  name: string;
+  /** Custom avatar data-URI; absent means the character art keyed off `id`. */
+  icon?: string;
+  /** A bundled character the user picked for this agent. */
+  character?: string;
+}
+
 export interface ChatTurn {
   id: string;
   role: "user" | "assistant";
   text: string;
   /** Names of agents @-mentioned on this prompt, for the pills on the bubble. */
   mentions?: string[];
+  /**
+   * Agents active for this turn — standing plus @-mentioned. Carried on both
+   * halves of the exchange so the run card can say who answered.
+   */
+  personas?: TurnPersona[];
   images?: ChatImageAttachment[];
   /** The agent's reasoning stream (`agent_thought_chunk`), shown collapsed. */
   thought: string;
@@ -129,6 +195,60 @@ export interface ChatTurn {
   usage?: TurnUsage;
   sourceEventIds?: string[];
   sourceSeq?: number;
+}
+
+/** A path an engine wrote into the prompt for an attachment it saved. */
+const ATTACHMENT_REF = /^@(\/\S+\.(?:png|jpe?g|gif|webp|bmp|svg))$/i;
+/** The label `submit()` puts before each image, with that image's note. */
+const ATTACHMENT_LABEL = /^Image\s+\d+:\s*(.*)$/;
+
+/**
+ * Pull a replayed prompt's attachments back out of its text.
+ *
+ * Engines echo a resumed prompt as plain text, so the composer's "Image 1:"
+ * label and the engine's own `@/…/attachments/<uuid>.png` path arrive as part
+ * of what the user "said" — which is how a screenshot ended up rendered as a
+ * line of file path. The note stays with its image; a label with no path
+ * following it was never an attachment and is left in the text.
+ */
+export function splitAttachments(text: string): {
+  text: string;
+  images: ChatImageAttachment[];
+} {
+  const kept: string[] = [];
+  const images: ChatImageAttachment[] = [];
+  let label: { line: string; note: string } | null = null;
+
+  const flushLabel = () => {
+    if (label) kept.push(label.line);
+    label = null;
+  };
+
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    const ref = trimmed.match(ATTACHMENT_REF);
+    if (ref) {
+      images.push({
+        previewUrl: "",
+        mimeType: "",
+        prompt: label?.note ?? "",
+        path: ref[1],
+      });
+      label = null;
+      continue;
+    }
+    const labelled = trimmed.match(ATTACHMENT_LABEL);
+    if (labelled) {
+      flushLabel();
+      label = { line, note: labelled[1].trim() };
+      continue;
+    }
+    flushLabel();
+    kept.push(line);
+  }
+  flushLabel();
+
+  return { text: kept.join("\n").trim(), images };
 }
 
 /**
@@ -211,6 +331,10 @@ export function useAcpChat(port: number | null) {
   const fileQueryRef = useRef<string>("");
 
   /** Append to the current assistant turn, starting one if needed. */
+  // The personas of the prompt in flight. The assistant turn is created later,
+  // by the first update off the socket, and has no other way to know them.
+  const personasRef = useRef<TurnPersona[] | undefined>(undefined);
+
   const withAssistantTurn = useCallback(
     (mutate: (turn: ChatTurn) => ChatTurn) => {
       setTurns((current) => {
@@ -224,6 +348,7 @@ export function useAcpChat(port: number | null) {
           text: "",
           thought: "",
           tools: [],
+          personas: personasRef.current,
         };
         return [...current, mutate(fresh)];
       });
@@ -231,13 +356,61 @@ export function useAcpChat(port: number | null) {
     [],
   );
 
+  /**
+   * Attachments already fetched: data URI, or null when the file is gone.
+   *
+   * A cache rather than an "already asked" set. Replay rebuilds the same turns more
+   * than once (a chunked prompt, a reset-then-replay when switching chats),
+   * and a set would suppress the refetch while the rebuilt turn had no image
+   * left — which is exactly how a loaded thumbnail turned back into a
+   * permanent placeholder.
+   */
+  const attachments = useRef(new Map<string, string | null>());
+  const attachmentsInFlight = useRef(new Set<string>());
+
+  /** Ask the server for one attachment's bytes; the reply patches the turn. */
+  const requestAttachment = useCallback((path: string) => {
+    if (attachments.current.has(path) || attachmentsInFlight.current.has(path)) {
+      return;
+    }
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    attachmentsInFlight.current.add(path);
+    socket.send(JSON.stringify({ type: "read-attachment", path }));
+  }, []);
+
   /** Append a user turn (used when replaying a resumed conversation). */
   const appendUserChunk = useCallback((text: string) => {
     setTurns((current) => {
       const last = current.at(-1);
-      const merged =
-        last?.role === "user" ? last.text + text : text;
-      const turn = { text: stripSystemPreamble(merged) };
+      const merged = last?.role === "user" ? last.text + text : text;
+      const split = splitAttachments(stripSystemPreamble(merged));
+      // Anything already fetched is filled in here, so a turn rebuilt from a
+      // later chunk keeps its thumbnails instead of flashing back to a box.
+      const images = split.images.map((image) => {
+        const cached = image.path ? attachments.current.get(image.path) : undefined;
+        return cached === undefined
+          ? image
+          : cached === null
+            ? { ...image, unavailable: true }
+            : { ...image, previewUrl: cached };
+      });
+      const turn = {
+        text: split.text,
+        // `last.text` is already stripped, so re-parsing a continued prompt
+        // finds no refs — keep the ones the first chunk carried.
+        images:
+          images.length > 0
+            ? images
+            : last?.role === "user"
+              ? last.images
+              : undefined,
+      };
+      // The bytes are on disk, not in the replay; ask for each one so the
+      // thumbnail comes back instead of a path.
+      for (const image of images) {
+        if (image.path) requestAttachment(image.path);
+      }
       if (last?.role === "user") {
         return [...current.slice(0, -1), { ...last, ...turn }];
       }
@@ -246,7 +419,7 @@ export function useAcpChat(port: number | null) {
         { id: crypto.randomUUID(), role: "user", thought: "", tools: [], ...turn },
       ];
     });
-  }, []);
+  }, [requestAttachment]);
 
   const applyUpdate = useCallback(
     (
@@ -310,7 +483,7 @@ export function useAcpChat(port: number | null) {
                 status: startStatus,
                 kind: update.kind ?? "other",
                 output: toolText(update.content),
-                diffs: toolDiffs(update.content),
+                diffs: toolDiffs(update.content) ?? rawInputDiffs(update.rawInput),
                 rawInput: update.rawInput,
                 startedAt: now,
                 endedAt: TERMINAL_STATUS.has(startStatus) ? now : undefined,
@@ -343,7 +516,10 @@ export function useAcpChat(port: number | null) {
                 // Updates carry the full content each time; keep the last
                 // non-empty snapshot so a status-only update never wipes it.
                 output: toolText(update.content) ?? tool.output,
-                diffs: toolDiffs(update.content) ?? tool.diffs,
+                diffs:
+                  toolDiffs(update.content) ??
+                  rawInputDiffs(update.rawInput) ??
+                  tool.diffs,
                 startedAt: tool.startedAt ?? (replay ? undefined : Date.now()),
                 endedAt: nowEnded ? Date.now() : tool.endedAt,
                 sourceEventIds: sourceEventIds ?? tool.sourceEventIds,
@@ -523,6 +699,35 @@ export function useAcpChat(port: number | null) {
           case "engines":
             setEngines(message.engines);
             return;
+          case "attachment": {
+            const { path, dataUri } = message;
+            attachments.current.set(path, dataUri);
+            attachmentsInFlight.current.delete(path);
+            setTurns((current) =>
+              current.map((turn) =>
+                turn.images?.some((image) => image.path === path)
+                  ? {
+                      ...turn,
+                      images: turn.images.map((image) =>
+                        image.path === path
+                          ? dataUri
+                            ? {
+                                ...image,
+                                previewUrl: dataUri,
+                                unavailable: false,
+                                mimeType:
+                                  dataUri.slice(5, dataUri.indexOf(";")) ||
+                                  image.mimeType,
+                              }
+                            : { ...image, unavailable: true }
+                          : image,
+                      ),
+                    }
+                  : turn,
+              ),
+            );
+            return;
+          }
           case "files":
             if (message.query === fileQueryRef.current) {
               setFileMatches(message.files);
@@ -654,6 +859,7 @@ export function useAcpChat(port: number | null) {
       opts?: {
         persona?: string;
         mentions?: string[];
+        personas?: TurnPersona[];
         images?: ChatImageAttachmentDraft[];
       },
     ) => {
@@ -664,6 +870,7 @@ export function useAcpChat(port: number | null) {
 
       setError(null);
       setBusy(true);
+      personasRef.current = opts?.personas?.length ? opts.personas : undefined;
       setTurns((current) => [
         ...current,
         {
@@ -671,6 +878,7 @@ export function useAcpChat(port: number | null) {
           role: "user",
           text: stripSystemPreamble(trimmed),
           mentions: opts?.mentions?.length ? opts.mentions : undefined,
+          personas: personasRef.current,
           images: images?.map((image) => ({
             previewUrl: image.previewUrl,
             mimeType: image.mimeType,

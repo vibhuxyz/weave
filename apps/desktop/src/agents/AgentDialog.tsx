@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { BoxIcon, UploadIcon } from "lucide-react";
+import { BoxIcon, CheckIcon, UploadIcon } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/shared/ui/sheet";
 import { Button } from "@/shared/ui/button";
 import {
@@ -19,6 +19,7 @@ import {
   type ProjectTone,
 } from "../CreateProjectDialog";
 import { AgentAvatar } from "./AgentAvatar";
+import { CHARACTER_KEYS, characterByKey, resolveCharacter } from "./characters";
 import type { Agent, AgentDraft } from "../useAgents";
 
 export function AgentDialog({
@@ -43,6 +44,7 @@ export function AgentDialog({
   const [model, setModel] = useState("");
   const [tone, setTone] = useState<ProjectTone>("blue");
   const [icon, setIcon] = useState<string | undefined>();
+  const [character, setCharacter] = useState<string | undefined>();
   const fileRef = useRef<HTMLInputElement>(null);
   const tint = toneColor(tone)!;
 
@@ -55,6 +57,7 @@ export function AgentDialog({
     setModel(editing?.model ?? "");
     setTone(editing?.tint ?? "blue");
     setIcon(editing?.icon);
+    setCharacter(editing?.character);
   }, [isOpen, editing]);
 
   const pickIcon = (file: File) => {
@@ -86,6 +89,7 @@ export function AgentDialog({
         model: model.trim() || undefined,
         tint: tone,
         icon,
+        character,
       },
       editing?.id ?? null,
     );
@@ -113,8 +117,56 @@ export function AgentDialog({
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-7 pb-5">
           <div className="relative flex h-[240px] flex-col items-center justify-center gap-6">
-            <AgentAvatar name={name || "Agent"} tint={tone} icon={icon} size="xl" />
+            <AgentAvatar
+              name={name || "Agent"}
+              seed={editing?.id}
+              tint={tone}
+              icon={icon}
+              character={character}
+              size="xl"
+            />
             <SwatchPill tone={tone} onChange={setTone} />
+          </div>
+
+          <div className="space-y-2">
+            <p className={LABEL}>Avatar</p>
+            {/* The character is what the agent is recognised by everywhere
+                else in the app, so it is picked here rather than left to the
+                hash of an id the user never sees. */}
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {CHARACTER_KEYS.map((key) => {
+                const selected = character === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    title={key}
+                    onClick={() => setCharacter(selected ? undefined : key)}
+                    className={cn(
+                      "relative flex size-14 shrink-0 items-center justify-center rounded-xl border bg-black/20 transition-colors",
+                      selected
+                        ? "border-white/40 bg-white/10"
+                        : "border-white/10 hover:border-white/25",
+                    )}
+                  >
+                    <img
+                      src={characterByKey(key)}
+                      alt=""
+                      draggable={false}
+                      className="size-11 object-contain"
+                    />
+                    {selected && (
+                      <CheckIcon className="absolute top-1 right-1 size-3 text-foreground" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {icon && (
+              <p className="text-muted-foreground text-xs">
+                An uploaded icon is in use — clear it to show the character.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -123,6 +175,15 @@ export function AgentDialog({
               <div className="flex size-10 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black/30">
                 {icon ? (
                   <img src={icon} alt="" className="size-full object-cover" />
+                ) : name || character || editing ? (
+                  <img
+                    src={
+                      characterByKey(character) ??
+                      resolveCharacter(editing?.id ?? name)
+                    }
+                    alt=""
+                    className="size-8 object-contain"
+                  />
                 ) : (
                   <BoxIcon className="size-4 text-muted-foreground" />
                 )}

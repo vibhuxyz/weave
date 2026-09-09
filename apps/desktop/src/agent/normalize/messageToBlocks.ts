@@ -1,5 +1,5 @@
 import type { GitStatus } from "../../../server/index.ts";
-import type { ToolEntry, TurnPlan, TurnUsage } from "../../useAcpChat";
+import type { ToolEntry, TurnPersona, TurnPlan, TurnUsage } from "../../useAcpChat";
 import { explanationFromKnownText } from "./explanation";
 import { findingsFromKnownText, makeFinding } from "./finding";
 import { projectOverviewFromText } from "./projectOverview";
@@ -156,6 +156,7 @@ export function messageToBlocks(options: {
   configValues: Record<string, string>;
   engineId: string;
   engineLabel: string;
+  personas?: TurnPersona[];
   plan?: TurnPlan;
   usage?: TurnUsage;
   sourceEventIds?: string[];
@@ -338,6 +339,7 @@ export function messageToBlocks(options: {
     configValues: options.configValues,
     engineId: options.engineId,
     engineLabel: options.engineLabel,
+    personas: options.personas,
   });
 
   // Pure post-pass — reads the assembled blocks, sets meta, never reorders.

@@ -10,7 +10,13 @@ import { firstMatch } from "./globs.ts";
 
 export type PermissionDecision =
   | { decision: "allow"; optionId: string; reason: string }
-  | { decision: "reject"; reason: string };
+  // `optionId` is the engine's own reject option. Answering a permission
+  // request by *selecting* it ends the request; answering with `cancelled`
+  // tells the engine the whole turn went away, and some engines (Antigravity)
+  // then sit waiting for a cancel that never comes — the UI spins until the
+  // user hits Stop. Left undefined only where stalling the turn is the point
+  // (plan mode), or where the engine offered no reject option at all.
+  | { decision: "reject"; reason: string; optionId?: string };
 
 /**
  * Decides whether the agent may perform a tool call.
@@ -31,10 +37,28 @@ function findAllowOption(
   // Never index into options[0]: the order is the agent's choice, and the
   // kinds are allow_once | allow_always | reject_once | reject_always. Match a
   // reject and the agent asks forever while writing nothing.
+  //
+  // `allow_once` first, deliberately. An `allow_always` option is a rule the
+  // engine writes down — Antigravity offers "always allow ... (Persist to
+  // settings.json)", which edits the user's config on our say-so, and its
+  // in-conversation variant records a prefix rule that its own checker then
+  // fails to match, so the command comes back "user denied permission" even
+  // though we allowed it. Per-call approval is both the narrower grant and
+  // the one every engine actually honours.
   const option =
-    request.options.find((entry) => entry.kind === "allow_always") ??
-    request.options.find((entry) => entry.kind === "allow_once");
+    request.options.find((entry) => entry.kind === "allow_once") ??
+    request.options.find((entry) => entry.kind === "allow_always");
   return option ? { optionId: option.optionId, kind: option.kind } : null;
+}
+
+/** Pick the option the agent labelled as a plain refusal, if it offered one. */
+function findRejectOption(request: RequestPermissionRequest): string | null {
+  // `reject_once` before `reject_always`: refusing this call is what a policy
+  // decision means, and a persisted "never" is not ours to write.
+  const option =
+    request.options.find((entry) => entry.kind === "reject_once") ??
+    request.options.find((entry) => entry.kind === "reject_always");
+  return option ? option.optionId : null;
 }
 
 /**
@@ -132,7 +156,9 @@ export function extractCommand(rawInput: unknown): string | null {
   if (typeof rawInput === "string") return rawInput.trim();
   if (typeof rawInput === "object") {
     const rec = rawInput as Record<string, unknown>;
-    const cmd = rec.command ?? rec.cmd ?? rec.script;
+    // `CommandLine` is Antigravity's key. Without it every agy shell call
+    // arrived here as "no command" and skipped the boundary inspection.
+    const cmd = rec.command ?? rec.cmd ?? rec.script ?? rec.CommandLine;
     if (typeof cmd === "string") return cmd.trim();
   }
   return null;
@@ -222,10 +248,13 @@ export const confineToTaskDir: PermissionPolicy = (task, request) => {
     };
   }
 
+  const reject = findRejectOption(request) ?? undefined;
+
   const allow = findAllowOption(request);
   if (!allow) {
     return {
       decision: "reject",
+      optionId: reject,
       reason: "agent offered no allow option",
     };
   }
@@ -237,6 +266,7 @@ export const confineToTaskDir: PermissionPolicy = (task, request) => {
   if (outside) {
     return {
       decision: "reject",
+      optionId: reject,
       reason: `touches ${outside.path}, outside ${task.cwd}`,
     };
   }
@@ -252,6 +282,7 @@ export const confineToTaskDir: PermissionPolicy = (task, request) => {
       if (pattern) {
         return {
           decision: "reject",
+          optionId: reject,
           reason: `${rel} is read-only (matches "${pattern}")`,
         };
       }
@@ -265,6 +296,7 @@ export const confineToTaskDir: PermissionPolicy = (task, request) => {
     if (!safety.allowed) {
       return {
         decision: "reject",
+        optionId: reject,
         reason: `command rejected: ${safety.reason}`,
       };
     }
@@ -320,7 +352,14 @@ export const rejectAll: PermissionPolicy = () => ({
 export function toAcpResponse(
   decision: PermissionDecision,
 ): RequestPermissionResponse {
-  return decision.decision === "allow"
+  if (decision.decision === "allow") {
+    return { outcome: { outcome: "selected", optionId: decision.optionId } };
+  }
+  // Select the engine's reject option when it offered one: the tool call fails,
+  // the engine keeps the turn and can react to it. `cancelled` is the fallback
+  // for engines that offered nothing to select, and the deliberate answer for
+  // the plan-mode hold, where stopping the turn is what we want.
+  return decision.optionId
     ? { outcome: { outcome: "selected", optionId: decision.optionId } }
     : { outcome: { outcome: "cancelled" } };
 }

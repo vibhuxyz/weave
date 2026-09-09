@@ -13,8 +13,10 @@ export interface Agent {
   /** A `model`-category config value applied after the session connects. */
   model?: string;
   tint?: ProjectTone;
-  /** Custom avatar as a data URI; overrides the procedural blob. */
+  /** Custom avatar as a data URI; overrides the character art. */
   icon?: string;
+  /** A bundled character the user picked, by key (see `characters.ts`). */
+  character?: string;
   builtin?: boolean;
   createdAt: number;
   updatedAt: number;
@@ -127,11 +129,28 @@ export function useAgents() {
       Array.isArray(value) ? value.filter(isAgent) : defaults,
   );
 
+  // Built-ins the user deleted. They live in code, so the only way to keep one
+  // gone across reloads is to remember that it was.
+  const [removedBuiltins, setRemovedBuiltins] = usePersistedState<string[]>(
+    "berd:agents:removed",
+    [],
+    (value, defaults) =>
+      Array.isArray(value) ? value.filter((v) => typeof v === "string") : defaults,
+  );
+
   const agents = useMemo(() => {
+    // An edited built-in is stored like any other agent, under the same id;
+    // the stored copy then stands in for the one in code.
+    const overrides = new Map(
+      stored.filter((a) => a.builtin).map((a) => [a.id, a]),
+    );
+    const builtins = BUILTINS.filter((b) => !removedBuiltins.includes(b.id)).map(
+      (b) => overrides.get(b.id) ?? b,
+    );
     // Built-ins first, then user agents (newest first — stored unshift order).
     const custom = stored.filter((a) => !a.builtin);
-    return [...BUILTINS, ...custom];
-  }, [stored]);
+    return [...builtins, ...custom];
+  }, [stored, removedBuiltins]);
 
   const create = useCallback(
     (draft: AgentDraft): Agent => {
@@ -142,7 +161,7 @@ export function useAgents() {
         createdAt: now(),
         updatedAt: now(),
       };
-      setStored((cur) => [agent, ...cur.filter((a) => !a.builtin)]);
+      setStored((cur) => [agent, ...cur]);
       return agent;
     },
     [setStored],
@@ -150,18 +169,50 @@ export function useAgents() {
 
   const update = useCallback(
     (id: string, patch: Partial<AgentDraft>) => {
-      setStored((cur) =>
-        cur.map((a) =>
-          a.id === id ? { ...a, ...patch, updatedAt: now() } : a,
-        ),
-      );
+      setStored((cur) => {
+        if (cur.some((a) => a.id === id)) {
+          return cur.map((a) =>
+            a.id === id ? { ...a, ...patch, updatedAt: now() } : a,
+          );
+        }
+        // First edit of a built-in: store a full copy to override the one in
+        // code, keeping `builtin` so it still sorts and resets as a built-in.
+        const builtin = BUILTINS.find((b) => b.id === id);
+        if (!builtin) return cur;
+        return [...cur, { ...builtin, ...patch, updatedAt: now() }];
+      });
     },
     [setStored],
   );
 
   const remove = useCallback(
-    (id: string) => setStored((cur) => cur.filter((a) => a.id !== id)),
-    [setStored],
+    (id: string) => {
+      setStored((cur) => cur.filter((a) => a.id !== id));
+      if (BUILTINS.some((b) => b.id === id)) {
+        setRemovedBuiltins((cur) => (cur.includes(id) ? cur : [...cur, id]));
+      }
+    },
+    [setStored, setRemovedBuiltins],
+  );
+
+  /**
+   * Put a built-in back the way it ships — undoes both an edit and a delete.
+   * Without it a built-in overwritten by mistake is gone for good.
+   */
+  const resetBuiltin = useCallback(
+    (id: string) => {
+      setStored((cur) => cur.filter((a) => !(a.id === id && a.builtin)));
+      setRemovedBuiltins((cur) => cur.filter((v) => v !== id));
+    },
+    [setStored, setRemovedBuiltins],
+  );
+
+  /** True when this built-in has been edited or deleted by the user. */
+  const isBuiltinModified = useCallback(
+    (id: string) =>
+      removedBuiltins.includes(id) ||
+      stored.some((a) => a.id === id && a.builtin),
+    [removedBuiltins, stored],
   );
 
   const duplicate = useCallback(
@@ -176,12 +227,40 @@ export function useAgents() {
         model: src.model,
         tint: src.tint,
         icon: src.icon,
+        character: src.character,
       });
     },
     [agents, create],
   );
 
-  return { agents, create, update, remove, duplicate };
+  return {
+    agents,
+    create,
+    update,
+    remove,
+    duplicate,
+    resetBuiltin,
+    isBuiltinModified,
+  };
+}
+
+/**
+ * The agents whose instructions ride this prompt: every project agent set to
+ * `always`, plus any passed explicitly (manually toggled on, or @-mentioned).
+ *
+ * Shared by the system prompt and the run card's header, so the badge on a
+ * turn can never claim a persona the engine was not actually given.
+ */
+export function activeAgents(
+  projectAgents: ProjectAgent[] | undefined,
+  allAgents: Agent[],
+  extraIds: string[] = [],
+): Agent[] {
+  const wanted = new Set<string>(extraIds);
+  for (const pa of projectAgents ?? []) {
+    if (pa.mode === "always") wanted.add(pa.id);
+  }
+  return allAgents.filter((a) => wanted.has(a.id));
 }
 
 /**
@@ -196,12 +275,8 @@ export function formatPersonaSystemPrompt(
   allAgents: Agent[],
   extraIds: string[] = [],
 ): string | undefined {
-  const wanted = new Set<string>(extraIds);
-  for (const pa of projectAgents ?? []) {
-    if (pa.mode === "always") wanted.add(pa.id);
-  }
-  const active = allAgents.filter(
-    (a) => wanted.has(a.id) && a.instructions.trim(),
+  const active = activeAgents(projectAgents, allAgents, extraIds).filter((a) =>
+    a.instructions.trim(),
   );
   if (active.length === 0) return undefined;
 

@@ -1,5 +1,5 @@
 import type { GitStatus } from "../../../server/index.ts";
-import type { ToolEntry } from "../../useAcpChat";
+import type { ToolEntry, TurnPersona } from "../../useAcpChat";
 import type { AgentRunMeta } from "./types";
 
 /** Kinds that actually mutate a file — reads are counted separately. */
@@ -12,6 +12,7 @@ export function runMetaFromTurn(options: {
   configValues: Record<string, string>;
   engineId: string;
   engineLabel: string;
+  personas?: TurnPersona[];
 }): AgentRunMeta {
   const filesRead = options.tools.filter((tool) => tool.kind === "read").length;
   const mutatedToolFiles = options.tools.filter((tool) =>
@@ -28,6 +29,7 @@ export function runMetaFromTurn(options: {
     engine: options.engineId,
     engineLabel: options.engineLabel,
     model,
+    personas: options.personas?.length ? options.personas : undefined,
     filesRead,
     filesChanged,
     status: options.status,
