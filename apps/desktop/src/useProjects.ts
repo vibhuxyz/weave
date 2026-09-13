@@ -7,6 +7,19 @@ export interface ProjectAgent {
   mode: "always" | "manual";
 }
 
+/**
+ * A plugin attached to a project. `always` = activated on every new chat;
+ * `manual` = activated only for runs the user switches it on for.
+ */
+export interface ProjectPlugin {
+  id: string;
+  /** Catalog version at selection time — pinned into the ledger on activation. */
+  version?: string;
+  mode: "always" | "manual";
+  /** Reserved: undefined = every capability the engine supports. */
+  enabledCapabilities?: string[];
+}
+
 export interface ProjectEntry {
   dir: string;
   engineId?: string;
@@ -20,6 +33,8 @@ export interface ProjectEntry {
   notes?: string;
   /** Standing agents for this project (their instructions steer new chats). */
   agents?: ProjectAgent[];
+  /** Plugins attached to this project. */
+  plugins?: ProjectPlugin[];
   /** Whether this project enforces sandbox constraints. */
   sandboxed?: boolean;
 }
@@ -30,6 +45,7 @@ export interface ProjectMeta {
   icon?: string;
   notes?: string;
   agents?: ProjectAgent[];
+  plugins?: ProjectPlugin[];
   sandboxed?: boolean;
 }
 
@@ -81,5 +97,15 @@ export function useProjects() {
     [setProjects],
   );
 
-  return { projects, remember, forget, setProjectAgents };
+  const setProjectPlugins = useCallback(
+    (dir: string, plugins: ProjectPlugin[]) =>
+      setProjects((current) =>
+        current.map((entry) =>
+          entry.dir === dir ? { ...entry, plugins } : entry,
+        ),
+      ),
+    [setProjects],
+  );
+
+  return { projects, remember, forget, setProjectAgents, setProjectPlugins };
 }

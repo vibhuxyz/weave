@@ -1,7 +1,7 @@
 import type { ToolCallStatus, ToolKind } from "@agentclientprotocol/sdk";
 import type { GitStatus } from "../../../server/index.ts";
 import type { ToolEntry, TurnPersona } from "../../useAcpChat";
-import type { EngineDescriptor } from "@weave/agent/engines-registry.ts";
+import type { CheckpointReason } from "@weave/protocol";
 
 export type AgentBlockSchemaVersion = 1;
 
@@ -104,35 +104,6 @@ export interface TaskState {
   decisions: Decision[];
   errors: ErrorRecord[];
   lastCheckpointId?: string;
-}
-
-// ---------------------------------------------------------------------------
-// HandoffContext — what gets sent to the next engine
-// ---------------------------------------------------------------------------
-
-export interface HandoffContext {
-  schemaVersion: 1;
-  taskId: string;
-  runId: string;
-  originalRequest: string;
-  objective: string;
-  previousEngine: {
-    provider: string;
-    engine: string;
-    model?: string;
-  };
-  interruption: {
-    reason: string;
-  };
-  completed: string[];
-  inProgress?: string;
-  remaining: string[];
-  modifiedFiles: string[];
-  relevantCommands: CommandResult[];
-  verification: VerificationResult[];
-  importantDecisions: Decision[];
-  lastKnownState: string;
-  checkpointId: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +256,7 @@ export interface EvidenceBlock extends AgentBlockBase {
 export interface CheckpointBlock extends AgentBlockBase {
   type: "checkpoint";
   mode: "resume" | "handoff" | "retry";
-  reason: "provider_limit" | "user_cancelled" | "error" | "max_turns" | "explicit_handoff";
+  reason: CheckpointReason;
   checkpointId: string;
   summary: {
     filesModified: number;
@@ -294,7 +265,13 @@ export interface CheckpointBlock extends AgentBlockBase {
     testsFailed: number;
     notes: string[];
   };
-  availableEngines: EngineDescriptor[];
+  /**
+   * Not `capabilities.handoff`-filtered: those are declarations, not
+   * measurements (CONTINUATION.md §11 — "offering something unproven" until
+   * the eval matrix in Slice 7 turns them into facts). V1.2 offers every
+   * other installed engine and leaves the choice manual.
+   */
+  availableEngines: { id: string; label: string }[];
 }
 
 export interface ProjectOverviewBlock extends AgentBlockBase {

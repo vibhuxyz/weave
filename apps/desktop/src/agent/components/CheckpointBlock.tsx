@@ -11,11 +11,15 @@ export function CheckpointBlock({
   onAction?: (action: BlockAction) => void;
 }) {
   const reasonLabels = {
+    user_cancellation: "Cancelled by user",
     provider_limit: "Provider limit reached",
-    user_cancelled: "Cancelled by user",
-    error: "Agent encountered an error",
+    agent_crash: "Agent encountered an error",
+    timeout: "Timed out",
     max_turns: "Maximum turns reached",
     explicit_handoff: "Handoff requested",
+    file_milestone: "Checkpoint reached",
+    verification_milestone: "Checkpoint reached",
+    test_milestone: "Checkpoint reached",
   };
 
   return (
@@ -49,7 +53,7 @@ export function CheckpointBlock({
         <div className="space-y-3">
           <p className="font-mono text-[10px] uppercase tracking-wider text-agent-text-muted">Continue with</p>
           <div className="flex flex-wrap gap-2">
-            {block.availableEngines.filter(e => e.capabilities.handoff).map((engine) => (
+            {block.availableEngines.map((engine) => (
               <Button
                 key={engine.id}
                 type="button"

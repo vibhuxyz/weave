@@ -6,6 +6,7 @@ import {
   MessageSquareIcon,
   MoreHorizontalIcon,
   PencilIcon,
+  PlugIcon,
   PlusIcon,
   SettingsIcon,
   SparklesIcon,
@@ -24,7 +25,7 @@ import {
 import type { ConversationMeta } from "./useAcpChat";
 import type { ProjectEntry } from "./useProjects";
 
-export type SidebarView = "home" | "chat" | "agents" | "skills";
+export type SidebarView = "home" | "chat" | "agents" | "plugins" | "skills";
 
 export interface SidebarProps {
   projects: ProjectEntry[];
@@ -44,6 +45,7 @@ export interface SidebarProps {
 const NAV = [
   { id: "home", label: "Home", icon: HomeIcon, view: "home" as const },
   { id: "agents", label: "Agents", icon: SparklesIcon, view: "agents" as const },
+  { id: "plugins", label: "Plugins", icon: PlugIcon, view: "plugins" as const },
   { id: "skills", label: "Skills", icon: BookOpenIcon, view: "skills" as const },
 ] as const;
 

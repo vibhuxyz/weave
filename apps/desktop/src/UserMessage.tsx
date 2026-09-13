@@ -42,6 +42,12 @@ export function UserMessage({
     if (!editing || !el) return;
     el.focus();
     el.setSelectionRange(el.value.length, el.value.length);
+    // The editor can open near the bottom of the transcript, tucked behind the
+    // composer — pull the whole card into view so its Send/Cancel row clears it.
+    el.closest("[data-user-message]")?.scrollIntoView({
+      block: "center",
+      behavior: "smooth",
+    });
   }, [editing]);
   useEffect(() => {
     const el = editorRef.current;
@@ -76,7 +82,10 @@ export function UserMessage({
     // up to 80% of the column. Attachments sit ABOVE it, unframed — they are
     // what the user showed, not a field inside what they wrote — and the hover
     // actions hang below, absolutely placed so they reserve no height.
-    <div className="group relative flex w-full flex-col items-end gap-1.5">
+    <div
+      data-user-message
+      className="group relative flex w-full flex-col items-end gap-1.5"
+    >
       {!editing && images && images.length > 0 && (
         <div className="flex max-w-[80%] flex-wrap justify-end gap-2">
           {images.map((image, i) => (

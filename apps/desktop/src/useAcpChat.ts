@@ -10,8 +10,11 @@ import type {
   GitStatus,
   ServerMessage,
 } from "../server/index.ts";
+import type { NormalizedPlugin } from "@weave/core/plugins/plugin.ts";
+import type { ActivePluginRef } from "@weave/core/plugins/resolve.ts";
 import {
   isAuthRequiredError,
+  type CheckpointReason,
   type EngineAuthMethod,
   type EngineAuthOperation,
 } from "@weave/protocol";
@@ -175,10 +178,25 @@ export interface TurnPersona {
   character?: string;
 }
 
+/** A Stop-sequence checkpoint (CONTINUATION.md §8) attached to the turn it
+ * interrupted, so `messageToBlocks` can render the CheckpointBlock. */
+export interface TurnCheckpoint {
+  checkpointId: string;
+  reason: CheckpointReason;
+  summary: {
+    filesModified: number;
+    commandsExecuted: number;
+    testsPassed: number;
+    testsFailed: number;
+    notes: string[];
+  };
+}
+
 export interface ChatTurn {
   id: string;
   role: "user" | "assistant";
   text: string;
+  checkpoint?: TurnCheckpoint;
   /** Names of agents @-mentioned on this prompt, for the pills on the bubble. */
   mentions?: string[];
   /**
@@ -319,8 +337,21 @@ export function useAcpChat(port: number | null) {
   const [engines, setEngines] = useState<
     { id: string; label: string; installed: boolean }[]
   >([]);
+  const [pluginCatalog, setPluginCatalog] = useState<NormalizedPlugin[]>([]);
   const [isSwitchingEngine, setIsSwitchingEngine] = useState(false);
   const [targetEngineId, setTargetEngineId] = useState<string | null>(null);
+
+  // Safety net: `ready`/`auth-required`/`error` normally clear the switching
+  // state, but if the server never answers (silent no-op, dropped socket) the
+  // composer would sit on "Switching to …" forever. Give up after a while.
+  useEffect(() => {
+    if (!isSwitchingEngine) return;
+    const timer = setTimeout(() => {
+      setIsSwitchingEngine(false);
+      setTargetEngineId(null);
+    }, 20_000);
+    return () => clearTimeout(timer);
+  }, [isSwitchingEngine, targetEngineId]);
   const [isSettingConfig, setIsSettingConfig] = useState(false);
   const [pendingConfigId, setPendingConfigId] = useState<string | null>(null);
   const [pendingConfigValue, setPendingConfigValue] = useState<string | null>(null);
@@ -334,6 +365,55 @@ export function useAcpChat(port: number | null) {
   // The personas of the prompt in flight. The assistant turn is created later,
   // by the first update off the socket, and has no other way to know them.
   const personasRef = useRef<TurnPersona[] | undefined>(undefined);
+
+  /**
+   * Watchdog for a prompt the engine silently swallows — Antigravity does this
+   * often enough that people learned to hit Stop and re-send. We do it for
+   * them: the exact payload of the prompt in flight, whether any live (non
+   * replay) update has landed since it went out, and how many times we have
+   * already retried this one.
+   */
+  const lastPromptPayloadRef = useRef<string | null>(null);
+  const sawUpdateSinceSendRef = useRef(true);
+  const promptRetriesRef = useRef(0);
+  const [awaitingFirstUpdate, setAwaitingFirstUpdate] = useState(false);
+  const [stallNonce, setStallNonce] = useState(0);
+
+  useEffect(() => {
+    if (!awaitingFirstUpdate) return;
+    const timer = setTimeout(() => {
+      if (sawUpdateSinceSendRef.current) return;
+      const socket = socketRef.current;
+      const payload = lastPromptPayloadRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN || !payload) return;
+
+      if (promptRetriesRef.current >= 1) {
+        // Already retried once and still nothing — stop pretending it is
+        // working and hand the turn back to the user.
+        setAwaitingFirstUpdate(false);
+        setBusy(false);
+        setError("The agent didn't respond. Send your message again.");
+        return;
+      }
+
+      promptRetriesRef.current += 1;
+      // Cancel the dead turn, then re-send the identical payload — no new
+      // bubble, the user turn is already in the transcript.
+      socket.send(JSON.stringify({ type: "cancel" }));
+      window.setTimeout(() => {
+        const s = socketRef.current;
+        if (sawUpdateSinceSendRef.current || s?.readyState !== WebSocket.OPEN) return;
+        setBusy(true);
+        setError(null);
+        s.send(payload);
+        // The cancel above lands a `turn-end` that stands the watchdog down —
+        // re-arm it so a second stall on the retry is still caught.
+        setAwaitingFirstUpdate(true);
+        setStallNonce((n) => n + 1);
+      }, 1_000);
+    }, 60_000);
+    return () => clearTimeout(timer);
+  }, [awaitingFirstUpdate, stallNonce]);
 
   const withAssistantTurn = useCallback(
     (mutate: (turn: ChatTurn) => ChatTurn) => {
@@ -670,9 +750,16 @@ export function useAcpChat(port: number | null) {
             return;
           }
           case "update":
+            // A live update means the engine picked the prompt up — stand the
+            // stall watchdog down.
+            if (message.replay !== true) {
+              sawUpdateSinceSendRef.current = true;
+              setAwaitingFirstUpdate(false);
+            }
             applyUpdate(message.update, message.replay === true, message.source);
             return;
           case "turn-end": {
+            setAwaitingFirstUpdate(false);
             const usage = message.usage;
             if (usage) {
               withAssistantTurn((turn) => ({
@@ -691,6 +778,16 @@ export function useAcpChat(port: number | null) {
             setBusy(false);
             return;
           }
+          case "checkpoint":
+            withAssistantTurn((turn) => ({
+              ...turn,
+              checkpoint: {
+                checkpointId: message.checkpointId,
+                reason: message.reason,
+                summary: message.summary,
+              },
+            }));
+            return;
           case "chats":
             setChats(message.chats);
             if (message.activeSessionId)
@@ -698,6 +795,9 @@ export function useAcpChat(port: number | null) {
             return;
           case "engines":
             setEngines(message.engines);
+            return;
+          case "plugin-catalog":
+            setPluginCatalog(message.plugins);
             return;
           case "attachment": {
             const { path, dataUri } = message;
@@ -737,6 +837,7 @@ export function useAcpChat(port: number | null) {
             setTurns([]);
             return;
           case "auth-required":
+            setAwaitingFirstUpdate(false);
             setIsSwitchingEngine(false);
             setTargetEngineId(null);
             // Deliberately NOT `setError`: this is a state with an action, and
@@ -757,6 +858,7 @@ export function useAcpChat(port: number | null) {
             if (message.operation.status === "succeeded") setAuthRequired(null);
             return;
           case "error":
+            setAwaitingFirstUpdate(false);
             setIsSwitchingEngine(false);
             setTargetEngineId(null);
             setIsSettingConfig(false);
@@ -861,6 +963,7 @@ export function useAcpChat(port: number | null) {
         mentions?: string[];
         personas?: TurnPersona[];
         images?: ChatImageAttachmentDraft[];
+        plugins?: ActivePluginRef[];
       },
     ) => {
       const trimmed = text.trim();
@@ -888,23 +991,31 @@ export function useAcpChat(port: number | null) {
           tools: [],
         },
       ]);
-      socket.send(
-        JSON.stringify({
+      const payload = JSON.stringify({
           type: "prompt",
           text: trimmed,
           persona: opts?.persona,
+          plugins: opts?.plugins?.length ? opts.plugins : undefined,
           images: images?.map((image) => ({
             data: image.base64,
             mimeType: image.mimeType,
             prompt: image.prompt,
           })),
-        }),
-      );
+        });
+      lastPromptPayloadRef.current = payload;
+      sawUpdateSinceSendRef.current = false;
+      promptRetriesRef.current = 0;
+      setAwaitingFirstUpdate(true);
+      setStallNonce((n) => n + 1);
+      socket.send(payload);
     },
     [],
   );
 
   const cancel = useCallback(() => {
+    // A manual Stop ends the watchdog too — the user is now driving.
+    setAwaitingFirstUpdate(false);
+    sawUpdateSinceSendRef.current = true;
     socketRef.current?.send(JSON.stringify({ type: "cancel" }));
   }, []);
 
@@ -1011,6 +1122,13 @@ export function useAcpChat(port: number | null) {
     }
   }, []);
 
+  const refreshPlugins = useCallback(() => {
+    const socket = socketRef.current;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "refresh-plugins" }));
+    }
+  }, []);
+
   const updateTurnPlan = useCallback((turnId: string, plan: TurnPlan) => {
     setTurns((prev) =>
       prev.map((t) => (t.id === turnId ? { ...t, plan } : t)),
@@ -1030,6 +1148,7 @@ export function useAcpChat(port: number | null) {
     git,
     resumed,
     engines,
+    pluginCatalog,
     chats,
     activeSessionId,
     send,
@@ -1051,6 +1170,7 @@ export function useAcpChat(port: number | null) {
     pendingConfigValue,
     refreshGit,
     refreshEngines,
+    refreshPlugins,
     newChat,
     openChat,
     updateTurnPlan,

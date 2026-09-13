@@ -63,6 +63,7 @@ export function AgentMessage({
   onOpenDiff,
   diffOpen,
   depth = "normal",
+  otherEngines,
 }: {
   turn: ChatTurn;
   projectDir: string | null;
@@ -82,6 +83,9 @@ export function AgentMessage({
   diffOpen?: boolean;
   /** How much of the run to render — set from the composer. */
   depth?: DepthLevel;
+  /** Installed engines other than `engineId` — the checkpoint's "Continue
+   * with" choices. */
+  otherEngines?: { id: string; label: string }[];
 }) {
   const viewModel = useMemo(
     () =>
@@ -99,6 +103,8 @@ export function AgentMessage({
         usage: turn.usage,
         sourceEventIds: turn.sourceEventIds,
         sourceSeq: turn.sourceSeq,
+        checkpoint: turn.checkpoint,
+        otherEngines,
       }),
     [
       configValues,
@@ -114,6 +120,8 @@ export function AgentMessage({
       turn.sourceSeq,
       turn.text,
       turn.tools,
+      turn.checkpoint,
+      otherEngines,
     ],
   );
 

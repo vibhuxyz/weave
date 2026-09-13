@@ -404,6 +404,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@weave/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@weave/core':
         specifier: workspace:*
         version: link:../core

@@ -5,7 +5,18 @@ export interface EngineCapabilities {
   permissions: boolean;
   resume: boolean;
   handoff: boolean;
+  /** Accepts MCP servers on ACP `session/new` (`mcpServers`). */
+  mcp: boolean;
 }
+
+/**
+ * How an engine consumes a Weave plugin:
+ *
+ *   native       loads the plugin itself (Claude Code)
+ *   mcp-adapter  can run the plugin's MCP servers; the rest is guidance text
+ *   prompt-only  nothing executable — the plugin is described, not run
+ */
+export type EnginePluginModel = "native" | "mcp-adapter" | "prompt-only";
 
 /**
  * What an engine actually reports about token spend. ACP makes both channels
@@ -33,6 +44,8 @@ export interface EngineDescriptor {
   install?: string;
   capabilities: EngineCapabilities;
   tokens: EngineTokenReporting;
+  /** How this engine consumes plugins. Unknown engines are prompt-only. */
+  pluginModel: EnginePluginModel;
 }
 
 /** Reports the context window live, per-turn totals, and session cost. */
@@ -56,7 +69,11 @@ const FULL_CAPABILITIES: EngineCapabilities = {
   permissions: true,
   resume: true,
   handoff: true,
+  mcp: true,
 };
+
+/** Full ACP behaviour, but the engine cannot mount MCP servers. */
+const NO_MCP_CAPABILITIES: EngineCapabilities = { ...FULL_CAPABILITIES, mcp: false };
 
 export const ENGINES: Record<string, EngineDescriptor> = {
   "claude-code": {
@@ -68,6 +85,7 @@ export const ENGINES: Record<string, EngineDescriptor> = {
     install: "pnpm -F @weave/agent add @agentclientprotocol/claude-agent-acp",
     capabilities: FULL_CAPABILITIES,
     tokens: FULL_TOKEN_REPORTING,
+    pluginModel: "native",
   },
   codex: {
     id: "codex",
@@ -78,6 +96,7 @@ export const ENGINES: Record<string, EngineDescriptor> = {
     install: "pnpm -F @weave/agent add @agentclientprotocol/codex-acp",
     capabilities: FULL_CAPABILITIES,
     tokens: FULL_TOKEN_REPORTING,
+    pluginModel: "mcp-adapter",
   },
   amp: {
     id: "amp",
@@ -86,10 +105,11 @@ export const ENGINES: Record<string, EngineDescriptor> = {
     binName: "amp-acp",
     provider: "sourcegraph",
     install: "pnpm -F @weave/agent add @sourcegraph/amp",
-    capabilities: FULL_CAPABILITIES,
+    capabilities: NO_MCP_CAPABILITIES,
     // Amp streams no usage_update; cumulative totals arrive with the prompt
     // response when the adapter fills them in.
     tokens: { contextWindow: false, turnTotals: true, cost: false },
+    pluginModel: "prompt-only",
   },
   antigravity: {
     id: "antigravity",
@@ -105,8 +125,9 @@ export const ENGINES: Record<string, EngineDescriptor> = {
     // TODO: gate this behind a per-project trust decision instead of always-on.
     args: ["--no-sandbox"],
     install: "pnpm -F @weave/agent add agy-acp",
-    capabilities: FULL_CAPABILITIES,
+    capabilities: NO_MCP_CAPABILITIES,
     tokens: NO_TOKEN_REPORTING,
+    pluginModel: "prompt-only",
   },
 };
 

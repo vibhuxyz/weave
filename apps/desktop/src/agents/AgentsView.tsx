@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import {
   CopyIcon,
+  HomeIcon,
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
@@ -16,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { useHomeWidgetStore } from "@/home/canvas/stores/homeWidgetStore";
 import { useAgents, type Agent, type AgentDraft } from "../useAgents";
 import { AgentAvatar } from "./AgentAvatar";
 import { AgentDialog } from "./AgentDialog";
@@ -32,6 +34,42 @@ export function AgentsView({
     useAgents();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Agent | null>(null);
+
+  // "Add to home" pins the agent as a widget on the Home canvas. The canvas
+  // store is normally initialised by HomeView; do it here too so the action
+  // works even if Home hasn't been opened this session.
+  const initHome = useHomeWidgetStore((s) => s.initialize);
+  const homeInstances = useHomeWidgetStore((s) => s.instances);
+  const addWidget = useHomeWidgetStore((s) => s.addWidget);
+  const removeWidget = useHomeWidgetStore((s) => s.removeWidget);
+  useEffect(() => {
+    void initHome();
+  }, [initHome]);
+
+  const pinById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const inst of homeInstances) {
+      if (inst.type === "agentPin" && typeof inst.state?.agentId === "string") {
+        map.set(inst.state.agentId as string, inst.id);
+      }
+    }
+    return map;
+  }, [homeInstances]);
+
+  const toggleHome = (agentId: string) => {
+    const existingWidgetId = pinById.get(agentId);
+    if (existingWidgetId) {
+      removeWidget(existingWidgetId);
+      return;
+    }
+    // Scatter around the canvas origin so repeated adds don't stack exactly.
+    addWidget(
+      "agentPin",
+      (Math.random() - 0.5) * 260,
+      (Math.random() - 0.5) * 220,
+      { agentId },
+    );
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -78,6 +116,8 @@ export function AgentsView({
               onEdit={() => openEdit(agent)}
               onDuplicate={() => duplicate(agent.id)}
               onDelete={() => remove(agent.id)}
+              onHome={pinById.has(agent.id)}
+              onToggleHome={() => toggleHome(agent.id)}
               onReset={
                 agent.builtin && isBuiltinModified(agent.id)
                   ? () => resetBuiltin(agent.id)
@@ -107,6 +147,8 @@ function AgentCard({
   onDuplicate,
   onDelete,
   onReset,
+  onHome,
+  onToggleHome,
 }: {
   agent: Agent;
   onView: () => void;
@@ -116,6 +158,9 @@ function AgentCard({
   onDelete: () => void;
   /** Only for a built-in the user has changed — puts it back as it ships. */
   onReset?: () => void;
+  /** Whether this agent is currently pinned on the Home canvas. */
+  onHome: boolean;
+  onToggleHome: () => void;
 }) {
   return (
     <div className="group relative flex w-full flex-col gap-3 rounded-xl p-2">
@@ -176,6 +221,10 @@ function AgentCard({
             <DropdownMenuItem onClick={onDuplicate}>
               <CopyIcon className="size-3.5" />
               Duplicate
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onToggleHome}>
+              <HomeIcon className="size-3.5" />
+              {onHome ? "Remove from home" : "Add to home"}
             </DropdownMenuItem>
             {onReset && (
               <DropdownMenuItem onClick={onReset}>

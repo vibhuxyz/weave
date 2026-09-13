@@ -103,6 +103,7 @@ export async function runTask(
     session = await openSession({
       task,
       policy: options.policy,
+      engineId: options.config?.engine,
       resumeSessionId: options.resumeSessionId ?? null,
       sink: {
         onSpawned: (pid, entry) =>

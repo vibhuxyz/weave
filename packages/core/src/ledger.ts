@@ -18,7 +18,7 @@ export class Ledger {
   readonly runId: string;
   readonly dir: string;
   readonly file: string;
-  private seq = 0;
+  private _seq = 0;
 
   constructor(weaveDir: string, runId: string) {
     this.runId = runId;
@@ -26,6 +26,13 @@ export class Ledger {
     this.file = join(this.dir, "events.ndjson");
     mkdirSync(this.dir, { recursive: true });
     ensureSelfIgnored(weaveDir);
+  }
+
+  /** The seq of the last event appended, 0 before the first. Lets a caller
+   * record an `Attempt.seqStart` without guessing at the ledger's internal
+   * counter. */
+  get seq(): number {
+    return this._seq;
   }
 
   /** Append one event. Returns it with `runId`/`seq`/`at` filled in. */
@@ -40,7 +47,7 @@ export class Ledger {
     const event = {
       type,
       runId: this.runId,
-      seq: ++this.seq,
+      seq: ++this._seq,
       at: new Date().toISOString(),
       ...fields,
     } as unknown as WeaveEvent;
@@ -48,9 +55,11 @@ export class Ledger {
     return event;
   }
 
-  /** Write a sidecar next to the events, e.g. `metrics.json`. */
+  /** Write a sidecar next to the events, e.g. `metrics.json`. Overwrites —
+   * callers that rewrite the same name repeatedly (e.g. `latest.json`) must
+   * not accumulate multiple JSON documents in one file. */
   writeArtifact(name: string, data: unknown): void {
-    appendFileSync(join(this.dir, name), JSON.stringify(data, null, 2));
+    writeFileSync(join(this.dir, name), JSON.stringify(data, null, 2));
   }
 }
 

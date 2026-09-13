@@ -78,6 +78,26 @@ function validate(value: unknown, defaults: OnboardingState): OnboardingState {
   };
 }
 
+/**
+ * The engine the user picked during setup, read outside React.
+ *
+ * `useProject` starts the server before any onboarding component is mounted,
+ * and it is the only thing that knows which engine to ask for. Without this it
+ * fell back to the registry default — which is how a fresh install greeted
+ * people with "Antigravity is not installed" for an engine they never chose.
+ */
+export function chosenEngineId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const state = validate(JSON.parse(raw), INITIAL_ONBOARDING_STATE);
+    return state.selectedEngineId;
+  } catch {
+    return null;
+  }
+}
+
 export function useOnboarding() {
   const [state, setState] = usePersistedState<OnboardingState>(
     STORAGE_KEY,

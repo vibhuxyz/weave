@@ -35,3 +35,12 @@ export async function readGitStatus(cwd: string): Promise<GitStatus> {
 
   return { branch, changes };
 }
+
+/** The current commit sha, or null when there is no `HEAD` yet (empty repo)
+ * or `cwd` is not a git repo. Used to fill `TaskState.git.headCommit` in the
+ * Stop sequence (CONTINUATION.md §8 step 3) — a separate call from
+ * `readGitStatus` because most callers of that one never need the sha. */
+export async function readHeadCommit(cwd: string): Promise<string | null> {
+  const sha = (await git(cwd, ["rev-parse", "HEAD"]))?.trim();
+  return sha || null;
+}

@@ -1,0 +1,31 @@
+schema_version = "1.4"
+artifacts = []
+
+[task]
+name = "weave/fold-task-state"
+version = "1.0.0"
+description = "Implement the pure ledger-to-TaskState fold used for Weave's task checkpoint/continuation feature"
+keywords = []
+[[task.authors]]
+name = "Weave"
+
+[metadata]
+
+[verifier]
+timeout_sec = 600.0
+collect = []
+
+[verifier.env]
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 600.0
+os = "linux"
+mcp_servers = []
+
+[environment.env]
+
+[solution.env]

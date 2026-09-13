@@ -36,17 +36,29 @@ import {
   Ledger,
   SessionStore,
   ConversationStore,
+  TasksStore,
+  runStopSequence,
+  readLatest,
+  buildBrief,
   titleFromPrompt,
   weaveDirFor,
   newRunId,
   readGitStatus,
   discoverSkills,
   formatSkillCatalog,
+  resolveCatalog,
+  planActivation,
+  formatActivationPlansSystemPrompt,
   type ConversationMeta,
   type GitStatus,
+  type NormalizedPlugin,
+  type ActivePluginRef,
+  type ActivationPlan,
+  type Checkpoint,
 } from "@weave/core";
 import type {
   AuthMethod,
+  CheckpointReason,
   EngineAuthMethod,
   EngineAuthOperation,
   SessionConfigOption,
@@ -65,6 +77,8 @@ export type ClientMessage =
       type: "prompt";
       text: string;
       persona?: string;
+      /** Plugins active for this turn (always + manually toggled on). */
+      plugins?: ActivePluginRef[];
       /** Screenshots the user attached, each with its own fix/build instructions. */
       images?: { data: string; mimeType: string; prompt?: string }[];
     }
@@ -84,7 +98,9 @@ export type ClientMessage =
   /** Read one image a past prompt attached, for the transcript's thumbnail. */
   | { type: "read-attachment"; path: string }
   /** Refresh installed engines list. */
-  | { type: "refresh-engines" };
+  | { type: "refresh-engines" }
+  /** Re-scan the plugin catalog from disk. */
+  | { type: "refresh-plugins" };
 
 /** Images we will inline into the transcript, by extension. */
 const IMAGE_MIME: Record<string, string> = {
@@ -183,12 +199,32 @@ export type ServerMessage =
       type: "engines";
       engines: { id: string; label: string; installed: boolean }[];
     }
+  /** The full plugin catalog discovered from disk. */
+  | { type: "plugin-catalog"; plugins: NormalizedPlugin[] }
   /** The chat list for this project, newest activity first. */
   | { type: "chats"; chats: ConversationMeta[]; activeSessionId: string | null }
   /** Project-relative paths matching a `list-files` query. */
   | { type: "files"; query: string; files: string[] }
   /** Wipe the transcript — sent right before a different chat replays. */
-  | { type: "reset" };
+  | { type: "reset" }
+  /**
+   * A Stop sequence (CONTINUATION.md §8) just checkpointed the task. Renders
+   * the CheckpointBlock "Continue with…" UI — `continue_with_engine` is
+   * handled by sending an ordinary `switch-engine`, which already builds its
+   * brief from this same checkpoint (see `bindEngine`).
+   */
+  | {
+      type: "checkpoint";
+      checkpointId: string;
+      reason: CheckpointReason;
+      summary: {
+        filesModified: number;
+        commandsExecuted: number;
+        testsPassed: number;
+        testsFailed: number;
+        notes: string[];
+      };
+    };
 
 export interface AcpServerHandle {
   port: number;
@@ -299,37 +335,21 @@ async function handleConnection(
   const send = (message: ServerMessage) => safeSend(socket, message);
   const ledger = new Ledger(weaveDirFor(projectDir), newRunId());
   // Instructions that ride the *next* prompt only, then clear: new-chat
-  // instructions, and the carry-forward digest written on an engine switch.
+  // instructions, and the brief written on an engine switch (see
+  // `checkpointTask` / `bindEngine` below).
   let pendingPreamble: string | null = null;
-
-  // A running plain-text digest of the conversation, so a switch to another
-  // engine can carry context the new engine's fresh session never saw.
-  const transcript: { role: "user" | "assistant"; text: string }[] = [];
-  const recordTurn = (role: "user" | "assistant", text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const last = transcript.at(-1);
-    if (last?.role === role) last.text += trimmed;
-    else transcript.push({ role, text: trimmed });
-    // Keep the digest bounded — the tail is what matters on a switch.
-    while (transcript.length > 40) transcript.shift();
-  };
-  const carryForwardDigest = (): string => {
-    if (transcript.length === 0) return "";
-    const body = transcript
-      .map((t) => `${t.role === "user" ? "User" : "Assistant"}: ${t.text}`)
-      .join("\n\n");
-    return [
-      "<prior-conversation>",
-      "This conversation continues from another agent. Earlier turns:",
-      "",
-      body,
-      "</prior-conversation>",
-    ].join("\n");
-  };
 
   // Skills are a property of the repo; discover them once per connection.
   const skillCatalog = formatSkillCatalog(await discoverSkills(projectDir));
+
+  // The plugin catalog is machine-wide (read from ~/.claude). Cached per
+  // connection; a `refresh-plugins` message re-scans.
+  let pluginCatalog: NormalizedPlugin[] = [];
+  let pluginsById = new Map<string, NormalizedPlugin>();
+  const loadPluginCatalog = async () => {
+    pluginCatalog = await resolveCatalog();
+    pluginsById = new Map(pluginCatalog.map((p) => [p.id, p]));
+  };
 
   const isSandboxed =
     process.env.WEAVE_SANDBOX === "1" || process.env.SANDBOXED === "true";
@@ -356,9 +376,74 @@ async function handleConnection(
     })),
   });
 
+  await loadPluginCatalog();
+  send({ type: "plugin-catalog", plugins: pluginCatalog });
+
   const conversations = new ConversationStore(weaveDirFor(projectDir));
   const resumeId = await store.get(projectDir);
   let persisted = false;
+
+  // Continuation (CONTINUATION.md). V1.2 §12(C): one task per connection —
+  // the ledger's own runId is a stable, already-unique id for it. Created
+  // lazily on the first prompt, since `TaskRecord.goal` is the user's
+  // original request and nothing has been asked yet at connection open.
+  const tasksStore = new TasksStore(weaveDirFor(projectDir));
+  const continuationTaskId = ledger.runId;
+  let taskCreated = false;
+  let taskGoal = "";
+
+  /** Steps 1-6 of the Stop sequence (§8), plus step 7 (`checkpoint.created`
+   * on the live ledger) since this call site always has one. No-op when
+   * nothing has been asked yet — there is no task to checkpoint. */
+  const checkpointTask = async (
+    reason: CheckpointReason,
+    cancel?: () => Promise<void> | void,
+  ): Promise<Checkpoint | null> => {
+    if (!taskCreated) {
+      await cancel?.();
+      return null;
+    }
+    const { checkpoint } = await runStopSequence({
+      weaveDir: weaveDirFor(projectDir),
+      cwd: projectDir,
+      taskId: continuationTaskId,
+      runId: ledger.runId,
+      goal: taskGoal,
+      reason,
+      tasksStore,
+      cancel,
+    });
+    ledger.append("checkpoint.created", {
+      taskId: continuationTaskId,
+      checkpointId: checkpoint.id,
+      atSeq: checkpoint.seq,
+      reason: checkpoint.reason,
+    });
+    return checkpoint;
+  };
+
+  /** The counts + notes CheckpointBlock renders — derived straight from the
+   * folded `TaskState`, never a separate thing that could drift from it. */
+  const summarizeCheckpoint = (checkpoint: Checkpoint) => {
+    const { state } = checkpoint;
+    const filesModified = state.files.modified.length + state.files.created.length + state.files.deleted.length;
+    const testsPassed = state.verification.filter((v) => v.status === "passed").length;
+    const testsFailed = state.verification.filter((v) => v.status === "failed").length;
+    const notes = state.inFlight.map(
+      (t) => `${t.locations[0] ?? t.title} — edit was in progress when the task stopped`,
+    );
+    return {
+      checkpointId: checkpoint.id,
+      reason: checkpoint.reason,
+      summary: {
+        filesModified,
+        commandsExecuted: state.commands.length,
+        testsPassed,
+        testsFailed,
+        notes,
+      },
+    };
+  };
 
   const sendChats = async () =>
     send({
@@ -554,14 +639,39 @@ async function handleConnection(
     }
     currentEngineId = engineId;
     persisted = false;
-    // The new engine's session never saw the conversation — carry it.
-    pendingPreamble = carryForwardDigest() || null;
+    // The new engine's session never saw the conversation — the switch-engine
+    // handler already ran the Stop sequence to checkpoint it, so the brief
+    // built from that checkpoint is what carries it forward now (§9). Not the
+    // transcript: bounded, sectioned by trust, and the filesystem stays
+    // authoritative rather than a 40-turn prose dump.
+    if (taskCreated) {
+      const checkpoint = await readLatest(weaveDirFor(projectDir), continuationTaskId);
+      pendingPreamble = checkpoint ? buildBrief(checkpoint, getEngine(engineId)) : null;
+    }
     ledger.append("agent.session", {
       taskId: task.id,
       sessionId: supervisor.current.sessionId,
       resumed: false,
       configOptions: supervisor.current.configOptions,
     });
+    // A task already exists (the user has prompted before) — this bind is a
+    // new attempt on it. The switch-engine handler already ran the Stop
+    // sequence to close out the previous attempt before calling us.
+    if (taskCreated) {
+      const updated = await tasksStore.startAttempt(
+        continuationTaskId,
+        engineId,
+        supervisor.current.sessionId,
+        ledger.runId,
+        ledger.seq,
+      );
+      ledger.append("attempt.started", {
+        taskId: continuationTaskId,
+        attemptIndex: updated.attempts.length - 1,
+        engineId,
+        sessionId: supervisor.current.sessionId,
+      });
+    }
     send({ type: "reset" });
     send({
       type: "ready",
@@ -596,6 +706,7 @@ async function handleConnection(
         .filter((id) => id !== wanted),
     ];
     let refusal: AuthRequiredError | null = null;
+    let failure: unknown = null;
 
     for (const engineId of order) {
       try {
@@ -617,12 +728,18 @@ async function handleConnection(
           refusal ??= authErr;
           continue;
         }
-        throw error;
+        // Not an auth problem — the engine is missing, or its binary would not
+        // start. Try the next installed one instead of failing the session:
+        // the wanted engine can be one the user never installed (a stale
+        // per-project choice, or the registry default on a fresh machine), and
+        // refusing to open anything left the app showing "not installed" with
+        // a working engine sitting right there.
+        failure ??= error;
       }
     }
     // Nothing opened. Rethrow the auth refusal rather than a generic failure,
     // so the reason survives to the caller.
-    throw refusal ?? new Error("No engine could open a session.");
+    throw refusal ?? failure ?? new Error("No engine could open a session.");
   };
 
   const supervisorOptions: Omit<Parameters<typeof createEngineSupervisor>[0], "engineId"> = {
@@ -659,13 +776,6 @@ async function handleConnection(
       },
       onUpdate: (update, replay) => {
         const event = ledger.append("agent.message", { taskId: task.id, update });
-        if (
-          !replay &&
-          update.sessionUpdate === "agent_message_chunk" &&
-          update.content.type === "text"
-        ) {
-          recordTurn("assistant", update.content.text);
-        }
         send({
           type: "update",
           update,
@@ -717,13 +827,57 @@ async function handleConnection(
   void sendChats();
 
   /** The one system block that rides every prompt. */
-  const composeSystem = (userText: string, persona?: string): string => {
-    const blocks = [pendingPreamble, persona?.trim() || null, skillCatalog].filter(
-      (b): b is string => !!b,
-    );
+  const composeSystem = (
+    userText: string,
+    persona?: string,
+    pluginBlock?: string,
+  ): string => {
+    const blocks = [
+      pendingPreamble,
+      persona?.trim() || null,
+      pluginBlock?.trim() || null,
+      skillCatalog,
+    ].filter((b): b is string => !!b);
     pendingPreamble = null;
     if (blocks.length === 0) return userText;
     return `<system>\n${blocks.join("\n\n")}\n</system>\n\n${userText}`;
+  };
+
+  /**
+   * Resolve the active plugin refs against the live engine into an activation
+   * plan per plugin, and the `<enabled-plugins>` block. Records a
+   * `plugin.activated` ledger event for each so a run is explainable later.
+   */
+  const resolvePlugins = (refs: ActivePluginRef[] | undefined): string | undefined => {
+    if (!refs || refs.length === 0) return undefined;
+    const engine = ENGINES[currentEngineId];
+    if (!engine) return undefined;
+    const profile = {
+      id: engine.id,
+      pluginModel: engine.pluginModel,
+      mcp: engine.capabilities.mcp,
+    };
+    const plans: ActivationPlan[] = [];
+    for (const ref of refs) {
+      const plugin = pluginsById.get(ref.id);
+      if (!plugin) continue;
+      const plan = planActivation(plugin, ref, profile);
+      plans.push(plan);
+      ledger.append("plugin.activated", {
+        taskId: task.id,
+        pluginId: plan.pluginId,
+        version: plan.version,
+        contentHash: plan.contentHash,
+        engineId: plan.engineId,
+        model: plan.model,
+        mode: plan.mode,
+        activatedCapabilities: plan.activatedCapabilities,
+        unsupportedCapabilities: plan.unsupportedCapabilities.map(
+          (c) => `${c.kind}:${c.name}`,
+        ),
+      });
+    }
+    return formatActivationPlansSystemPrompt(plans);
   };
 
   // Prompts queue: the UI can only send one at a time, but a queued send
@@ -741,15 +895,51 @@ async function handleConnection(
 
     switch (message.type) {
       case "cancel":
-        void supervisor?.current?.cancel();
+        void checkpointTask("user_cancellation", () => supervisor?.current?.cancel())
+          .then((checkpoint) => {
+            if (checkpoint) send({ type: "checkpoint", ...summarizeCheckpoint(checkpoint) });
+          })
+          .catch((error: unknown) =>
+            send({
+              type: "error",
+              message: `Checkpoint failed: ${error instanceof Error ? error.message : String(error)}`,
+            }),
+          );
         return;
 
       case "switch-engine": {
         const nextEngineId = message.engineId;
-        if (nextEngineId === currentEngineId || !ENGINES[nextEngineId]) return;
+        if (!ENGINES[nextEngineId]) {
+          send({ type: "error", message: `Unknown engine: ${nextEngineId}` });
+          return;
+        }
+        // Already bound to this engine (common when a custom agent maps to the
+        // engine that is already running). Nothing to switch — but the UI has
+        // already flipped into its "Switching…" state, so it needs an answer or
+        // it hangs there forever. Re-announce the current session.
+        if (nextEngineId === currentEngineId) {
+          if (supervisor?.current) {
+            send({
+              type: "ready",
+              sessionId: supervisor.current.sessionId,
+              cwd: projectDir,
+              engineId: currentEngineId,
+              engineLabel: getEngine(currentEngineId).label,
+              configOptions: supervisor.current.configOptions,
+              resumed: true,
+            });
+          }
+          return;
+        }
         pending = pending
-          // Supersede whatever is in flight on the old engine (II.13).
-          .then(() => supervisor?.current?.cancel().catch(() => {}))
+          // Supersede whatever is in flight on the old engine (II.13), and
+          // checkpoint the attempt being left behind — an explicit handoff
+          // is one of the six terminal reasons (§8).
+          .then(() =>
+            checkpointTask("explicit_handoff", () =>
+              supervisor?.current?.cancel().catch(() => {}),
+            ),
+          )
           // An auth refusal is reported by `bindEngine` as `auth-required`,
           // not as an error — it is a state with an action, not a failure.
           .then(() => bindEngine(nextEngineId))
@@ -788,6 +978,13 @@ async function handleConnection(
             installed: installed.has(e.id),
           })),
         });
+        return;
+      }
+
+      case "refresh-plugins": {
+        void loadPluginCatalog().then(() =>
+          send({ type: "plugin-catalog", plugins: pluginCatalog }),
+        );
         return;
       }
 
@@ -1165,10 +1362,17 @@ async function handleConnection(
           return;
         }
         const promptText = message.text;
-        recordTurn("user", promptText);
+        // Set synchronously so a `cancel` arriving before the store write
+        // below finishes still sees a task in progress — see `checkpointTask`.
+        const isFirstPrompt = !taskCreated;
+        if (isFirstPrompt) {
+          taskCreated = true;
+          taskGoal = promptText;
+        }
         // The persona block + skills catalog + any pending preamble ride every
         // prompt as one <system> block, so nothing drifts over a conversation.
-        const outgoing = composeSystem(promptText, message.persona);
+        const pluginBlock = resolvePlugins(message.plugins);
+        const outgoing = composeSystem(promptText, message.persona, pluginBlock);
         const blocks: PromptBlock[] = [{ type: "text", text: outgoing }];
         // Number each image and put its instructions immediately before it, so
         // a multi-image prompt can't be misread about which note belongs to
@@ -1182,6 +1386,25 @@ async function handleConnection(
           blocks.push({ type: "image", data: image.data, mimeType: image.mimeType });
         });
         pending = pending
+          .then(async () => {
+            if (!isFirstPrompt) return;
+            const seqStart = ledger.seq;
+            await tasksStore.create(
+              continuationTaskId,
+              taskGoal,
+              projectDir,
+              currentEngineId,
+              supervisor!.current.sessionId,
+              ledger.runId,
+              seqStart,
+            );
+            ledger.append("attempt.started", {
+              taskId: continuationTaskId,
+              attemptIndex: 0,
+              engineId: currentEngineId,
+              sessionId: supervisor!.current.sessionId,
+            });
+          })
           .then(() => supervisor!.current.prompt(blocks))
           .then(async ({ stopReason, usage }) => {
             send({ type: "turn-end", stopReason, usage });

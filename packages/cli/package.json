@@ -13,6 +13,7 @@
   "dependencies": {
     "@weave/protocol": "workspace:*",
     "@weave/core": "workspace:*",
+    "@weave/agent": "workspace:*",
     "@weave/eval": "workspace:*"
   },
   "devDependencies": {

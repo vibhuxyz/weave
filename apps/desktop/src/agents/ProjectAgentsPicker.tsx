@@ -43,28 +43,38 @@ export function ProjectAgentsPicker({
           <div
             key={agent.id}
             className={cn(
-              "flex items-center gap-2.5 rounded-lg px-2 py-2",
+              "rounded-lg px-2 py-2",
+              compact
+                ? "flex flex-col gap-2"
+                : "flex items-center gap-2.5",
               mode !== "off" ? "bg-black/25" : "bg-transparent",
             )}
           >
-            <AgentAvatar
-              name={agent.name}
-              seed={agent.id}
-              tint={agent.tint}
-              icon={agent.icon}
-              character={agent.character}
-              size="sm"
-              className="shrink-0"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm text-foreground">{agent.name}</p>
-              {!compact && (
-                <p className="truncate text-muted-foreground text-xs">
-                  {agent.description}
-                </p>
-              )}
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <AgentAvatar
+                name={agent.name}
+                seed={agent.id}
+                tint={agent.tint}
+                icon={agent.icon}
+                character={agent.character}
+                size="sm"
+                className="shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm text-foreground">{agent.name}</p>
+                {!compact && (
+                  <p className="truncate text-muted-foreground text-xs">
+                    {agent.description}
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="flex shrink-0 rounded-md border border-white/10 bg-black/30 p-0.5 text-[10px]">
+            <div
+              className={cn(
+                "flex shrink-0 rounded-md border border-white/10 bg-black/30 p-0.5 text-[10px]",
+                compact && "self-stretch",
+              )}
+            >
               {MODES.map((m) => (
                 <button
                   key={m.id}
@@ -73,6 +83,7 @@ export function ProjectAgentsPicker({
                   onClick={() => setMode(agent.id, m.id)}
                   className={cn(
                     "rounded-sm px-1.5 py-0.5 transition-colors",
+                    compact && "flex-1 text-center",
                     mode === m.id
                       ? "bg-secondary text-foreground"
                       : "text-muted-foreground hover:text-foreground",

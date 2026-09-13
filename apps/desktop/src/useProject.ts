@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { chosenEngineId } from "@/features/onboarding/onboardingState";
 
 export type ProjectState =
   | { status: "loading" }
@@ -20,13 +21,16 @@ export function useProject() {
   const [state, setState] = useState<ProjectState>({ status: "loading" });
 
   const startWith = useCallback(async (dir: string, engineId?: string) => {
-    setState({ status: "starting", dir, engineId });
+    // What this project last used wins; otherwise the engine the user chose
+    // during setup. Only with neither does the server pick for itself.
+    const wanted = engineId ?? chosenEngineId() ?? undefined;
+    setState({ status: "starting", dir, engineId: wanted });
     try {
       const port = await invoke<number>("start_agent_server", {
         projectDir: dir,
-        engineId,
+        engineId: wanted,
       });
-      setState({ status: "running", dir, port, engineId });
+      setState({ status: "running", dir, port, engineId: wanted });
     } catch (error) {
       setState({
         status: "error",

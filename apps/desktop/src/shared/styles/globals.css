@@ -1756,6 +1756,37 @@
       transform: translateY(0);
     }
   }
+
+  /* Plugin category glyphs — subtle, always-looping micro-animation. */
+  --animate-glyph-pulse: glyph-pulse 2.6s ease-in-out infinite;
+  --animate-glyph-orbit: glyph-orbit 6s linear infinite;
+  --animate-glyph-bob: glyph-bob 3s ease-in-out infinite;
+  --animate-glyph-blink: glyph-blink 2.4s steps(1, end) infinite;
+  --animate-glyph-sweep: glyph-sweep 3.4s ease-in-out infinite;
+  --animate-glyph-draw: glyph-draw 4s ease-in-out infinite;
+  @keyframes glyph-pulse {
+    0%, 100% { opacity: 0.35; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes glyph-orbit {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes glyph-bob {
+    0%, 100% { transform: translateY(1px); }
+    50% { transform: translateY(-1.5px); }
+  }
+  @keyframes glyph-blink {
+    0%, 45% { opacity: 1; }
+    50%, 95% { opacity: 0.15; }
+  }
+  @keyframes glyph-sweep {
+    0%, 100% { transform: translateX(-2px); opacity: 0.3; }
+    50% { transform: translateX(2px); opacity: 1; }
+  }
+  @keyframes glyph-draw {
+    0%, 100% { stroke-dashoffset: 32; }
+    50% { stroke-dashoffset: 0; }
+  }
 }
 
 :root[data-global-composer-visible="true"] {

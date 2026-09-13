@@ -52,6 +52,8 @@ import { CreateProjectDialog, toneColor } from "./CreateProjectDialog";
 import { AgentsView } from "./agents/AgentsView";
 import { SkillsView } from "./skills/SkillsView";
 import { useSkillPlugins, formatSkillPluginsSystemPrompt } from "./useSkillPlugins";
+import { PluginsView } from "./plugins/PluginsView";
+import { usePlugins } from "./usePlugins";
 import { AgentAvatar } from "./agents/AgentAvatar";
 import {
   activeAgents,
@@ -115,6 +117,7 @@ export function App() {
     configValues,
     git,
     engines,
+    pluginCatalog,
     chats,
     activeSessionId,
     send,
@@ -135,12 +138,14 @@ export function App() {
     pendingConfigValue,
     refreshGit,
     refreshEngines,
+    refreshPlugins,
     newChat,
     openChat,
     updateTurnPlan,
   } = useAcpChat(port);
 
-  const { projects, remember, setProjectAgents, forget } = useProjects();
+  const { projects, remember, setProjectAgents, setProjectPlugins, forget } =
+    useProjects();
   const { agents } = useAgents();
   const { plugins: skillPlugins } = useSkillPlugins();
   const [createOpen, setCreateOpen] = useState(false);
@@ -150,18 +155,29 @@ export function App() {
   const [previewTint, setPreviewTint] = useState<string>();
   // Manual agents the user turned on for the next new chat.
   const [manualActive, setManualActive] = useState<string[]>([]);
+  // Manual plugins the user turned on for the next new chat.
+  const [manualPluginActive, setManualPluginActive] = useState<string[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
   const activeProjectEntry =
     project.status === "running"
       ? projects.find((p) => p.dir === project.dir)
       : undefined;
-  const [view, setView] = usePersistedState<"home" | "chat" | "agents" | "skills">(
+  const [view, setView] = usePersistedState<
+    "home" | "chat" | "agents" | "plugins" | "skills"
+  >(
     "berd:view",
     "home",
     // Legacy "chat" (pre-home-split) starts at home rather than a blank
-    // transcript; "agents" and "skills" are preserved.
-    (v, d) => (v === "home" || v === "agents" || v === "skills" ? v : d),
+    // transcript; "agents", "plugins" and "skills" are preserved.
+    (v, d) =>
+      v === "home" || v === "agents" || v === "plugins" || v === "skills" ? v : d,
+  );
+
+  const activePlugins = usePlugins(
+    pluginCatalog,
+    activeProjectEntry?.plugins ?? [],
+    manualPluginActive,
   );
 
   // Opening or starting a chat always drops the Agents view so the transcript
@@ -196,12 +212,15 @@ export function App() {
     knownDirs,
   );
 
-  // Keep the running project at the top of the sidebar list.
+  // Keep the running project at the top of the sidebar list, under the engine
+  // that actually opened the session — the server falls back to another when
+  // the requested one is not installed, and remembering the request would ask
+  // for the missing engine again on every reopen.
   useEffect(() => {
     if (project.status === "running") {
-      remember(project.dir, project.engineId);
+      remember(project.dir, engineId ?? project.engineId);
     }
-  }, [project, remember]);
+  }, [project, engineId, remember]);
 
   // A model a chosen agent asked for, applied once its config options arrive.
   const pendingAgentModel = useRef<string | null>(null);
@@ -591,8 +610,12 @@ export function App() {
         previewUrl: URL.createObjectURL(file),
         prompt: "",
       };
-      setImageAttachments((cur) => [...cur, image]);
-      setImageLibrary((cur) => [...cur, image]);
+      // Guard against a doubled event (drop bubbling, paste + drop) adding the
+      // identical file twice in the same tick.
+      const isDup = (a: ChatImageAttachmentDraft) =>
+        a.name === image.name && a.base64 === image.base64;
+      setImageAttachments((cur) => (cur.some(isDup) ? cur : [...cur, image]));
+      setImageLibrary((cur) => (cur.some(isDup) ? cur : [...cur, image]));
     }
   };
 
@@ -646,6 +669,10 @@ export function App() {
   };
 
   const submit = () => {
+    // A turn is already in flight — the button shows Stop, and Enter must
+    // agree with it. Without this guard an impatient second Enter appends a
+    // duplicate bubble and queues a second prompt behind a stuck one.
+    if (busy || !ready) return;
     if (!draft.trim() && imageAttachments.length === 0) return;
     // Standing agents (`always` + manually toggled) plus this message's
     // @-mentions ride every prompt, so the persona can't drift over a chat.
@@ -687,6 +714,7 @@ export function App() {
       mentions: mentioned.map((a) => a.name),
       personas,
       images: imageAttachments,
+      plugins: activePlugins.activeRefs,
     });
     setImageAttachments([]);
     setDraft("");
@@ -942,6 +970,18 @@ export function App() {
           })()}
         {view === "agents" ? (
           <AgentsView onChat={handleChatWithAgent} engines={engines} />
+        ) : view === "plugins" ? (
+          <PluginsView
+            catalog={pluginCatalog}
+            projectPlugins={activeProjectEntry?.plugins ?? []}
+            onProjectPluginsChange={(next) => {
+              if (activeDir) setProjectPlugins(activeDir, next);
+            }}
+            onRefresh={refreshPlugins}
+            engineId={engineId ?? undefined}
+            engineLabel={engineLabel ?? undefined}
+            hasProject={!!activeDir}
+          />
         ) : view === "skills" ? (
           <SkillsView
             projectDir={activeDir}
@@ -962,7 +1002,7 @@ export function App() {
         <div
           ref={scrollRef}
           onScroll={onTranscriptScroll}
-          className="mx-auto flex w-full max-w-4xl min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] py-6"
+          className="mx-auto flex w-full max-w-4xl min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] pt-6 pb-24"
         >
           {turns.length === 0 && ready && (
             <p className="mt-16 text-center text-sm text-muted-foreground">
@@ -1026,9 +1066,12 @@ export function App() {
                             cancel();
                             break;
                           case "continue_with_engine":
-                            if ("dir" in project) {
-                              void startWith(project.dir, action.engineId);
-                            }
+                            // Same path as picking an engine from the
+                            // EnginePicker: switch live if connected, else
+                            // start fresh with it (CONTINUATION.md §10
+                            // Slice 6 — `bindEngine` builds the brief from
+                            // the checkpoint this action came from).
+                            handleSelectEngine(action.engineId);
                             break;
                         }
                       }}
@@ -1036,6 +1079,9 @@ export function App() {
                       onUpdatePlan={updateTurnPlan}
                       onExitPlanMode={exitPlanMode}
                       depth={depth}
+                      otherEngines={engines
+                        .filter((e) => e.installed && e.id !== engineId)
+                        .map((e) => ({ id: e.id, label: e.label }))}
                       diffOpen={diffTurnId === turn.id}
                       onOpenDiff={(path) => {
                         setDiffFocusPath(path);
@@ -1076,19 +1122,6 @@ export function App() {
         </div>
         )}
 
-        {!atBottom && turns.length > 0 && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-32 z-10 flex justify-center">
-            <JumpToLatestButton
-              size="sm"
-              onClick={jumpToLatest}
-              className="pointer-events-auto gap-1"
-            >
-              <ChevronDownIcon className="size-4" />
-              Jump to latest
-            </JumpToLatestButton>
-          </div>
-        )}
-
         <div
           className={cn(
             "relative z-10 mt-auto w-full shrink-0 pb-6",
@@ -1098,6 +1131,18 @@ export function App() {
               : "mx-auto max-w-4xl px-[var(--spacing-app-panel-gutter-inline)]",
           )}
         >
+          {view === "chat" && !atBottom && turns.length > 0 && (
+            <div className="pointer-events-none absolute inset-x-0 -top-12 z-20 flex justify-center">
+              <JumpToLatestButton
+                size="sm"
+                onClick={jumpToLatest}
+                className="pointer-events-auto gap-1 shadow-lg"
+              >
+                <ChevronDownIcon className="size-4" />
+                Jump to latest
+              </JumpToLatestButton>
+            </div>
+          )}
           <div
             onDragOver={(e) => {
               if (!e.dataTransfer.types.includes("Files")) return;
@@ -1111,6 +1156,9 @@ export function App() {
             }}
             onDrop={(e) => {
               e.preventDefault();
+              // Without this the drop also bubbles to <main>'s onDrop and the
+              // same file is added twice.
+              e.stopPropagation();
               setIsDraggingImage(false);
               if (e.dataTransfer.files.length) void addImageFiles(e.dataTransfer.files);
             }}
@@ -1435,7 +1483,11 @@ export function App() {
                   setImgQuery(null);
                   return;
                 }
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing
+                ) {
                   event.preventDefault();
                   submit();
                 }
@@ -1581,6 +1633,21 @@ export function App() {
                     : [...cur, id],
                 )
               }
+              pluginCatalog={pluginCatalog}
+              projectPlugins={activeProjectEntry?.plugins ?? []}
+              onProjectPluginsChange={(next) => {
+                if (activeDir) setProjectPlugins(activeDir, next);
+              }}
+              manualPluginActive={manualPluginActive}
+              onTogglePluginManual={(id) =>
+                setManualPluginActive((cur) =>
+                  cur.includes(id)
+                    ? cur.filter((x) => x !== id)
+                    : [...cur, id],
+                )
+              }
+              engineId={engineId ?? undefined}
+              engineLabel={engineLabel ?? undefined}
             />
             )}
           </div>

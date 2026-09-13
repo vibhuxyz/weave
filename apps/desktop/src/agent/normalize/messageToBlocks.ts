@@ -1,5 +1,5 @@
 import type { GitStatus } from "../../../server/index.ts";
-import type { ToolEntry, TurnPersona, TurnPlan, TurnUsage } from "../../useAcpChat";
+import type { ToolEntry, TurnCheckpoint, TurnPersona, TurnPlan, TurnUsage } from "../../useAcpChat";
 import { explanationFromKnownText } from "./explanation";
 import { findingsFromKnownText, makeFinding } from "./finding";
 import { projectOverviewFromText } from "./projectOverview";
@@ -161,6 +161,12 @@ export function messageToBlocks(options: {
   usage?: TurnUsage;
   sourceEventIds?: string[];
   sourceSeq?: number;
+  /** Set by the server after a Stop sequence checkpoint (CONTINUATION.md §8).
+   * Renders the CheckpointBlock "Continue with…" UI. */
+  checkpoint?: TurnCheckpoint;
+  /** Installed engines other than the one running this turn, for the
+   * checkpoint's "Continue with" buttons. */
+  otherEngines?: { id: string; label: string }[];
 }): AgentViewModel {
   const src = () => emptySource(options.sourceEventIds, options.sourceSeq);
   const sourceRef = sourceFromTurn(options.sourceEventIds, options.sourceSeq);
@@ -331,6 +337,21 @@ export function messageToBlocks(options: {
   }
 
   blocks.push(...toolBlocks);
+
+  if (options.checkpoint) {
+    const cp = options.checkpoint;
+    blocks.push({
+      id: `checkpoint-${cp.checkpointId}`,
+      schemaVersion: 1,
+      source: src(),
+      type: "checkpoint",
+      mode: "handoff",
+      reason: cp.reason,
+      checkpointId: cp.checkpointId,
+      summary: cp.summary,
+      availableEngines: options.otherEngines ?? [],
+    });
+  }
 
   const meta = runMetaFromTurn({
     tools: options.tools,

@@ -4,9 +4,13 @@ import { cn } from "@/shared/lib/cn";
 import { basename, tildeHome } from "./paths";
 import type { GitStatus } from "../server/index.ts";
 import type { RunningServer } from "./useRunningServers";
-import type { ProjectAgent } from "./useProjects";
+import type { ProjectAgent, ProjectPlugin } from "./useProjects";
 import type { Agent } from "./useAgents";
+import type { NormalizedPlugin } from "@weave/core/plugins/plugin.ts";
 import { ProjectAgentsPicker } from "./agents/ProjectAgentsPicker";
+import { ProjectPluginsPicker } from "./plugins/ProjectPluginsPicker";
+import { compatLine } from "./plugins/pluginCompat";
+import { PluginGlyph } from "./plugins/PluginGlyph";
 import { AgentAvatar } from "./agents/AgentAvatar";
 import { FilesList } from "./features/chat/ui/FilesList";
 import { relativePath, type TurnDiffEntry } from "./agent/diff/turnDiff";
@@ -28,6 +32,13 @@ export interface ContextPanelProps {
   onProjectAgentsChange: (next: ProjectAgent[]) => void;
   manualActive: string[];
   onToggleManual: (id: string) => void;
+  pluginCatalog: NormalizedPlugin[];
+  projectPlugins: ProjectPlugin[];
+  onProjectPluginsChange: (next: ProjectPlugin[]) => void;
+  manualPluginActive: string[];
+  onTogglePluginManual: (id: string) => void;
+  engineId?: string;
+  engineLabel?: string;
   /** Controlled tab — the diff reader hands the panel back on a chosen tab. */
   tab?: Tab;
   onTabChange?: (tab: Tab) => void;
@@ -57,6 +68,13 @@ export function ContextPanel({
   onProjectAgentsChange,
   manualActive,
   onToggleManual,
+  pluginCatalog,
+  projectPlugins,
+  onProjectPluginsChange,
+  manualPluginActive,
+  onTogglePluginManual,
+  engineId,
+  engineLabel,
   tab: controlledTab,
   onTabChange,
   turnDiffs = [],
@@ -66,6 +84,7 @@ export function ContextPanel({
   const tab = controlledTab ?? ownTab;
   const setTab = onTabChange ?? setOwnTab;
   const [editAgents, setEditAgents] = useState(false);
+  const [editPlugins, setEditPlugins] = useState(false);
 
   const latestDiff = turnDiffs.at(-1);
 
@@ -74,6 +93,12 @@ export function ContextPanel({
     .filter((x): x is { pa: ProjectAgent; agent: Agent } => !!x.agent);
   const manualAgents = attached.filter((x) => x.pa.mode === "manual");
   const alwaysAgents = attached.filter((x) => x.pa.mode === "always");
+
+  const attachedPlugins = projectPlugins
+    .map((pp) => ({ pp, plugin: pluginCatalog.find((p) => p.id === pp.id) }))
+    .filter((x): x is { pp: ProjectPlugin; plugin: NormalizedPlugin } => !!x.plugin);
+  const manualPlugins = attachedPlugins.filter((x) => x.pp.mode === "manual");
+  const alwaysPlugins = attachedPlugins.filter((x) => x.pp.mode === "always");
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col gap-4 overflow-hidden rounded-xl border border-border/60 bg-agent-surface-raised p-4">
@@ -203,13 +228,23 @@ export function ContextPanel({
             {/* Standing agents */}
             <div className="flex items-center justify-between">
               <p className="text-muted-foreground text-xs">Agents</p>
-              <button
-                type="button"
-                onClick={() => setEditAgents((v) => !v)}
-                className="text-muted-foreground text-xs transition-colors hover:text-foreground"
-              >
-                {editAgents ? "Done" : "Edit"}
-              </button>
+              {(() => {
+                const isAdd = !editAgents && attached.length === 0;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setEditAgents((v) => !v)}
+                    className={cn(
+                      "text-xs transition-colors",
+                      isAdd
+                        ? "font-medium text-primary hover:text-primary/80"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {editAgents ? "Done" : isAdd ? "Add agents" : "Edit"}
+                  </button>
+                );
+              })()}
             </div>
 
             {editAgents ? (
@@ -280,6 +315,109 @@ export function ContextPanel({
                         )}
                       >
                         {on ? "on · next chat" : "manual"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Plugins */}
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground text-xs">Plugins</p>
+              {(() => {
+                const isAdd = !editPlugins && attachedPlugins.length === 0;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setEditPlugins((v) => !v)}
+                    className={cn(
+                      "text-xs transition-colors",
+                      isAdd
+                        ? "font-medium text-primary hover:text-primary/80"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {editPlugins ? "Done" : isAdd ? "Add plugins" : "Edit"}
+                  </button>
+                );
+              })()}
+            </div>
+
+            {editPlugins ? (
+              pluginCatalog.length === 0 ? (
+                <p className="text-muted-foreground text-xs">
+                  No plugin catalog found. Open the Plugins tab to refresh it.
+                </p>
+              ) : (
+                <ProjectPluginsPicker
+                  plugins={pluginCatalog}
+                  value={projectPlugins}
+                  onChange={onProjectPluginsChange}
+                  compact
+                />
+              )
+            ) : attachedPlugins.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                No plugins on this project.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {alwaysPlugins.map(({ plugin }) => (
+                  <div
+                    key={plugin.id}
+                    className="flex flex-col gap-0.5 rounded-lg bg-secondary/70 px-2.5 py-1.5"
+                  >
+                    <div className="flex items-center gap-2">
+                      <PluginGlyph
+                        category={plugin.category}
+                        className="size-5 shrink-0"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-xs">
+                        {plugin.name}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        always
+                      </span>
+                    </div>
+                    <span className="pl-[22px] text-[10px] text-muted-foreground">
+                      {compatLine(plugin, engineId, engineLabel)}
+                    </span>
+                  </div>
+                ))}
+                {manualPlugins.map(({ plugin }) => {
+                  const on = manualPluginActive.includes(plugin.id);
+                  return (
+                    <button
+                      key={plugin.id}
+                      type="button"
+                      onClick={() => onTogglePluginManual(plugin.id)}
+                      className={cn(
+                        "flex flex-col gap-0.5 rounded-lg px-2.5 py-1.5 text-left transition-colors",
+                        on
+                          ? "bg-agent-accent-wash text-foreground"
+                          : "bg-secondary/70 text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <PluginGlyph
+                          category={plugin.category}
+                          className="size-5 shrink-0"
+                        />
+                        <span className="min-w-0 flex-1 truncate text-xs">
+                          {plugin.name}
+                        </span>
+                        <span
+                          className={cn(
+                            "shrink-0 text-[10px]",
+                            on ? "text-agent-accent" : "text-muted-foreground",
+                          )}
+                        >
+                          {on ? "on · next chat" : "manual"}
+                        </span>
+                      </div>
+                      <span className="pl-[22px] text-[10px] text-muted-foreground">
+                        {compatLine(plugin, engineId, engineLabel)}
                       </span>
                     </button>
                   );

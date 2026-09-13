@@ -20,35 +20,48 @@ import { WidgetCanvas } from "./WidgetCanvas";
  * to-do list covering it on first launch was redundant.
  */
 
-const AGENT_RING_RADIUS = 320;
-const CLOCK_CENTER = { x: 0, y: 40 };
+const CLOCK_CENTER = { x: -140, y: 0 };
 
 /**
- * The starter pins on a fresh Home: two of the built-in agents, per the
- * call made when porting onboarding — a "code quality" agent and a "commit"
- * agent, standing in for upstream's named Tinker/Wildcard mascots (which
- * have no equivalent here).
+ * The starter Home on a fresh install: a digital clock and the built-in
+ * agents scattered around it — not a rigid ring — so the canvas opens
+ * populated and lively rather than empty.
+ *
+ * `slot` is a widget-center offset from the origin, hand-placed to spread the
+ * six pins (200×220) without overlap.
  */
-const STARTER_AGENT_IDS = ["builtin:reviewer", "builtin:committer"];
+const STARTER_AGENTS: { id: string; x: number; y: number }[] = [
+  { id: "builtin:generalist", x: -380, y: -180 },
+  { id: "builtin:reviewer", x: 60, y: -260 },
+  { id: "builtin:craftsman", x: 440, y: -110 },
+  { id: "builtin:builder", x: -400, y: 200 },
+  { id: "builtin:committer", x: 30, y: 260 },
+  { id: "builtin:debugger", x: 450, y: 180 },
+];
 
 function seedLayout(
   agents: Agent[],
   addWidget: WidgetMutationHandlers["addWidget"],
 ): void {
-  addWidget("clock", CLOCK_CENTER.x, CLOCK_CENTER.y);
-  const starterAgents = STARTER_AGENT_IDS.map((id) =>
-    agents.find((a) => a.id === id),
-  ).filter((a): a is Agent => !!a);
-  const ringAgents = starterAgents.length > 0 ? starterAgents : agents.slice(0, 6);
-  ringAgents.forEach((agent, i) => {
-    const angle = (i / ringAgents.length) * Math.PI * 2 - Math.PI / 2;
-    addWidget(
-      "agentPin",
-      CLOCK_CENTER.x + Math.cos(angle) * AGENT_RING_RADIUS,
-      CLOCK_CENTER.y + Math.sin(angle) * AGENT_RING_RADIUS,
-      { agentId: agent.id },
-    );
-  });
+  addWidget("clock", CLOCK_CENTER.x, CLOCK_CENTER.y, { mode: "digital" });
+
+  const placed = STARTER_AGENTS.map((slot) => ({
+    slot,
+    agent: agents.find((a) => a.id === slot.id),
+  })).filter((p): p is { slot: (typeof STARTER_AGENTS)[number]; agent: Agent } => !!p.agent);
+
+  // Built-ins missing (user cleared them) — fall back to whatever they have.
+  const pins =
+    placed.length > 0
+      ? placed
+      : agents.slice(0, STARTER_AGENTS.length).map((agent, i) => ({
+          slot: STARTER_AGENTS[i],
+          agent,
+        }));
+
+  for (const { slot, agent } of pins) {
+    addWidget("agentPin", slot.x, slot.y, { agentId: agent.id });
+  }
 }
 
 export function HomeView({
