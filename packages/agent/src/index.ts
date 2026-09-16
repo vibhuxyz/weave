@@ -1,4 +1,7 @@
 export * from "./engines.ts";
+export * from "./engine-capabilities.ts";
+export * from "./capability-check.ts";
+export * from "./policy.ts";
 export * from "./spawn.ts";
 export * from "./session.ts";
 export * from "./auth.ts";

@@ -5,12 +5,12 @@
   "identifier": "dev.vibhu.weave",
   "build": {
     "beforeDevCommand": {
-      "script": "pnpm bundle:server && exec ./node_modules/.bin/vite",
+      "script": "bun run bundle:server && exec ./node_modules/.bin/vite",
       "cwd": "..",
       "wait": false
     },
     "devUrl": "http://localhost:5180",
-    "beforeBuildCommand": "pnpm build && pnpm bundle:server",
+    "beforeBuildCommand": "bun run build && bun run bundle:server",
     "frontendDist": "../dist"
   },
   "app": {

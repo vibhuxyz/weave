@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `pnpm dev` — start everything.
+ * `bun dev` — start everything.
  *
  * Tauri already chains the rest: its `beforeDevCommand` starts Vite, and the
  * Rust shell spawns the Node ACP server, which spawns the agent. So the only
@@ -50,7 +50,7 @@ function freePorts() {
 
 freePorts();
 
-const child = spawn("pnpm", ["-F", "desktop", "tauri", "dev"], {
+const child = spawn("bun", ["run", "--filter", "desktop", "tauri", "dev"], {
   cwd: root,
   stdio: "inherit",
 });

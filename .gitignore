@@ -6,7 +6,7 @@ src-tauri/target/
 .DS_Store
 *.log
 
-# Generated: the prebundled ACP server, rebuilt by `pnpm -F desktop bundle:server`
+# Generated: the prebundled ACP server, rebuilt by `bun run --filter desktop bundle:server`
 apps/desktop/src-tauri/resources/
 
 # Weave runtime output (the old name was .berd/)

@@ -6,7 +6,7 @@
  * neither — no `packages/`, no `node_modules`, and no guarantee the user's
  * node is new enough for type stripping. So the server becomes one plain ESM
  * file with its dependencies inlined, and the only runtime requirement drops
- * from "node 22.6+ inside our pnpm workspace" to "any node 18+".
+ * from "node 22.6+ inside our bun workspace" to "any node 18+".
  *
  * What is deliberately NOT inlined: the ACP engines. `resolveEngineEntry`
  * finds them at runtime through `createRequire`, which esbuild cannot see and

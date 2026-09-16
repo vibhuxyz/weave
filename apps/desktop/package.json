@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
     "bundle:server": "node scripts/bundle-server.mjs",
-    "server:bundled": "pnpm bundle:server && node src-tauri/resources/server.mjs"
+    "server:bundled": "bun run bundle:server && node src-tauri/resources/server.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.66.0",

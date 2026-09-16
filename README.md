@@ -10,13 +10,13 @@ The orchestrator runs headless. The desktop app is one consumer of it, not
 its host.
 
 ```bash
-pnpm install
-pnpm dev                                              # the whole stack
-pnpm weave run --dir ./repo --prompt "fix the bug"    # no window needed
-pnpm weave eval --fixtures packages/eval/fixtures/tasks.json
+bun install
+bun dev                                              # the whole stack
+bun weave run --dir ./repo --prompt "fix the bug"    # no window needed
+bun weave eval --fixtures packages/eval/fixtures/tasks.json
 ```
 
-`pnpm dev` frees ports 5180/8137 first, then starts Tauri — which starts Vite,
+`bun dev` frees ports 5180/8137 first, then starts Tauri — which starts Vite,
 which starts the Rust shell, which spawns the Node ACP server and the agent.
 
 > **Naming.** Packages are `@weave/*`, the CLI is `weave`, runtime output is
@@ -157,8 +157,8 @@ a multi-agent log splits per task after the fact. That is what makes MVP's
 per-worker lanes a reader rather than a second stream.
 
 ```bash
-pnpm weave runs   --dir ./repo
-pnpm weave replay <runId> --dir ./repo
+bun weave runs   --dir ./repo
+bun weave replay <runId> --dir ./repo
 ```
 
 Replay, cost accounting, "why did agent 4 touch that file", the V2 event bus,
@@ -203,7 +203,7 @@ Without numbers, every later choice is taste. The harness is the instrument;
 it gets built before the thing it measures.
 
 ```bash
-pnpm weave eval --fixtures packages/eval/fixtures/tasks.json --repeats 3
+bun weave eval --fixtures packages/eval/fixtures/tasks.json --repeats 3
 ```
 
 The report is **sectioned by verification rung, strongest first** — never one
@@ -364,13 +364,13 @@ PATH.
 
 | | |
 |---|---|
-| `pnpm dev` | **everything** — clears stale ports, then the full stack |
-| `pnpm dev:web` | Vite only, in a browser, no agent |
-| `pnpm dev:server` | the ACP server alone (`PROJECT_DIR=/path`) |
-| `pnpm weave …` | the CLI: `run` · `eval` · `replay` · `runs` · `intake` |
-| `pnpm eval` | shorthand for `weave eval` |
-| `pnpm typecheck` | all six packages |
-| `pnpm build` · `pnpm tauri build` | bundle / `.app` |
+| `bun dev` | **everything** — clears stale ports, then the full stack |
+| `bun dev:web` | Vite only, in a browser, no agent |
+| `bun dev:server` | the ACP server alone (`PROJECT_DIR=/path`) |
+| `bun weave …` | the CLI: `run` · `eval` · `replay` · `runs` · `intake` |
+| `bun eval` | shorthand for `weave eval` |
+| `bun typecheck` | all six packages |
+| `bun build` · `bun tauri build` | bundle / `.app` |
 
 ---
 

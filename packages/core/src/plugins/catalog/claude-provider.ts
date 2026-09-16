@@ -10,15 +10,6 @@ import {
 } from "../plugin.ts";
 import type { PluginCatalogProvider } from "./provider.ts";
 
-/**
- * Reads Claude Code's local plugin state:
- *
- *   ~/.claude/plugins/plugin-catalog-cache.json   the "Discover" dataset
- *   ~/.claude/plugins/installed_plugins.json       what is on disk
- *   ~/.claude/plugins/marketplaces/<mp>/.claude-plugin/marketplace.json  fallback
- *
- * Every file is optional. A user who has never run `claude` yields `[]`.
- */
 export class ClaudeCatalogProvider implements PluginCatalogProvider {
   readonly id = "claude-catalog";
   readonly label = "Claude Code marketplace";
@@ -56,34 +47,7 @@ export class ClaudeCatalogProvider implements PluginCatalogProvider {
     )?.catalog?.plugins;
     if (!plugins) return [];
 
-    const out: NormalizedPlugin[] = [];
-    for (const [id, raw] of Object.entries(plugins)) {
-      const entry = raw?.marketplace_entry ?? {};
-      const marketplace = id.includes("@") ? id.slice(id.lastIndexOf("@") + 1) : "";
-      out.push({
-        id,
-        name: entry.name ?? raw?.plugin ?? id,
-        description: entry.description ?? "",
-        marketplace,
-        version: raw?.version ?? "unknown",
-        contentHash: raw?.sha ?? raw?.source_sha ?? "",
-        author: typeof entry.author === "string" ? entry.author : entry.author?.name,
-        category: entry.category,
-        homepage: entry.homepage,
-        installs: raw?.unique_installs,
-        lastUpdated: raw?.last_updated,
-        source: entry.source && {
-          url: entry.source.url,
-          path: entry.source.path,
-          ref: entry.source.ref,
-          sha: entry.source.sha,
-        },
-        capabilities: normalizeComponents(raw?.components),
-        provider: this.id,
-        installed: installed.has(id),
-        tokenCost: firstTokenCost(raw?.tokens),
-      });
-    }
+    const out = Object.entries(plugins).map(([id, raw]) => normalizeCatalogEntry(id, raw, installed, this.id));
     return out.sort(byInstalls);
   }
 
@@ -100,22 +64,7 @@ export class ClaudeCatalogProvider implements PluginCatalogProvider {
       )) as { plugins?: RawMarketplacePlugin[] } | undefined;
       for (const p of doc?.plugins ?? []) {
         if (!p?.name) continue;
-        const id = `${p.name}@${mp}`;
-        out.push({
-          id,
-          name: p.name,
-          description: p.description ?? "",
-          marketplace: mp,
-          version: "unknown",
-          contentHash: p.source?.sha ?? "",
-          author: typeof p.author === "string" ? p.author : p.author?.name,
-          category: p.category,
-          homepage: p.homepage,
-          source: p.source,
-          capabilities: emptyCapabilities(),
-          provider: this.id,
-          installed: installed.has(id),
-        });
+        out.push(normalizeMarketplacePlugin(p, mp, installed, this.id));
       }
     }
     return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -154,6 +103,63 @@ interface RawMarketplacePlugin {
   category?: string;
   homepage?: string;
   source?: { url?: string; path?: string; ref?: string; sha?: string };
+}
+
+function normalizeCatalogEntry(
+  id: string,
+  raw: RawCatalogEntry,
+  installed: Set<string>,
+  provider: string,
+): NormalizedPlugin {
+  const entry = raw?.marketplace_entry ?? {};
+  const marketplace = id.includes("@") ? id.slice(id.lastIndexOf("@") + 1) : "";
+  return {
+    id,
+    name: entry.name ?? raw?.plugin ?? id,
+    description: entry.description ?? "",
+    marketplace,
+    version: raw?.version ?? "unknown",
+    contentHash: raw?.sha ?? raw?.source_sha ?? "",
+    author: typeof entry.author === "string" ? entry.author : entry.author?.name,
+    category: entry.category,
+    homepage: entry.homepage,
+    installs: raw?.unique_installs,
+    lastUpdated: raw?.last_updated,
+    source: entry.source && {
+      url: entry.source.url,
+      path: entry.source.path,
+      ref: entry.source.ref,
+      sha: entry.source.sha,
+    },
+    capabilities: normalizeComponents(raw?.components),
+    provider,
+    installed: installed.has(id),
+    tokenCost: firstTokenCost(raw?.tokens),
+  };
+}
+
+function normalizeMarketplacePlugin(
+  p: RawMarketplacePlugin,
+  marketplace: string,
+  installed: Set<string>,
+  provider: string,
+): NormalizedPlugin {
+  const id = `${p.name}@${marketplace}`;
+  return {
+    id,
+    name: p.name ?? id,
+    description: p.description ?? "",
+    marketplace,
+    version: "unknown",
+    contentHash: p.source?.sha ?? "",
+    author: typeof p.author === "string" ? p.author : p.author?.name,
+    category: p.category,
+    homepage: p.homepage,
+    source: p.source,
+    capabilities: emptyCapabilities(),
+    provider,
+    installed: installed.has(id),
+  };
 }
 
 const COMPONENT_KINDS: { key: string; field: keyof PluginCapabilities; kind: PluginCapabilityKind }[] = [

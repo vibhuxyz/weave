@@ -55,6 +55,17 @@ grep -rn "@tauri-apps\|from \"react\"\|apps/desktop" packages/ --include=*.ts
 
 - `engines-registry.ts` / `engines.ts` — registry of supported engines (`antigravity`,
   `claude-code`, `codex`, `amp`), their manifests, capability flags, and CLI arguments.
+- `engine-capabilities.ts` — `EngineCapabilities`, `EngineTokenReporting`, and the
+  per-engine declared capability data. Split out of `engines-registry.ts` once the
+  capability dimensions from the "control plane" checklist (`planning`, `subagents`,
+  `skills`, `sandbox`, `browser`, `computerUse`) were added — see §10.
+- `capability-check.ts` — `describeCapabilityMismatch`, comparing the live
+  `agentCapabilities` ACP reports at `initialize` against the declared registry.
+- `policy.ts` — `TaskPolicy` → `PermissionPolicy` translation: `compilePolicyPaths`
+  folds `filesystem.write` into `TaskContract.allowedPaths`; `withPolicy` adds
+  command-pattern checks for `git.commit` and `deployment.allowed` on top of a base
+  policy (`confineToTaskDir` by default). `network.allowed` is recorded, not
+  enforced — see §10.
 - `supervisor.ts` — `EngineSupervisor`. Keeps warm engine child processes and manages
   per-session engine switches with prompt supersession.
 - `auth.ts` — engine authentication handling: terminal login runners (`runTerminalAuth`),
@@ -85,6 +96,33 @@ Built:
   enforce `maxTurns` and `timeoutMs`.
 - `sessions-store.ts` — which conversation belongs to which project.
 - `git.ts` — branch and porcelain status.
+- `skills.ts` — discovers `.weave/skills/` (and `.agents/skills/`), each a
+  folder with a `SKILL.md`; renders a pointer catalog for the system prompt.
+  Task-matched, read on demand — the body is never loaded until a skill's
+  description matches what the agent is about to do.
+- `rules.ts` — discovers `.weave/rules/` (and `.agents/rules/`), flat
+  Markdown files this time, not folders — a rule is small enough to inline
+  wholesale. Renders `<project-rules>`, standing constraints applied on every
+  turn rather than a catalog consulted on demand. A rule that outgrows "small"
+  belongs in `skills.ts` instead.
+- `agents/` — `BUILTIN_AGENTS`: six portable, provider-neutral role profiles
+  (frontend/backend/database/devops/AI engineer, reviewer), one file per role
+  plus a shared `types.ts` and `base.prompt.ts` (priority order, trust rules,
+  scope, and the DONE/BLOCKED report format every profile's prompt is built
+  from). Data plus a formatter; not wired into the desktop's separate
+  user-editable Persona store.
+- `builtin-skills/` — `BUILTIN_SKILLS`: seven short skills Weave ships itself
+  (typescript, frontend, backend, api-conventions, database, security, testing),
+  one file per skill, rendered as `<builtin-skills>` with bodies inlined. Kept
+  separate from `skills.ts`'s pointer catalog because the shapes differ —
+  inline body vs. read-on-demand file.
+- `worktree.ts` — `createWorktree` / `removeWorktree` / `listWeaveWorktrees`:
+  a task's isolated execution boundary, `git worktree add -b weave/<taskId>`
+  under `.weave/worktrees/<taskId>`. Single-task only — no pool, no scheduler,
+  no auto-merge; that is the integrator, still MVP.1.
+- `task-workspace.ts` — `resolveTaskWorkspace`, the one decision `runner.ts`
+  defers to: isolate into a worktree, or run in place. Kept out of `runner.ts`
+  itself to keep that file's diff small for this change.
 
 Planned, by tier — each tier file has the detail:
 
@@ -187,10 +225,14 @@ Current event types:
 ```
 run.started · run.finished
 task.started · task.finished · task.timeout
-agent.spawned · agent.session · agent.message (raw ACP)
+agent.spawned · agent.session · agent.message (raw ACP) · engine.capabilities (raw ACP)
 permission.requested · permission.decided
 file.read · file.written
 usage · cell.finished · error
+intake.detected · verification.rung · verification.finished
+plugin.activated
+attempt.started · attempt.ended · checkpoint.created
+worktree.created · worktree.removed
 ```
 
 Every event carries `runId`, `seq`, `at`, and where applicable `taskId` — so a
@@ -337,3 +379,66 @@ initialize · newSession · loadSession · prompt · cancel · setSessionConfigO
 ```
 
 Six calls instead of 113.
+
+---
+
+## 10. Weave is a control plane, not a re-implementation
+
+Worth saying explicitly, because it is easy to mistake this system for "three
+prompts to three CLIs": Weave does not rebuild the planner, permissions,
+skills, agents, or MCP handling that Claude Code / Codex / Gemini already
+have. It orchestrates above them, and translates its own engine-neutral
+concepts into each engine's native mechanism. This has been true since V1.0;
+this section names it.
+
+| Weave owns | Translated by / into | File |
+|---|---|---|
+| Engine-neutral session lifecycle | ACP itself — `initialize · newSession · prompt · cancel` — the same six calls regardless of which engine is behind the process | `agent/session.ts`, `agent/supervisor.ts` |
+| Which engines exist, what each can do | `EngineDescriptor` / `EngineCapabilities` — a capability flag per engine, not a hardcoded `if (provider === …)` | `agent/engines-registry.ts` |
+| Whether a plugin's commands/skills/agents/MCP/hooks/LSP survive on a given engine | `planActivation()` → `ActivationPlan` — resolved per (plugin, engine) pair into what's natively enabled, what falls back to an MCP adapter, and what becomes prose instructions | `core/plugins/resolve.ts` |
+| Project-wide standing constraints, portable across engines | `rules.ts` — `<project-rules>`, inlined; the same file works whichever engine is running | `core/rules.ts` |
+| Task-matched expertise, portable across engines | `skills.ts` — a pointer catalog every engine gets the same way | `core/skills.ts` |
+| What a tool call is allowed to touch | `PermissionPolicy` — a policy Weave owns, translated to each ACP response via `toAcpResponse` | `agent/permissions.ts` |
+| What happened, durably, engine-agnostic | The ledger — raw ACP payloads, verbatim | `core/ledger.ts`, `protocol/events.ts` |
+| What state a task is in right now | `foldTaskState()` — a pure fold over the ledger, not a second source of truth an engine could drift from | `core/state.ts` |
+| Whether a result is actually correct | The verification ladder — engine-agnostic; it never asks the engine whether it succeeded | `core/intake.ts`, `core/verify.ts` |
+| Carrying a task across engines mid-flight | `buildBrief()` — a bounded, trust-sectioned handoff, not a transcript dump | `core/handoff.ts`, `core/checkpoint.ts` |
+
+The reason "engine adapter layer" cost almost nothing to build here is that
+ACP already *is* that layer for the six calls above — see §9. What Weave adds
+on top is the part ACP doesn't cover: deciding which plugin capabilities are
+real on a given engine, translating a project's policy into that engine's
+permission responses, and keeping a durable, engine-agnostic record of what
+actually happened so a task can move engines without losing what it knew.
+
+Updated since this section was first written:
+
+- **Per-task workspace isolation** is now built — `core/worktree.ts` +
+  `core/task-workspace.ts`, opt-in via `RunTaskOptions.isolate` /
+  `weave run --isolate`. Deliberately single-task: no pool, no scheduler, no
+  auto-merge. `TaskContract.allowedPaths` is now enforced accordingly
+  (`agent/permissions.ts`), closing the precondition [MVP.1](MVP.md) named for
+  it. The rest of MVP.1 — the pool, the scheduler, the integrator — is still
+  not built and still gated behind the item below.
+- **Capability discovery** is now live-checked for the one dimension ACP
+  actually reports (`resume`, cross-checked against `agentCapabilities.loadSession`
+  at `initialize` — `agent/capability-check.ts`, the `engine.capabilities`
+  ledger event). The Weave-specific dimensions (`planning`, `subagents`,
+  `skills`, `sandbox`, `browser`, `computerUse`) have no ACP wire
+  representation at all and stay hand-declared — see `engine-capabilities.ts`'s
+  doc comment.
+- **Declarative policy** now exists (`protocol/policy.ts`, `agent/policy.ts`):
+  filesystem-write and git-commit/deployment dimensions are real; `network` is
+  recorded but not enforced (see `policy.ts`'s doc comment) — true network
+  isolation needs a process-level sandbox boundary, which is a separate,
+  larger change.
+
+Still genuinely not done, and still not an oversight:
+
+- **MVP.1's pool/scheduler/integrator** — multiple concurrent workers,
+  sequential merge-and-verify. See [ROADMAP](ROADMAP.md) §3.5 and §"the tier
+  rule".
+- **The V1 exit-criteria baseline itself** — `weave eval` runs the full
+  12-fixture × ≥2-config × ≥3-repeat matrix mechanically today, but that
+  matrix has not actually been executed end to end (real API cost and wall
+  clock). See [V1](V1.md) "Exit criteria for V1".

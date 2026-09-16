@@ -6,26 +6,23 @@
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@12.3.4",
+  "packageManager": "bun@1.4.2",
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "dev:web": "pnpm -F desktop dev",
-    "dev:server": "pnpm -F desktop server",
-    "tauri": "pnpm -F desktop tauri",
-    "build": "pnpm -F desktop build",
-    "build:app": "pnpm -F desktop tauri build && cp -a apps/desktop/src-tauri/target/release/bundle/macos/*.app ./",
-    "weave": "pnpm -F @weave/cli start",
-    "eval": "pnpm -F @weave/cli start eval",
-    "typecheck": "pnpm -r typecheck"
+    "dev:web": "bun run --filter desktop dev",
+    "dev:server": "bun run --filter desktop server",
+    "tauri": "bun run --filter desktop tauri",
+    "build": "bun run --filter desktop build",
+    "build:app": "bun run --filter desktop tauri build && cp -a apps/desktop/src-tauri/target/release/bundle/macos/*.app ./",
+    "weave": "INIT_CWD=$PWD bun run --filter @weave/cli start",
+    "eval": "INIT_CWD=$PWD bun run --filter @weave/cli start eval",
+    "typecheck": "bun run --workspaces typecheck"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "better-sqlite3",
-      "electron",
-      "esbuild",
-      "node-pty"
-    ]
-  },
+  "trustedDependencies": [
+    "better-sqlite3",
+    "esbuild",
+    "node-pty"
+  ],
   "workspaces": [
     "apps/*",
     "packages/*"

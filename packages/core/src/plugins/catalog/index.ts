@@ -5,11 +5,6 @@ import type { PluginCatalogProvider } from "./provider.ts";
 export { ClaudeCatalogProvider };
 export type { PluginCatalogProvider };
 
-/**
- * Merge every provider's plugins into one catalog, deduped by `id` (first
- * provider wins). Providers never throw, so one bad source cannot sink the
- * catalog.
- */
 export async function resolveCatalog(
   providers: PluginCatalogProvider[] = [new ClaudeCatalogProvider()],
 ): Promise<NormalizedPlugin[]> {
