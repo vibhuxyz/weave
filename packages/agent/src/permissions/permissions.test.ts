@@ -5,9 +5,9 @@ import {
   extractCommand,
   inspectCommandBoundaries,
   toAcpResponse,
-} from "./permissions.ts";
-import { getEngine, resolveEngineArgs } from "./engines.ts";
-import { buildMacOsSandboxProfile } from "./spawn.ts";
+} from "./index.ts";
+import { getEngine, resolveEngineArgs } from "../engines/index.ts";
+import { buildMacOsSandboxProfile } from "../spawn/index.ts";
 import type { TaskContract, RequestPermissionRequest } from "@weave/protocol";
 
 const FAKE_TASK: TaskContract = {
@@ -26,7 +26,7 @@ test("inspectCommandBoundaries allows safe in-tree commands", () => {
 test("inspectCommandBoundaries rejects sensitive credential access", () => {
   const sshCheck = inspectCommandBoundaries("cat ~/.ssh/id_rsa", FAKE_TASK.cwd);
   assert.equal(sshCheck.allowed, false);
-  assert.match(sshCheck.reason!, /sensitive/i);
+  assert.match(sshCheck.reason ?? "", /sensitive/i);
 
   const awsCheck = inspectCommandBoundaries("cat $HOME/.aws/credentials", FAKE_TASK.cwd);
   assert.equal(awsCheck.allowed, false);
@@ -38,7 +38,7 @@ test("inspectCommandBoundaries rejects sensitive credential access", () => {
 test("inspectCommandBoundaries rejects path traversal escaping cwd", () => {
   const traversalCheck = inspectCommandBoundaries("cat ../secret.txt", FAKE_TASK.cwd);
   assert.equal(traversalCheck.allowed, false);
-  assert.match(traversalCheck.reason!, /traversal/i);
+  assert.match(traversalCheck.reason ?? "", /traversal/i);
 
   const upCd = inspectCommandBoundaries("cd ../.. && rm -rf build", FAKE_TASK.cwd);
   assert.equal(upCd.allowed, false);
@@ -47,7 +47,7 @@ test("inspectCommandBoundaries rejects path traversal escaping cwd", () => {
 test("inspectCommandBoundaries rejects out-of-tree absolute paths", () => {
   const outOfTree = inspectCommandBoundaries("cat /Users/otheruser/secrets.env", FAKE_TASK.cwd);
   assert.equal(outOfTree.allowed, false);
-  assert.match(outOfTree.reason!, /outside task cwd/i);
+  assert.match(outOfTree.reason ?? "", /outside task cwd/i);
 
   const inTree = inspectCommandBoundaries(`cat ${FAKE_TASK.cwd}/README.md`, FAKE_TASK.cwd);
   assert.equal(inTree.allowed, true);
@@ -117,7 +117,6 @@ test("buildMacOsSandboxProfile constructs valid SBPL with cwd and denials", () =
   assert.match(profile, /\.aws/);
 });
 
-/** The four options Antigravity offers on a shell command. */
 function agyRequest(command: string): RequestPermissionRequest {
   return {
     sessionId: "s1",

@@ -1,14 +1,5 @@
 import type { SessionConfigOption } from "@weave/protocol";
 
-/**
- * Apply agent settings (`model`, `mode`, `effort`, `fast`) and report which
- * ones were refused.
- *
- * Refusals are normal, not exceptional: `effort` and `fast` exist on Opus and
- * are rejected on Haiku, reported as a bare "Internal error". Callers need the
- * per-key outcome so an optimistic UI can roll back rather than display a
- * value the agent never accepted.
- */
 export interface ApplyConfigResult {
   applied: Record<string, string>;
   refused: Record<string, string>;
@@ -34,7 +25,6 @@ export async function applyConfigOptions(
   return { applied, refused };
 }
 
-/** Current values of every select-type option, keyed by id. */
 export function readSelectValues(
   options: SessionConfigOption[],
 ): Record<string, string> {

@@ -1,4 +1,4 @@
-import type { EngineCapabilities } from "./engine-capabilities.ts";
+import type { EngineCapabilities } from "./types.ts";
 
 interface LiveAgentCapabilities {
   loadSession?: boolean;

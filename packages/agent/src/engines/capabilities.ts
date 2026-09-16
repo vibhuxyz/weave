@@ -1,24 +1,4 @@
-export interface EngineCapabilities {
-  streaming: boolean;
-  toolCalls: boolean;
-  fileEditing: boolean;
-  permissions: boolean;
-  resume: boolean;
-  handoff: boolean;
-  mcp: boolean;
-  planning: boolean;
-  subagents: boolean;
-  skills: boolean;
-  sandbox: boolean;
-  browser: boolean;
-  computerUse: boolean;
-}
-
-export interface EngineTokenReporting {
-  contextWindow: boolean;
-  turnTotals: boolean;
-  cost: boolean;
-}
+import type { EngineCapabilities, EngineTokenReporting } from "./types.ts";
 
 export const FULL_TOKEN_REPORTING: EngineTokenReporting = {
   contextWindow: true,
@@ -44,7 +24,10 @@ const BASE_ACP_CAPABILITIES: Pick<
   handoff: true,
 };
 
-const UNDOCUMENTED_DEVICE_CAPABILITIES = { browser: false, computerUse: false } as const;
+const UNDOCUMENTED_DEVICE_CAPABILITIES = {
+  browser: false,
+  computerUse: false,
+} as const;
 
 export const CLAUDE_CODE_CAPABILITIES: EngineCapabilities = {
   ...BASE_ACP_CAPABILITIES,

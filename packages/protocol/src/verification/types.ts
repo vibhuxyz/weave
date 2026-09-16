@@ -1,6 +1,12 @@
-import type { VERIFICATION_RUNGS } from "./constants.ts";
-
-export type VerificationRung = (typeof VERIFICATION_RUNGS)[number];
+export type VerificationRung =
+  | "diff-review"
+  | "lint"
+  | "typecheck"
+  | "build"
+  | "boot"
+  | "health"
+  | "smoke"
+  | "tests";
 
 export interface Verification {
   available: VerificationRung[];

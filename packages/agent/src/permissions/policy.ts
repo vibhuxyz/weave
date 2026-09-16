@@ -1,5 +1,7 @@
 import type { TaskPolicy } from "@weave/protocol";
-import { confineToTaskDir, extractCommand, type PermissionPolicy } from "./permissions.ts";
+import { confineToTaskDir } from "./confine.ts";
+import { extractCommand } from "./command-safety.ts";
+import type { PermissionPolicy } from "./types.ts";
 
 const GIT_COMMIT_COMMAND_PATTERN = /(^|[\s;&|])git\s+commit\b/i;
 
@@ -39,7 +41,7 @@ export function withPolicy(
   policy: TaskPolicy,
   base: PermissionPolicy = confineToTaskDir,
 ): PermissionPolicy {
-  const policyPolicy: PermissionPolicy = async (task, request) => {
+  return async (task, request) => {
     const baseDecision = await base(task, request);
     if (baseDecision.decision === "reject") return baseDecision;
 
@@ -54,5 +56,4 @@ export function withPolicy(
     }
     return baseDecision;
   };
-  return policyPolicy;
 }

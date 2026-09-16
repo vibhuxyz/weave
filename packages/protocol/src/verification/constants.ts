@@ -1,6 +1,6 @@
-import type { Verification } from "./types.ts";
+import type { Verification, VerificationRung } from "./types.ts";
 
-export const VERIFICATION_RUNGS = [
+export const VERIFICATION_RUNGS: readonly VerificationRung[] = [
   "diff-review",
   "lint",
   "typecheck",
