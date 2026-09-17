@@ -12,4 +12,4 @@ export * from "./builtin-skills/index.ts";
 export * from "./worktree/index.ts";
 export * from "./plugins/index.ts";
 
-export { matchGlob, firstMatch } from "@weave/agent";
+export { matchGlob, firstMatch } from "@weave/agent/browser";

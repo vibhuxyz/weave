@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 const rowButtonVariants = {
   // Bordered, input-like control: pickers and field-style triggers.

@@ -5,7 +5,7 @@ import {
   movedBeyondWidgetDragThreshold,
   offsetBetween,
   type WidgetGesturePoint,
-} from "../lib/widgetGesture";
+} from "@/home/canvas/lib";
 
 const CLICK_SUPPRESSION_DURATION_MS = 600;
 

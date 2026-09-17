@@ -2,15 +2,14 @@ import { create } from "zustand";
 import type {
   LayoutCamera,
   LayoutConstraints,
-} from "@/home/canvas/layout/layout";
-import { markFreshWidgetPlacement } from "../lib/freshWidgetPlacements";
-import { isLayoutConstraints } from "../lib/snapToGrid";
-import { HOME_WIDGET_CATALOG_BY_ID } from "../widgets/catalog";
-import type {
-  CanvasBounds,
-  MoveWidgetOptions,
-  WidgetInstance,
-} from "../widgets/types";
+} from "@/home/canvas/layout";
+import { isLayoutConstraints, markFreshWidgetPlacement } from "@/home/canvas/lib";
+import {
+  HOME_WIDGET_CATALOG_BY_ID,
+  type CanvasBounds,
+  type MoveWidgetOptions,
+  type WidgetInstance,
+} from "@/home/canvas/widgets";
 import {
   addWidgetMutation,
   bumpZMutation,

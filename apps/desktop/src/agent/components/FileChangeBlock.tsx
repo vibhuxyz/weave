@@ -1,4 +1,4 @@
-import type { FileChangeBlock as FileChangeBlockModel } from "../normalize/types";
+import type { FileChangeBlock as FileChangeBlockModel } from "@/agent/normalize";
 
 export function FileChangeBlock({ block }: { block: FileChangeBlockModel }) {
   return (

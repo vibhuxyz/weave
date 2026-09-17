@@ -11,14 +11,14 @@ import {
   type ReactNode,
   type RefCallback,
 } from "react";
+import type { TranscriptRowStateRegistry } from "./transcriptRowStateRegistry";
 import type {
   TranscriptDurableRowState,
   TranscriptMcpActivityKind,
   TranscriptOpenOverlayKind,
   TranscriptRowStatePatchInput,
   TranscriptRowStateUpdateInput,
-  TranscriptRowStateRegistry,
-} from "./transcriptRowStateRegistry";
+} from "./types";
 
 interface TranscriptRowStateContextValue {
   registry: TranscriptRowStateRegistry;

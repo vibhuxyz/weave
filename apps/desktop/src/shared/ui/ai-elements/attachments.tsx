@@ -1,10 +1,5 @@
-import { Button } from "@/shared/ui/button";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/shared/ui/hover-card";
-import { cn } from "@/shared/lib/cn";
+import { Button, HoverCard, HoverCardContent, HoverCardTrigger } from "@/shared/ui";
+import { cn } from "@/shared/lib";
 import type { FileUIPart, SourceDocumentUIPart } from "ai";
 import {
   FileTextIcon,

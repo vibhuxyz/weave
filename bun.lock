@@ -53,6 +53,7 @@
         "@weave/agent": "workspace:*",
         "@weave/core": "workspace:*",
         "@weave/protocol": "workspace:*",
+        "@weave/providers": "workspace:*",
         "ai": "^7.0.78",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -116,23 +117,6 @@
         "typescript": "~5.9.3",
       },
     },
-    "packages/cli": {
-      "name": "@weave/cli",
-      "version": "0.0.0",
-      "bin": {
-        "weave": "src/index.ts",
-      },
-      "dependencies": {
-        "@weave/agent": "workspace:*",
-        "@weave/core": "workspace:*",
-        "@weave/eval": "workspace:*",
-        "@weave/protocol": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/node": "^22.10.2",
-        "typescript": "~5.9.3",
-      },
-    },
     "packages/core": {
       "name": "@weave/core",
       "version": "0.0.0",
@@ -162,6 +146,17 @@
       "version": "0.0.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "^0.19.0",
+      },
+      "devDependencies": {
+        "@types/node": "^22.10.2",
+        "typescript": "~5.9.3",
+      },
+    },
+    "packages/providers": {
+      "name": "@weave/providers",
+      "version": "0.0.0",
+      "dependencies": {
+        "@weave/protocol": "workspace:*",
       },
       "devDependencies": {
         "@types/node": "^22.10.2",
@@ -689,13 +684,13 @@
 
     "@weave/agent": ["@weave/agent@workspace:packages/agent"],
 
-    "@weave/cli": ["@weave/cli@workspace:packages/cli"],
-
     "@weave/core": ["@weave/core@workspace:packages/core"],
 
     "@weave/eval": ["@weave/eval@workspace:packages/eval"],
 
     "@weave/protocol": ["@weave/protocol@workspace:packages/protocol"],
+
+    "@weave/providers": ["@weave/providers@workspace:packages/providers"],
 
     "@workflow/serde": ["@workflow/serde@4.1.0", "", {}, "sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ=="],
 

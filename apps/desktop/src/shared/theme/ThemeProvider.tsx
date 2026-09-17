@@ -87,20 +87,22 @@ function hexToRgb(hex: string): RGB {
   }
 
   return {
-    r: Number.parseInt(match[1], 16),
-    g: Number.parseInt(match[2], 16),
-    b: Number.parseInt(match[3], 16),
+    r: Number.parseInt(match[1] ?? "0", 16),
+    g: Number.parseInt(match[2] ?? "0", 16),
+    b: Number.parseInt(match[3] ?? "0", 16),
   };
+}
+
+function toLinearChannel(channel: number): number {
+  const scaled = channel / 255;
+  return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
 }
 
 function luminance(hex: string): number {
   const { r, g, b } = hexToRgb(hex);
-  const [rs, gs, bs] = [r, g, b].map((channel) => {
-    const scaled = channel / 255;
-    return scaled <= 0.03928
-      ? scaled / 12.92
-      : ((scaled + 0.055) / 1.055) ** 2.4;
-  });
+  const rs = toLinearChannel(r);
+  const gs = toLinearChannel(g);
+  const bs = toLinearChannel(b);
 
   return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
 }

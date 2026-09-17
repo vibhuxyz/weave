@@ -1,5 +1,4 @@
-import { isAppAvatarRef, isUserAvatarRef } from "@/shared/avatars/catalog";
-import type { ResolvedAvatarMedia } from "@/shared/avatars/catalog";
+import { isAppAvatarRef, isUserAvatarRef, type ResolvedAvatarMedia } from "@/shared/avatars";
 
 export const MAX_PNG_AVATAR_BYTES = 2 * 1024 * 1024;
 const PNG_DATA_URL_PREFIX = "data:image/png;base64,";

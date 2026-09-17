@@ -1,8 +1,8 @@
 import { Minus, Plus } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import { Button } from "@/shared/ui/button";
-import { getDesignSystemMetadata } from "@/shared/ui/design-system/metadata";
+import { getDesignSystemMetadata } from "@/shared/ui/design-system";
 
 interface NumberStepperProps {
   value: number;

@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Badge } from "@/shared/ui/badge";
-import { Button } from "@/shared/ui/button";
+import { Badge, Button } from "@/shared/ui";
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
-import type { SafetyAskBlock as SafetyAskBlockModel } from "../normalize/types";
+import type { SafetyAskBlock as SafetyAskBlockModel } from "@/agent/normalize";
 import { CodePanel } from "./CodePanel";
 
 export function SafetyAskBlock({

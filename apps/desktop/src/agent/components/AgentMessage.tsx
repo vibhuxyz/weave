@@ -1,9 +1,8 @@
 import { useMemo } from "react";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import type { GitStatus } from "../../../server/index.ts";
-import type { ChatTurn } from "../../useAcpChat";
-import { type AgentBlock, type BlockAction, emptySource } from "../normalize/types";
-import { messageToBlocks } from "../normalize/messageToBlocks";
+import type { ChatTurn, TurnPlan } from '@/features/chat/hooks';
+import { type AgentBlock, type BlockAction, emptySource, messageToBlocks } from "@/agent/normalize";
 import { AgentHeader, type DepthLevel } from "./AgentHeader";
 import { CodeBlockView } from "./CodeBlockView";
 import { DiffBlock } from "./DiffBlock";
@@ -24,8 +23,7 @@ import { ProjectOverviewBlockView } from "./ProjectOverviewBlock";
 import { PlanBlockView } from "./PlanBlockView";
 import { TurnDiffBar } from "./TurnDiffBar";
 import { WorkingRow } from "./WorkingRow";
-import { turnDiff } from "../diff/turnDiff";
-import type { TurnPlan } from "../../useAcpChat";
+import { turnDiff } from "@/agent/diff";
 
 /** Filter blocks by presentation depth — no re-normalization, purely visual. */
 function filterBlocksByDepth(blocks: AgentBlock[], depth: DepthLevel): AgentBlock[] {

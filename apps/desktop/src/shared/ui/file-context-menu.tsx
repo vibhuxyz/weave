@@ -6,8 +6,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/shared/ui/context-menu";
-import { revealInFileManager } from "@/shared/lib/fileManager";
-import { getPlatform } from "@/shared/lib/platform";
+import { getPlatform, revealInFileManager } from "@/shared/lib";
 
 const revealLabel = `labels.revealInFileManager_${getPlatform()}` as const;
 

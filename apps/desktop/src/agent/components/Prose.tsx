@@ -1,5 +1,5 @@
-import { MessageResponse } from "@/shared/ui/ai-elements/message";
-import { cn } from "@/shared/lib/cn";
+import { MessageResponse } from "@/shared/ui/ai-elements";
+import { cn } from "@/shared/lib";
 
 /**
  * Renders agent prose as markdown, pinned to the dark card typography. Use this

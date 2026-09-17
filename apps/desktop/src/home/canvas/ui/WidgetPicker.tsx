@@ -1,4 +1,4 @@
-import type { WidgetInstance } from "../widgets/types";
+import type { WidgetInstance } from "@/home/canvas/widgets";
 
 /**
  * Phase-1 stub for the upstream right-click widget picker (903 lines, pulls in

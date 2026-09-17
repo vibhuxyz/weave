@@ -1,8 +1,8 @@
 import { IconCheck } from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@/shared/ui/button";
-import { getProviderIcon } from "@/shared/ui/icons/ProviderIcons";
+import { Button } from "@/shared/ui";
+import { getProviderIcon } from "@/shared/ui/icons";
 import {
   ONBOARDING_ENGINES,
   engineProviderFallback,
@@ -52,7 +52,9 @@ export function HarnessStep({
     const nextIndex =
       (currentIndex + offset + ONBOARDING_ENGINES.length) %
       ONBOARDING_ENGINES.length;
-    const nextId = ONBOARDING_ENGINES[nextIndex].id;
+    const nextEngine = ONBOARDING_ENGINES[nextIndex];
+    if (!nextEngine) return;
+    const nextId = nextEngine.id;
     onSelect(nextId);
     requestAnimationFrame(() => {
       document

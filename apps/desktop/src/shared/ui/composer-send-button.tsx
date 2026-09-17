@@ -1,7 +1,7 @@
 import * as React from "react";
 import { SendIcon, SquareIcon } from "lucide-react";
 
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import { Button, type ButtonProps } from "@/shared/ui/button";
 
 /**

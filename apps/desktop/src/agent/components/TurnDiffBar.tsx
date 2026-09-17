@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronRightIcon, FileDiffIcon } from "lucide-react";
-import { cn } from "@/shared/lib/cn";
-import { relativePath, type TurnDiff } from "../diff/turnDiff";
+import { cn } from "@/shared/lib";
+import { relativePath, type TurnDiff } from "@/agent/diff";
 
 /**
  * The turn's result line: what the agent changed, as one row. "Show files"

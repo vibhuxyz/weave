@@ -1,5 +1,5 @@
-import { Badge } from "@/shared/ui/badge";
-import type { PermissionBlock as PermissionBlockModel } from "../normalize/types";
+import { Badge } from "@/shared/ui";
+import type { PermissionBlock as PermissionBlockModel } from "@/agent/normalize";
 
 export function PermissionBlock({ block }: { block: PermissionBlockModel }) {
   return (

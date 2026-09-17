@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { usePersistedState } from "@/shared/hooks/usePersistedState";
+import { usePersistedState } from "@/shared/hooks";
 
 export const ONBOARDING_STEPS = [
   "welcome",
@@ -43,7 +43,7 @@ function stepAtOffset(step: OnboardingStep, offset: number): OnboardingStep {
     0,
     Math.min(ONBOARDING_STEPS.length - 1, index + offset),
   );
-  return ONBOARDING_STEPS[nextIndex];
+  return ONBOARDING_STEPS[nextIndex] ?? step;
 }
 
 function isStep(value: unknown): value is OnboardingStep {

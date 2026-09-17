@@ -1,6 +1,6 @@
 import type * as React from "react";
 
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 function Kbd({ className, ...props }: React.ComponentProps<"kbd">) {
   return (

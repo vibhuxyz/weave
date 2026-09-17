@@ -13,6 +13,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+pub mod agents;
 use tauri::{Manager, RunEvent, State};
 
 const SERVER_PORT: u16 = 8137;
@@ -1095,7 +1096,10 @@ pub fn run() {
             kill_port,
             docker_services,
             stop_container,
-            list_directory_entries
+            list_directory_entries,
+            agents::doctor_provider,
+            agents::setup_provider_command,
+            agents::list_providers_command
         ])
         .build(tauri::generate_context!())
         .expect("error building the app")

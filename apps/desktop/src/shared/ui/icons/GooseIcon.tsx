@@ -1,5 +1,5 @@
 import gooseIconMask from "@/shared/assets/goose-icon-mask.png";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 /** Goose agent mark — silhouette mask tinted with `currentColor`. */
 export function GooseIcon({ className = "" }: { className?: string }) {

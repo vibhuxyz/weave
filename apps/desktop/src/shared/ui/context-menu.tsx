@@ -2,7 +2,7 @@ import * as React from "react";
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react";
 
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 type ContextMenuVariant = "default" | "raised";
 

@@ -6,7 +6,7 @@ import {
   type ErrorInfo,
   type ReactNode,
 } from "react";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import {
   PROJECT_ARTIFACT_ENVIRONMENT_URL,
   PROJECT_ARTIFACT_IMAGE_URLS,
@@ -49,7 +49,7 @@ function selectTileProjectImageUrls(imageUrls: string[], seed: number) {
   const start = Math.abs(seed) % imageUrls.length;
   return Array.from({ length: TILE_PROJECT_IMAGE_LIMIT }, (_, offset) => {
     return imageUrls[(start + offset) % imageUrls.length];
-  });
+  }).filter((url): url is string => url !== undefined);
 }
 
 function ProjectArtifactFallback({

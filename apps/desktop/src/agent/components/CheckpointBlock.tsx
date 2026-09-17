@@ -1,7 +1,7 @@
-import { Button } from "@/shared/ui/button";
-import { Badge } from "@/shared/ui/badge";
+import type { ComponentType } from "react";
+import { Button, Badge } from "@/shared/ui";
 import { AlertTriangleIcon, FileEditIcon, TerminalIcon, CheckCircleIcon, XCircleIcon } from "lucide-react";
-import type { CheckpointBlock as CheckpointBlockModel, BlockAction } from "../normalize/types";
+import type { CheckpointBlock as CheckpointBlockModel, BlockAction } from "@/agent/normalize";
 
 export function CheckpointBlock({
   block,
@@ -72,7 +72,17 @@ export function CheckpointBlock({
   );
 }
 
-function Stat({ icon: Icon, label, value, color = "text-agent-text-muted" }: { icon: any, label: string, value: number, color?: string }) {
+function Stat({
+  icon: Icon,
+  label,
+  value,
+  color = "text-agent-text-muted",
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+  color?: string;
+}) {
   return (
     <div className="rounded-md border border-agent-border-subtle bg-black/20 p-2.5">
       <div className="flex items-center gap-2">

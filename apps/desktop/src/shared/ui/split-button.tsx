@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { IconChevronDown } from "@tabler/icons-react";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import { Button, type ButtonProps } from "@/shared/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import {

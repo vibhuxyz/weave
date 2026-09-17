@@ -20,7 +20,7 @@ export function usePersistedState<T>(
     try {
       window.localStorage.setItem(key, JSON.stringify(state));
     } catch {
-      // localStorage may be unavailable
+    
     }
   }, [key, state]);
 

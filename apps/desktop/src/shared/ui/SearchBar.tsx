@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { Search } from "lucide-react";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import { Input } from "@/shared/ui/input";
 
 const searchBarSizes = {

@@ -1,16 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/shared/ui/dialog";
-import { Button } from "@/shared/ui/button";
-import { Input } from "@/shared/ui/input";
-import { Badge } from "@/shared/ui/badge";
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription, Button, Input, Badge } from "@/shared/ui";
 import { Prose } from "./Prose";
 import {
   ArrowDown,
@@ -22,7 +11,7 @@ import {
   X,
   ListOrdered,
 } from "lucide-react";
-import type { PlanBlockEntry } from "../normalize/types";
+import type { PlanBlockEntry } from "@/agent/normalize";
 
 interface PlanApprovalModalProps {
   open: boolean;
@@ -73,7 +62,11 @@ export function PlanApprovalModal({
     if (target < 0 || target >= items.length) return;
     setItems((prev) => {
       const next = [...prev];
-      [next[index], next[target]] = [next[target], next[index]];
+      const a = next[index];
+      const b = next[target];
+      if (!a || !b) return prev;
+      next[index] = b;
+      next[target] = a;
       return next;
     });
   };

@@ -94,12 +94,12 @@ function extractConstants(text: string) {
   const items: Array<{ name: string; value: string; description?: string }> = [];
   let match = CONSTANT_PATTERN.exec(text);
   while (match !== null) {
-    const name = match[1];
+    const name = match[1] ?? "";
     if (!seen.has(name)) {
       seen.add(name);
       items.push({
         name,
-        value: match[2],
+        value: match[2] ?? "",
         description: match[3]?.trim() || undefined,
       });
     }
@@ -113,5 +113,5 @@ function extractFirstCodeFence(
 ): { language?: string; file?: string; code: string } | null {
   const match = /```(\w+)?\n([\s\S]*?)```/.exec(text);
   if (!match) return null;
-  return { language: match[1], code: match[2].trim() };
+  return { language: match[1], code: (match[2] ?? "").trim() };
 }

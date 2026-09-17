@@ -1,5 +1,5 @@
-import { Badge } from "@/shared/ui/badge";
-import type { ExplanationBlock as ExplanationBlockModel } from "../normalize/types";
+import { Badge } from "@/shared/ui";
+import type { ExplanationBlock as ExplanationBlockModel } from "@/agent/normalize";
 import { CodeBlockView } from "./CodeBlockView";
 import { Prose } from "./Prose";
 

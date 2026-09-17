@@ -24,11 +24,8 @@ import { motion, AnimatePresence } from "motion/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 import type { EngineAuthMethod, EngineAuthOperation } from "@weave/protocol";
-import { LinkifiedText } from "@/shared/ui/LinkifiedText";
-import { Button } from "@/shared/ui/button";
-import { Input } from "@/shared/ui/input";
-import { Spinner } from "@/shared/ui/spinner";
-import { cn } from "@/shared/lib/cn";
+import { LinkifiedText, Button, Input, Spinner } from "@/shared/ui";
+import { cn } from "@/shared/lib";
 import {
   ClaudeIcon,
   CodexIcon,
@@ -38,7 +35,7 @@ import {
   CopilotIcon,
   CursorIcon,
   getProviderIcon,
-} from "@/shared/ui/icons/ProviderIcons";
+} from "@/shared/ui/icons";
 
 function stripAnsi(text: string): string {
   return text
@@ -404,6 +401,7 @@ export function EngineAuthPanel({
   const [lastTriedMethodId, setLastTriedMethodId] = useState<string | null>(null);
 
   const agent = resolveAgentProfile(engineId, engineLabel);
+  const apiKeyDocsUrl = agent.apiKeyDocsUrl;
   const output = operation?.output ?? [];
   const running = operation?.status === "running";
   const deviceCode = findDeviceCode(output);
@@ -500,6 +498,7 @@ export function EngineAuthPanel({
 
   const actionable = effectiveMethods.filter((method) => method.kind !== "env_var");
   const envVarOnly = effectiveMethods.length > 0 && actionable.length === 0;
+  const soleAction = actionable.length === 1 ? actionable[0] : undefined;
 
   const handleCopyCode = async () => {
     if (!deviceCode) return;
@@ -921,12 +920,12 @@ export function EngineAuthPanel({
                   Enter {agent.name} API Key
                 </span>
               </div>
-              {agent.apiKeyDocsUrl && (
+              {apiKeyDocsUrl && (
                 <a
-                  href={agent.apiKeyDocsUrl}
+                  href={apiKeyDocsUrl}
                   onClick={(e) => {
                     e.preventDefault();
-                    void openUrl(agent.apiKeyDocsUrl!);
+                    void openUrl(apiKeyDocsUrl);
                   }}
                   className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
                 >
@@ -1097,19 +1096,19 @@ export function EngineAuthPanel({
                 );
               })}
             </div>
-          ) : actionable.length === 1 ? (
+          ) : soleAction ? (
             /* Single prominent action button (e.g. Antigravity) */
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 type="button"
                 size="default"
                 onClick={() => {
-                  setLastTriedMethodId(actionable[0].id);
-                  onStart(actionable[0].id);
+                  setLastTriedMethodId(soleAction.id);
+                  onStart(soleAction.id);
                 }}
                 className={cn("gap-2 font-medium px-5", agent.primaryButtonClass)}
               >
-                {actionable[0].id === "agy-login" ? (
+                {soleAction.id === "agy-login" ? (
                   <GoogleGeminiIcon className="size-4" />
                 ) : (
                   agent.renderIcon("size-4")

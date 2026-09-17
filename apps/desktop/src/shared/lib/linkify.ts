@@ -51,6 +51,7 @@ function trimTrailingPunctuation(url: string): string {
   let end = url.length;
   while (end > 0) {
     const char = url[end - 1];
+    if (char === undefined) break;
     if (TRAILING_PUNCTUATION.has(char)) {
       end -= 1;
       continue;

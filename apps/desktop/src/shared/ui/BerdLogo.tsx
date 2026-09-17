@@ -1,5 +1,5 @@
-import { BerdIcon, Rain } from "@/shared/ui/icons/BerdIcon";
-import { cn } from "@/shared/lib/cn";
+import { BerdIcon, Rain } from "@/shared/ui/icons";
+import { cn } from "@/shared/lib";
 
 interface BerdLogoProps {
   className?: string;

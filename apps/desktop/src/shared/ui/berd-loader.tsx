@@ -1,6 +1,6 @@
 import { useId, type ComponentProps } from "react";
 
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import { BERD_LOADER_LOOP_MS } from "@/shared/ui/berd-loader-timing";
 
 const EASE = ".16 1 .3 1";

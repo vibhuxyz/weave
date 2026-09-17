@@ -8,7 +8,7 @@ import {
   type ForwardedRef,
 } from "react";
 
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 const PASSIVE_SUPPRESSION_ATTRIBUTE = "data-scrollbar-passive-suppressed";
 const PASSIVE_LISTENER_OPTIONS: AddEventListenerOptions = { passive: true };

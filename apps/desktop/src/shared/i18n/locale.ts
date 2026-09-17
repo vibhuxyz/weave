@@ -23,7 +23,7 @@ export function normalizeLocale(locale?: string | null): AppLocale | null {
   const canonical = safeCanonicalizeLocale(locale)?.toLowerCase();
   if (!canonical) return null;
 
-  const base = canonical.split("-")[0];
+  const base = canonical.split("-")[0] ?? canonical;
   return SUPPORTED_LOCALE_SET.has(base) ? (base as AppLocale) : null;
 }
 

@@ -58,7 +58,7 @@ export function splitSections(text: string): Section[] {
     const h = HEADING.exec(line);
     if (h) {
       push();
-      cur = { heading: h[2].trim(), lines: [], start: lineStart };
+      cur = { heading: (h[2] ?? "").trim(), lines: [], start: lineStart };
       continue;
     }
     if (RULE.test(t)) {

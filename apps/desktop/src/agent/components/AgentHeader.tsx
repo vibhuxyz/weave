@@ -1,14 +1,14 @@
 import { SparklesIcon } from "lucide-react";
-import { cn } from "@/shared/lib/cn";
-import { AgentAvatar } from "../../agents/AgentAvatar";
-import type { TurnPersona } from "../../useAcpChat";
-import type { AgentRunMeta } from "../normalize/types";
+import { cn } from "@/shared/lib";
+import { AgentAvatar } from '@/features/agents/components';
+import type { TurnPersona } from '@/features/chat/hooks';
+import type { AgentRunMeta } from "@/agent/normalize";
 import { TokenUsage } from "./TokenUsage";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@/shared/ui/hover-card";
+} from "@/shared/ui";
 
 export type DepthLevel = "brief" | "normal" | "deep";
 
@@ -64,6 +64,7 @@ function PersonaGroup({ personas }: { personas: TurnPersona[] }) {
 
   if (personas.length === 1) {
     const persona = personas[0];
+    if (!persona) return null;
     return (
       <span className="flex min-w-0 shrink-0 items-center gap-1.5 rounded-full border border-agent-chip-border bg-agent-chip-bg py-1 pr-2.5 pl-1 text-agent-text-muted text-xs">
         <AgentAvatar

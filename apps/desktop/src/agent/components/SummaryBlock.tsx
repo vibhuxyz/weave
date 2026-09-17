@@ -1,4 +1,4 @@
-import type { SummaryBlock as SummaryBlockModel } from "../normalize/types";
+import type { SummaryBlock as SummaryBlockModel } from "@/agent/normalize";
 
 export function SummaryBlock({ block }: { block: SummaryBlockModel }) {
   return (

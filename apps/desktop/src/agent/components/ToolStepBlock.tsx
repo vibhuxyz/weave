@@ -1,5 +1,5 @@
-import { ToolSteps } from "../../ToolSteps";
-import type { ToolStepBlock as ToolStepBlockModel } from "../normalize/types";
+import { ToolSteps } from '@/features/chat/components';
+import type { ToolStepBlock as ToolStepBlockModel } from "@/agent/normalize";
 
 export function ToolStepBlock({
   blocks,

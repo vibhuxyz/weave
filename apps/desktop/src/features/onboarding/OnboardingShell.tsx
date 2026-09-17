@@ -1,8 +1,8 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { IconChevronLeft } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@/shared/ui/button";
-import { cn } from "@/shared/lib/cn";
+import { Button } from "@/shared/ui";
+import { cn } from "@/shared/lib";
 
 interface OnboardingShellProps {
   title?: ReactNode;

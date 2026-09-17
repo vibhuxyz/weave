@@ -1,18 +1,9 @@
-import { Button } from "@/shared/ui/button";
-import { ButtonGroup, ButtonGroupText } from "@/shared/ui/button-group";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/shared/ui/tooltip";
-import { parseSessionDeepLink } from "@/features/sessions/lib/sessionDeepLink";
-import { isExternalHref } from "@/shared/lib/isExternalHref";
-import { isUrlTrusted } from "@/shared/lib/trustedDomains";
+import { Button, ButtonGroup, ButtonGroupText, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui";
+import { parseSessionDeepLink } from "@/features/sessions/lib";
+import { cn, isExternalHref, isUrlTrusted } from "@/shared/lib";
 import { LinkSafetyModal } from "@/shared/ui/ai-elements/link-safety-modal";
 import { downloadDir } from "@tauri-apps/api/path";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
-import { cn } from "@/shared/lib/cn";
 import { useVirtualLayoutPendingForStreamdown } from "@/features/chat/transcript/measurement";
 import { useStreamdownTableScrollbarSizing } from "@/shared/ui/ai-elements/streamdown-table-scrollbar";
 import { cjk } from "@streamdown/cjk";
@@ -722,15 +713,17 @@ function restoreBerdMarkdownDestinations() {
   };
 }
 
-const berdRehypePlugins: NonNullable<
+type RehypePlugin = NonNullable<
   ComponentProps<typeof Streamdown>["rehypePlugins"]
-> = [
+>[number];
+
+const berdRehypePlugins: RehypePlugin[] = [
   defaultRehypePlugins.raw,
   prefixBerdMarkdownDestinations,
   defaultRehypePlugins.sanitize,
   defaultRehypePlugins.harden,
   restoreBerdMarkdownDestinations,
-];
+].filter((plugin): plugin is RehypePlugin => plugin != null);
 
 const decodedEntityCache = new Map<string, string | null>();
 

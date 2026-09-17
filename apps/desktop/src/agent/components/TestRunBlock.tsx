@@ -10,10 +10,10 @@ import {
   XIcon,
   type LucideIcon,
 } from "lucide-react";
-import { cn } from "@/shared/lib/cn";
-import type { TestRunBlock as TestRunBlockModel } from "../normalize/types";
+import { cn } from "@/shared/lib";
+import type { TestRunBlock as TestRunBlockModel } from "@/agent/normalize";
 import { CodePanel } from "./CodePanel";
-import { cleanOutput } from "../../ToolSteps";
+import { cleanOutput } from '@/features/chat/components';
 
 type Step = TestRunBlockModel["steps"][number];
 
@@ -120,7 +120,7 @@ export function TestRunBlock({
                 : Loader2Icon
           }
           iconClassName={block.status === "failed" ? "fill-current" : undefined}
-          label={block.status[0].toUpperCase() + block.status.slice(1)}
+          label={block.status.charAt(0).toUpperCase() + block.status.slice(1)}
           tone={
             block.status === "passed"
               ? "success"

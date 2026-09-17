@@ -7,8 +7,8 @@ import {
 import Matter from "matter-js";
 import { useTranslation } from "react-i18next";
 import { useReducedMotion } from "motion/react";
-import { Button } from "@/shared/ui/button";
-import { cn } from "@/shared/lib/cn";
+import { Button } from "@/shared/ui";
+import { cn } from "@/shared/lib";
 import { WORK_TYPES, type WorkTypeId } from "./catalog";
 import { OnboardingShell } from "./OnboardingShell";
 

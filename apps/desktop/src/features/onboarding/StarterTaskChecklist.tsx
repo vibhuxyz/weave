@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { useProjects } from "@/useProjects";
-import { usePersistedState } from "@/shared/hooks/usePersistedState";
+import { useProjects } from '@/features/projects/hooks';
+import { usePersistedState } from "@/shared/hooks";
 import { STARTER_TASKS, useStarterTaskProgress } from "./starterTasks";
 
 /**

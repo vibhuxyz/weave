@@ -1,0 +1,1 @@
+export { parseSessionDeepLink } from "./sessionDeepLink";

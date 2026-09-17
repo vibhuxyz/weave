@@ -2,8 +2,8 @@ import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react";
 
-import { cn } from "@/shared/lib/cn";
-import { getDesignSystemMetadata } from "@/shared/ui/design-system/metadata";
+import { cn } from "@/shared/lib";
+import { getDesignSystemMetadata } from "@/shared/ui/design-system";
 
 type DropdownMenuVariant = "default" | "raised";
 type DropdownMenuLayer = "default" | "modal";

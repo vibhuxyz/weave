@@ -2,7 +2,7 @@ import type * as React from "react";
 import { DayPicker } from "@daypicker/react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import { buttonVariants } from "@/shared/ui/button";
 
 function Calendar({

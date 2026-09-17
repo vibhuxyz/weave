@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { AlertTriangleIcon, FileIcon } from "lucide-react";
-import { Button } from "@/shared/ui/button";
-import { Badge } from "@/shared/ui/badge";
-import { cn } from "@/shared/lib/cn";
-import type { FindingBlock, BlockAction, EvidenceRow } from "../normalize/types";
+import { Button, Badge } from "@/shared/ui";
+import { cn } from "@/shared/lib";
+import type { FindingBlock, BlockAction, EvidenceRow } from "@/agent/normalize";
 import { CodePanel } from "./CodePanel";
 import { Prose } from "./Prose";
 
@@ -49,21 +48,7 @@ export function FindingCard({
         </div>
         <h3 className="font-semibold text-base text-agent-text-bright">{block.title}</h3>
         {block.location && (
-          <button
-            type="button"
-            onClick={() =>
-              onAction?.({
-                type: "open_file",
-                file: block.location!.file,
-                line: block.location!.line,
-              })
-            }
-            className="flex items-center gap-1.5 font-mono text-agent-text-muted text-xs hover:text-agent-text-bright hover:underline outline-none"
-          >
-            <FileIcon className="size-3" />
-            {block.location.file}
-            {block.location.line ? `:${block.location.line}` : ""}
-          </button>
+          <FindingLocationButton location={block.location} onAction={onAction} />
         )}
       </div>
 
@@ -116,6 +101,28 @@ export function FindingCard({
         </span>
       </div>
     </section>
+  );
+}
+
+function FindingLocationButton({
+  location,
+  onAction,
+}: {
+  location: { file: string; line?: number };
+  onAction?: (action: BlockAction) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        onAction?.({ type: "open_file", file: location.file, line: location.line })
+      }
+      className="flex items-center gap-1.5 font-mono text-agent-text-muted text-xs hover:text-agent-text-bright hover:underline outline-none"
+    >
+      <FileIcon className="size-3" />
+      {location.file}
+      {location.line ? `:${location.line}` : ""}
+    </button>
   );
 }
 

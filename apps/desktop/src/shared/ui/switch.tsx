@@ -1,8 +1,8 @@
 import type * as React from "react";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 
-import { cn } from "@/shared/lib/cn";
-import { getDesignSystemMetadata } from "@/shared/ui/design-system/metadata";
+import { cn } from "@/shared/lib";
+import { getDesignSystemMetadata } from "@/shared/ui/design-system";
 
 function Switch({
   className,

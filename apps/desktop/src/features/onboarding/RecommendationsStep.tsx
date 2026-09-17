@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@/shared/ui/button";
-import { cn } from "@/shared/lib/cn";
-import { AgentAvatar } from "@/agents/AgentAvatar";
-import { useAgents, type Agent } from "@/useAgents";
+import { Button } from "@/shared/ui";
+import { cn } from "@/shared/lib";
+import { AgentAvatar } from '@/features/agents/components';
+import { useAgents, type Agent } from '@/features/agents/hooks';
 import { recommendationsForWorkTypes } from "./catalog";
 import { OnboardingShell } from "./OnboardingShell";
 

@@ -6,13 +6,13 @@ import {
   type Layout,
   type LayoutCamera,
   type LayoutConstraints,
-} from "@/home/canvas/layout/layout";
+} from "@/home/canvas/layout";
 import {
   homeWidgetsToLayoutItems,
   HOME_LAYOUT_REPLACE_KINDS,
   layoutItemsToHomeWidgets,
-} from "../lib/homeLayoutMapper";
-import type { WidgetInstance } from "../widgets/types";
+} from "@/home/canvas/lib";
+import type { WidgetInstance } from "@/home/canvas/widgets";
 
 /**
  * The persistence engine behind `homeWidgetStore`.

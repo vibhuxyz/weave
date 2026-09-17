@@ -1,6 +1,6 @@
 import type * as React from "react";
 
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (

@@ -1,7 +1,7 @@
 import type {
   LayoutCamera,
   LayoutConstraints,
-} from "../layout/layout";
+} from "@/home/canvas/layout";
 
 export interface CanvasViewport {
   x: number;

@@ -2,7 +2,7 @@ import type {
   CanvasViewport,
   ViewportSize,
 } from "../lib/layoutCamera";
-import type { WidgetInstance, WidgetSize } from "../widgets/types";
+import type { WidgetInstance, WidgetSize } from "@/home/canvas/widgets";
 
 type WidgetSizeForInstance = (instance: WidgetInstance) => WidgetSize;
 

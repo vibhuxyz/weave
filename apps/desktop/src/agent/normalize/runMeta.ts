@@ -1,5 +1,5 @@
 import type { GitStatus } from "../../../server/index.ts";
-import type { ToolEntry, TurnPersona } from "../../useAcpChat";
+import type { ToolEntry, TurnPersona } from '@/features/chat/hooks';
 import type { AgentRunMeta } from "./types";
 
 /** Kinds that actually mutate a file — reads are counted separately. */

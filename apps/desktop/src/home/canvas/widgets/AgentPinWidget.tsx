@@ -1,7 +1,7 @@
 import { memo } from "react";
-import { cn } from "@/shared/lib/cn";
-import { AgentAvatar } from "@/agents/AgentAvatar";
-import { useAgents } from "@/useAgents";
+import { cn } from "@/shared/lib";
+import { AgentAvatar } from '@/features/agents/components';
+import { useAgents } from '@/features/agents/hooks';
 import { useWidgetActivationGuard } from "./useWidgetActivationGuard";
 import type { WidgetRenderProps } from "./types";
 

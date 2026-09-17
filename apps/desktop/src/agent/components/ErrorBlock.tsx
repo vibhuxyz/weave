@@ -1,4 +1,4 @@
-import type { ErrorBlock as ErrorBlockModel } from "../normalize/types";
+import type { ErrorBlock as ErrorBlockModel } from "@/agent/normalize";
 
 export function ErrorBlock({ block }: { block: ErrorBlockModel }) {
   return (

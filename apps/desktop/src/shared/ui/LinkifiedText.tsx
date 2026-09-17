@@ -1,7 +1,6 @@
 import { Fragment, memo, useCallback, useMemo } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { linkifyText } from "@/shared/lib/linkify";
-import { cn } from "@/shared/lib/cn";
+import { cn, linkifyText } from "@/shared/lib";
 
 export interface LinkifiedTextProps {
   /** Raw text that may contain bare http(s) URLs. */

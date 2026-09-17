@@ -1,7 +1,7 @@
 import { CheckIcon, CopyIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { cn } from "@/shared/lib/cn";
-import { useCopyToClipboard } from "../../hooks/use-copy-to-clipboard";
+import { cn } from "@/shared/lib";
+import { useCopyToClipboard } from "@/shared/hooks";
 
 /**
  * The one code / terminal surface for the agent card. Header carries an

@@ -1,35 +1,13 @@
 import { useEffect, useMemo, useRef } from "react";
-import type { Agent } from "@/useAgents";
-import { useAgents } from "@/useAgents";
-import { GreeterWidget } from "@/features/onboarding/GreeterWidget";
-import { useHomeWidgetStore } from "../stores/homeWidgetStore";
-import { widgetSizeForInstance } from "../widgets/catalog";
-import type { WidgetMutationHandlers } from "../widgets/types";
+import { useAgents, type Agent } from '@/features/agents/hooks';
+import { GreeterWidget } from "@/features/onboarding";
+import { useHomeWidgetStore } from "@/home/canvas/stores";
+import { widgetSizeForInstance, type WidgetMutationHandlers } from "@/home/canvas/widgets";
 import { WidgetCanvas } from "./WidgetCanvas";
 
-/**
- * Lean replacement for upstream `HomeView` — upstream pulls in telemetry,
- * onboarding, skills, projects and TopBarActions. This wires Berd's widget
- * store to `WidgetCanvas` and seeds a first-run layout. Pinning and the
- * widget picker land in later phases; onboarding now lands here as a fixed
- * overlay (`GreeterWidget`) rather than new canvas
- * widget types — see their own doc comments for why.
- *
- * The starter-task checklist that used to sit here is gone: the onboarding
- * flow now walks the same ground (engine, agents, project), so a second
- * to-do list covering it on first launch was redundant.
- */
 
 const CLOCK_CENTER = { x: -140, y: 0 };
 
-/**
- * The starter Home on a fresh install: a digital clock and the built-in
- * agents scattered around it — not a rigid ring — so the canvas opens
- * populated and lively rather than empty.
- *
- * `slot` is a widget-center offset from the origin, hand-placed to spread the
- * six pins (200×220) without overlap.
- */
 const STARTER_AGENTS: { id: string; x: number; y: number }[] = [
   { id: "builtin:generalist", x: -380, y: -180 },
   { id: "builtin:reviewer", x: 60, y: -260 },
@@ -54,10 +32,13 @@ function seedLayout(
   const pins =
     placed.length > 0
       ? placed
-      : agents.slice(0, STARTER_AGENTS.length).map((agent, i) => ({
-          slot: STARTER_AGENTS[i],
-          agent,
-        }));
+      : agents
+          .slice(0, STARTER_AGENTS.length)
+          .map((agent, i) => ({ slot: STARTER_AGENTS[i], agent }))
+          .filter(
+            (p): p is { slot: (typeof STARTER_AGENTS)[number]; agent: Agent } =>
+              !!p.slot,
+          );
 
   for (const { slot, agent } of pins) {
     addWidget("agentPin", slot.x, slot.y, { agentId: agent.id });

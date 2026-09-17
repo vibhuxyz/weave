@@ -8,10 +8,7 @@ interface FileImportZoneOptions {
   fileTooLargeMessage?: string;
 }
 
-/**
- * Shared drag-and-drop + file-picker infrastructure for import zones.
- * Returns state, handlers, and a ref for the hidden `<input type="file">`.
- */
+
 export function useFileImportZone({
   onImportFile,
   validateFile,

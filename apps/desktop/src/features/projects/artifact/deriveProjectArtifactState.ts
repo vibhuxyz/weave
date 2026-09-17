@@ -1,5 +1,9 @@
-import { DEFAULT_PROJECT_COLOR } from "../lib/projectDefaults";
-import { isPillTone, pillCssColor, type PillTone } from "../lib/pillTones";
+import {
+  DEFAULT_PROJECT_COLOR,
+  isPillTone,
+  pillCssColor,
+  type PillTone,
+} from "@/features/projects/lib";
 import type {
   ProjectArtifactContentMode,
   ProjectArtifactInput,
@@ -18,21 +22,21 @@ const PILL_TONE_HEX: Record<PillTone, string> = {
   peach: "#f5c7a5",
 };
 
-const MOODS: ProjectArtifactMood[] = [
+const MOODS = [
   "serene",
   "active",
   "contemplative",
   "energetic",
   "awakening",
   "dormant",
-];
+] as const satisfies readonly ProjectArtifactMood[];
 
-const CONTENT_MODES: ProjectArtifactContentMode[] = [
+const CONTENT_MODES = [
   "planes",
   "sphere",
   "cube",
   "cubeStatic",
-];
+] as const satisfies readonly ProjectArtifactContentMode[];
 
 function hashText(value: string): number {
   let hash = 2166136261;
@@ -95,7 +99,7 @@ function moodForInput(
   if (sessionCount >= 4) return "energetic";
   if (workingDirCount === 0 && promptLength < 24) return "awakening";
   if (promptLength >= 120 && sessionCount === 0) return "contemplative";
-  return MOODS[seed % MOODS.length];
+  return MOODS[seed % MOODS.length] ?? MOODS[0];
 }
 
 function contentModeForInput(
@@ -109,7 +113,7 @@ function contentModeForInput(
   if (sessionCount >= 6) return "cube";
   if (workingDirCount > 1) return "sphere";
   if (promptLength >= 100) return "planes";
-  return CONTENT_MODES[seed % CONTENT_MODES.length];
+  return CONTENT_MODES[seed % CONTENT_MODES.length] ?? CONTENT_MODES[0];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,6 +1,5 @@
-import { Alert, AlertDescription } from "@/shared/ui/alert";
-import { Button } from "@/shared/ui/button";
-import { cn } from "@/shared/lib/cn";
+import { Alert, AlertDescription, Button } from "@/shared/ui";
+import { cn } from "@/shared/lib";
 import type { ToolUIPart } from "ai";
 import type { ComponentProps, ReactNode } from "react";
 import { createContext, useContext, useMemo } from "react";

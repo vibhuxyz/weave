@@ -1,7 +1,5 @@
-import { Button } from "@/shared/ui/button";
-import { Separator } from "@/shared/ui/separator";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
-import { cn } from "@/shared/lib/cn";
+import { Button, Separator, Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui";
+import { cn } from "@/shared/lib";
 import type { LucideProps } from "lucide-react";
 import { BookmarkIcon } from "lucide-react";
 import type { ComponentProps, HTMLAttributes } from "react";

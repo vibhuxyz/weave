@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Button, type ButtonProps } from "@/shared/ui/button";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 /** Icon trigger for row overflow menus in sidebar navigation surfaces. */
 export const SidebarRowMenuButton = React.forwardRef<

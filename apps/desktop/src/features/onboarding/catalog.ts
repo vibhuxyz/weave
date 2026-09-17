@@ -1,4 +1,4 @@
-import { ENGINES } from "@weave/agent/engines-registry.ts";
+import { ENGINES } from "@weave/agent/browser";
 
 export const WORK_TYPE_IDS = [
   "engineering",

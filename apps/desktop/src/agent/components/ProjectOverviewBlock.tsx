@@ -1,6 +1,6 @@
 import { FolderTreeIcon } from "lucide-react";
-import { Badge } from "@/shared/ui/badge";
-import type { ProjectOverviewBlock as ProjectOverviewBlockModel } from "../normalize/types";
+import { Badge } from "@/shared/ui";
+import type { ProjectOverviewBlock as ProjectOverviewBlockModel } from "@/agent/normalize";
 import { Prose } from "./Prose";
 
 export function ProjectOverviewBlockView({

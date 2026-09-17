@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import { BottomFade } from "@/shared/ui/BottomFade";
 import { MainPanelLayout } from "@/shared/ui/MainPanelLayout";
 import { PageHeader } from "@/shared/ui/page-shell";

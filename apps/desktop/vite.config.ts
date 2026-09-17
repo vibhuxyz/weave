@@ -11,9 +11,9 @@ export default defineConfig({
       // Same "@/" alias Berd uses, so the 230 copied files keep their imports.
       "@": here("./src"),
       // Workspace packages resolve to source — no build step between them.
-      "@berd/protocol": here("../../packages/protocol/src/index.ts"),
-      "@berd/agent": here("../../packages/agent/src/index.ts"),
-      "@berd/core": here("../../packages/core/src/index.ts"),
+      "@weave/protocol": here("../../packages/protocol/src/index.ts"),
+      "@weave/agent": here("../../packages/agent/src"),
+      "@weave/core": here("../../packages/core/src"),
     },
   },
   server: {

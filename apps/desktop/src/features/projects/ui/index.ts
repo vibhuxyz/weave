@@ -1,0 +1,1 @@
+export { DefaultProjectGlyphIcon } from "./DefaultProjectGlyphIcon";

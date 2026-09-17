@@ -1,4 +1,4 @@
-import type { CodeBlock as CodeBlockModel } from "../normalize/types";
+import type { CodeBlock as CodeBlockModel } from "@/agent/normalize";
 import { CodePanel } from "./CodePanel";
 
 export function CodeBlockView({ block }: { block: CodeBlockModel }) {

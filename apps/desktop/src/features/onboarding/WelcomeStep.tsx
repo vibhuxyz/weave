@@ -1,11 +1,9 @@
 import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@/shared/ui/button";
-import { Checkbox } from "@/shared/ui/checkbox";
-import { ProjectArtifactPreview } from "@/features/projects/artifact/ProjectArtifactPreview";
-import type { ProjectArtifactMotionImpulse } from "@/features/projects/artifact/types";
-import { UsageDataDialog } from "@/features/settings/ui/UsageDataDialog";
+import { Button, Checkbox } from "@/shared/ui";
+import { ProjectArtifactPreview, type ProjectArtifactMotionImpulse } from "@/features/projects/artifact";
+import { UsageDataDialog } from "@/features/settings/ui";
 import { OnboardingShell } from "./OnboardingShell";
 
 /**

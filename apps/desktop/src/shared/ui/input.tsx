@@ -1,7 +1,7 @@
 import type * as React from "react";
 
-import { cn } from "@/shared/lib/cn";
-import { getDesignSystemMetadata } from "@/shared/ui/design-system/metadata";
+import { cn } from "@/shared/lib";
+import { getDesignSystemMetadata } from "@/shared/ui/design-system";
 
 const variantStyles = {
   default: [

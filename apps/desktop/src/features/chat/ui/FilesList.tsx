@@ -5,10 +5,10 @@ import {
   FileTree,
   FileTreeFile,
   FileTreeFolder,
-} from "@/shared/ui/ai-elements/file-tree";
-import { SIDEBAR_ROW_ICON_TEXT_GAP_CLASS } from "@/shared/ui/sidebar-tokens";
-import { cn } from "@/shared/lib/cn";
-import { listDirectoryEntries, type FileTreeEntry } from "@/shared/api/system";
+} from "@/shared/ui/ai-elements";
+import { SIDEBAR_ROW_ICON_TEXT_GAP_CLASS } from "@/shared/ui";
+import { cn } from "@/shared/lib";
+import { listDirectoryEntries, type FileTreeEntry } from "@/shared/api";
 
 export interface FilesListProps {
   projectWorkingDirs?: string[];

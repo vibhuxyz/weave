@@ -7,9 +7,8 @@ import {
   useSyncExternalStore,
   type ReactEventHandler,
 } from "react";
-import type { ResolvedAvatarMedia } from "@/shared/avatars/catalog";
-import { useAnimatedAvatarsPreference } from "@/shared/avatars/avatarPlaybackPreferences";
-import { cn } from "@/shared/lib/cn";
+import { useAnimatedAvatarsPreference, type ResolvedAvatarMedia } from "@/shared/avatars";
+import { cn } from "@/shared/lib";
 
 interface AvatarMediaProps {
   media: ResolvedAvatarMedia;
@@ -146,7 +145,7 @@ function paintStackedAlphaFrame(
   const color = context.getImageData(0, 0, sourceWidth, frameHeight);
   const mask = maskContext.getImageData(0, 0, sourceWidth, frameHeight);
   for (let index = 0; index < color.data.length; index += 4) {
-    color.data[index + 3] = mask.data[index];
+    color.data[index + 3] = mask.data[index] ?? 0;
   }
   context.putImageData(color, 0, 0);
 }

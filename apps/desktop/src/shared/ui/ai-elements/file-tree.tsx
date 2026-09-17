@@ -1,17 +1,11 @@
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/shared/ui/collapsible";
-import { cn } from "@/shared/lib/cn";
-import { FileContextMenu } from "@/shared/ui/file-context-menu";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger, FileContextMenu, SIDEBAR_MENU_HOVER_TRANSITION_CLASS } from "@/shared/ui";
+import { cn } from "@/shared/lib";
 import {
   IconChevronRight,
   IconFile,
   IconFolder,
   IconFolderOpen,
 } from "@tabler/icons-react";
-import { SIDEBAR_MENU_HOVER_TRANSITION_CLASS } from "@/shared/ui/sidebar-tokens";
 import type { HTMLAttributes, ReactNode } from "react";
 import {
   createContext,

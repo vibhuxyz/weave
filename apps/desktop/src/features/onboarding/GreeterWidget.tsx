@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AgentAvatar } from "@/agents/AgentAvatar";
-import { Button } from "@/shared/ui/button";
-import { usePersistedState } from "@/shared/hooks/usePersistedState";
+import { AgentAvatar } from '@/features/agents/components';
+import { Button } from "@/shared/ui";
+import { usePersistedState } from "@/shared/hooks";
 import { OnboardingTourDialog } from "./OnboardingTourDialog";
 
 /**

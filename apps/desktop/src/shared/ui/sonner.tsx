@@ -1,6 +1,6 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner";
-import { useTheme } from "@/shared/theme/ThemeProvider";
-import { cn } from "@/shared/lib/cn";
+import { useTheme } from "@/shared/theme";
+import { cn } from "@/shared/lib";
 import { Button, type ButtonProps, buttonVariants } from "@/shared/ui/button";
 
 const toastActionButtonLayoutClassName = "ml-auto shrink-0";

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckIcon, ChevronRight } from "lucide-react";
-import { BerdLoaderInline } from "@/shared/ui/berd-loader-inline";
-import { Shimmer } from "@/shared/ui/ai-elements/shimmer";
-import { cn } from "@/shared/lib/cn";
+import { BerdLoaderInline } from "@/shared/ui";
+import { Shimmer } from "@/shared/ui/ai-elements";
+import { cn } from "@/shared/lib";
 
 /**
  * The agent's live activity line. Gemini's thought stream is a sequence of
@@ -155,7 +155,7 @@ function extractSteps(text: string): string[] {
   for (const line of text.split("\n")) {
     const m = /^\s*\*\*(.+?)\*\*\s*:?\s*$/.exec(line);
     if (m) {
-      const title = m[1].trim();
+      const title = (m[1] ?? "").trim();
       if (title && steps.at(-1) !== title) steps.push(title);
     }
   }

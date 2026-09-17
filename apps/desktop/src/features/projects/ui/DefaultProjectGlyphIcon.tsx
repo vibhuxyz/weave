@@ -1,8 +1,7 @@
 import type { SVGProps } from "react";
 
-import { cn } from "@/shared/lib/cn";
-import { DEFAULT_PROJECT_COLOR } from "../lib/projectDefaults";
-import { pillCssColor } from "../lib/pillTones";
+import { cn } from "@/shared/lib";
+import { DEFAULT_PROJECT_COLOR, pillCssColor } from "@/features/projects/lib";
 
 const VIEW_BOX = "0 0 13 15";
 /** Slightly larger than nav icons (16px) so the cube reads clearly in project rows. */

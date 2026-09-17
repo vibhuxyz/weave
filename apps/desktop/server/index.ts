@@ -1,11 +1,12 @@
 import { resolve } from "node:path";
+import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 import { SessionStore, weaveDirFor } from "@weave/core";
-import { DEFAULT_PORT } from "./server.constants.ts";
-import { handleConnection } from "./handleConnection.ts";
-import type { AcpServerHandle, ServerMessage } from "./server.types.ts";
+import { DEFAULT_PORT } from "./shared/index.ts";
+import { handleConnection } from "./connection/index.ts";
+import type { AcpServerHandle, ServerMessage } from "./shared/index.ts";
 
-export { DEFAULT_PORT } from "./server.constants.ts";
+export { DEFAULT_PORT } from "./shared/index.ts";
 export type {
   ClientMessage,
   ServerMessage,
@@ -13,9 +14,17 @@ export type {
   GitStatus,
   GitChange,
   ConversationMeta,
-} from "./server.types.ts";
+} from "./shared/index.ts";
 
-function safeSendError(socket: any, message: string): void {
+const SERVER_COMPONENT = "desktop-acp-server";
+
+function logEvent(level: string, message: string, extra?: Record<string, unknown>): void {
+  const payload = { level, component: SERVER_COMPONENT, message, ...extra };
+  if (level === "error") console.error(JSON.stringify(payload));
+  else console.log(JSON.stringify(payload));
+}
+
+function safeSendError(socket: WebSocket, message: string): void {
   if (socket.readyState !== socket.OPEN) return;
   const errorMsg: ServerMessage = { type: "error", message };
   socket.send(JSON.stringify(errorMsg));
@@ -30,12 +39,12 @@ export async function startAcpServer(options: {
   const wss = new WebSocketServer({ port, host: "127.0.0.1" });
   const store = new SessionStore(weaveDirFor(projectDir));
 
-  console.log(`[server] ws://127.0.0.1:${port}  project: ${projectDir}`);
+  logEvent("info", "WebSocket server listening", { port, projectDir });
 
-  wss.on("connection", (socket) => {
+  wss.on("connection", (socket: WebSocket) => {
     void handleConnection(socket, projectDir, store).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
-      console.error("[connection]", message);
+      logEvent("error", "Connection handler failed", { message });
       safeSendError(socket, message);
     });
   });
@@ -52,7 +61,9 @@ const isDirectRun =
 if (isDirectRun) {
   startAcpServer({ projectDir: process.env.PROJECT_DIR ?? process.cwd() }).catch(
     (error: unknown) => {
-      console.error(error);
+      logEvent("error", "Server failed to start", {
+        message: error instanceof Error ? error.message : String(error),
+      });
       process.exit(1);
     },
   );

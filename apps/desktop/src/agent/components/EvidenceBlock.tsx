@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { cn } from "@/shared/lib/cn";
-import { Button } from "@/shared/ui/button";
-import type { EvidenceBlock as EvidenceBlockModel, BlockAction } from "../normalize/types";
+import { cn } from "@/shared/lib";
+import { Button } from "@/shared/ui";
+import type { EvidenceBlock as EvidenceBlockModel, BlockAction } from "@/agent/normalize";
 
 export function EvidenceBlock({
   block,

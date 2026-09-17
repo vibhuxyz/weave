@@ -1,7 +1,7 @@
 import type * as React from "react";
 import { X } from "lucide-react";
 
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import { Button } from "@/shared/ui/button";
 
 interface ContextualTipProps extends React.ComponentProps<"div"> {

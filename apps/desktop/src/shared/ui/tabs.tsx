@@ -12,8 +12,8 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { motion, useReducedMotion } from "motion/react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 
-import { cn } from "@/shared/lib/cn";
-import { getDesignSystemMetadata } from "@/shared/ui/design-system/metadata";
+import { cn } from "@/shared/lib";
+import { getDesignSystemMetadata } from "@/shared/ui/design-system";
 
 const tabsListVariants = cva(
   "text-muted-foreground inline-flex w-fit items-center justify-center",

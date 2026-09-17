@@ -1,4 +1,4 @@
-import type { LayoutConstraints } from "@/home/canvas/layout/layout";
+import type { LayoutConstraints } from "@/home/canvas/layout";
 import {
   clampToLayoutConstraints,
   isLayoutConstraints,
@@ -9,8 +9,9 @@ import {
   HOME_WIDGET_CATALOG_BY_ID,
   widgetSizeForInstance,
   widgetSizeProfile,
-} from "../widgets/catalog";
-import type { WidgetInstance, WidgetSize } from "../widgets/types";
+  type WidgetInstance,
+  type WidgetSize,
+} from "@/home/canvas/widgets";
 
 export interface ResolvedWidgetResize {
   x: number;

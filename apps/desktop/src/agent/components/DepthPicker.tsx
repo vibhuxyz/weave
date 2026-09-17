@@ -6,15 +6,15 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@/shared/ui/dropdown-menu";
-import { cn } from "@/shared/lib/cn";
+} from "@/shared/ui";
+import { cn } from "@/shared/lib";
 import type { DepthLevel } from "./AgentHeader";
 
-const LEVELS: Array<{ value: DepthLevel; label: string; hint: string }> = [
+const LEVELS = [
   { value: "brief", label: "Brief", hint: "Headlines only — no code or steps." },
   { value: "normal", label: "Normal", hint: "The full run as the agent reports it." },
   { value: "deep", label: "Deep", hint: "Everything, including tool detail." },
-];
+] as const satisfies ReadonlyArray<{ value: DepthLevel; label: string; hint: string }>;
 
 /**
  * How much of a run the cards show. It used to sit on the agent header, where

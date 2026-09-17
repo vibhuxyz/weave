@@ -1,14 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/dialog";
-import { Button } from "@/shared/ui/button";
-
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Button } from "@/shared/ui";
 const TOUR_STEP_COUNT = 5;
 
 /**
@@ -35,13 +27,15 @@ export function OnboardingTourDialog({
       body: string;
     },
   );
-  const current = steps[step];
+  const current = steps[step] ?? steps[0];
   const isLast = step === TOUR_STEP_COUNT - 1;
 
   const close = () => {
     onOpenChange(false);
     setStep(0);
   };
+
+  if (!current) return null;
 
   return (
     <Dialog

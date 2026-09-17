@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Badge } from "@/shared/ui/badge";
-import { Button } from "@/shared/ui/button";
+import { Badge, Button } from "@/shared/ui";
 import {
   Plan,
   PlanHeader,
@@ -9,12 +8,12 @@ import {
   PlanContent,
   PlanTrigger,
   PlanFooter,
-} from "@/shared/ui/ai-elements/plan";
+} from "@/shared/ui/ai-elements";
 import { CheckCircle2, Circle, Clock, Edit3, Sparkles, XCircle } from "lucide-react";
-import type { PlanBlock, PlanBlockEntry } from "../normalize/types";
+import type { PlanBlock, PlanBlockEntry } from "@/agent/normalize";
 import { PlanApprovalModal } from "./PlanApprovalModal";
 import { Prose } from "./Prose";
-import type { TurnPlan } from "../../useAcpChat";
+import type { TurnPlan } from '@/features/chat/hooks';
 
 // The transcript re-derives blocks on every render, so a plan's decision has
 // to live outside component state or a rejected plan pops its modal again on

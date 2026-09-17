@@ -14,7 +14,7 @@ function SolidXIcon({ className }: { className?: string }) {
   );
 }
 
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 /**
  * Dialog — the app's one modal surface.

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDownIcon, ChevronRightIcon, XIcon } from "lucide-react";
-import { cn } from "@/shared/lib/cn";
-import { useCopyToClipboard } from "../../hooks/use-copy-to-clipboard";
-import { relativePath, type DiffLine, type FileDiff, type TurnDiffEntry } from "../diff/turnDiff";
-import { CONTEXT_PANEL_TABS, type ContextPanelTab } from "../../ContextPanel";
+import { cn } from "@/shared/lib";
+import { useCopyToClipboard } from "@/shared/hooks";
+import { relativePath, type DiffLine, type FileDiff, type TurnDiffEntry } from "@/agent/diff";
+import { CONTEXT_PANEL_TABS, type ContextPanelTab } from '@/features/chat/components';
 
 /**
  * The side-panel diff reader. Opened from an assistant card's "Open diff";

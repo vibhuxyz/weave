@@ -1,7 +1,7 @@
-import { cn } from "@/shared/lib/cn";
-import { Shimmer } from "@/shared/ui/ai-elements/shimmer";
-import type { ChatTurn, ToolEntry } from "../../useAcpChat";
-import { activeTitle, shorten } from "../lib/toolTitle";
+import { cn } from "@/shared/lib";
+import { Shimmer } from "@/shared/ui/ai-elements";
+import type { ChatTurn, ToolEntry } from '@/features/chat/hooks';
+import { activeTitle, shorten } from "@/agent/lib";
 
 function isRunning(tool: ToolEntry) {
   return tool.status === "in_progress" || tool.status === "pending";

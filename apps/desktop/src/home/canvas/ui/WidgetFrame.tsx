@@ -7,23 +7,23 @@ import {
   type MouseEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
-import type { LayoutConstraints } from "@/home/canvas/layout/layout";
-import type { WorkspaceNameRequest } from "../widgets/types";
-import { cn } from "@/shared/lib/cn";
+import type { LayoutConstraints } from "@/home/canvas/layout";
+import { cn } from "@/shared/lib";
 import {
   consumeFreshWidgetPlacement,
   hasFreshWidgetPlacement,
-} from "../lib/freshWidgetPlacements";
-// Phase-1: onboarding starter-layout not ported.
-const clearStarterHomeLayoutEligibility = (): void => {};
-import { HOME_WIDGET_CATALOG_BY_ID } from "../widgets/catalog";
-import type {
-  WidgetInstance,
-  WidgetMutationHandlers,
-  WidgetNavigationHandlers,
-} from "../widgets/types";
+} from "@/home/canvas/lib";
+import {
+  HOME_WIDGET_CATALOG_BY_ID,
+  type WidgetInstance,
+  type WidgetMutationHandlers,
+  type WidgetNavigationHandlers,
+  type WorkspaceNameRequest,
+} from "@/home/canvas/widgets";
 import { UnpinPill } from "./UnpinPill";
 import type { WidgetFrameGestureHandlers } from "./useWidgetDragSuppression";
+
+const clearStarterHomeLayoutEligibility = (): void => {};
 
 interface WidgetFrameProps extends WidgetNavigationHandlers {
   instance: WidgetInstance;

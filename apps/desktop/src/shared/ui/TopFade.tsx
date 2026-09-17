@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 interface TopFadeProps {
   className?: string;

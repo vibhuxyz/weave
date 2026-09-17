@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePersistedState } from "./usePersistedState";
 
-/**
- * Width-only sidebar resize, ported from berd's `useResizableSidebar`
- * (which also does height + corner resize — dropped here). Drag the rail on
- * the sidebar's right edge; drag it narrower than the snap threshold and the
- * sidebar collapses.
- */
+
 const STORAGE_KEY = "berd:sidebar:width";
 const DEFAULT_WIDTH = 240;
 const MIN_WIDTH = 200;

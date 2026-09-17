@@ -2,7 +2,7 @@ import type * as React from "react";
 import { IconArrowsHorizontal, IconGripVertical } from "@tabler/icons-react";
 import * as ResizablePrimitive from "react-resizable-panels";
 
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 function ResizablePanelGroup({
   className,

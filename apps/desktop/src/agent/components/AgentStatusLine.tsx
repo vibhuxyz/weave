@@ -1,12 +1,9 @@
 import { useRef } from "react";
-import { BerdLoaderInline } from "@/shared/ui/berd-loader-inline";
-import { Shimmer } from "@/shared/ui/ai-elements/shimmer";
-import { cn } from "@/shared/lib/cn";
-import type { ChatTurn, ToolEntry } from "@/useAcpChat";
-import { formatElapsed, useNow } from "../lib/elapsed";
-import { formatTokens } from "../lib/formatTokens";
-import { activeTitle, shorten } from "../lib/toolTitle";
-
+import { BerdLoaderInline } from "@/shared/ui";
+import { Shimmer } from "@/shared/ui/ai-elements";
+import { cn } from "@/shared/lib";
+import type { ChatTurn, ToolEntry } from '@/features/chat/hooks';
+import { formatElapsed, useNow, formatTokens, activeTitle, shorten } from "@/agent/lib";
 /** Config keys different engines use for the reasoning-effort knob. */
 const EFFORT_KEYS = ["effort", "reasoningEffort", "model_reasoning_effort"];
 

@@ -2,9 +2,9 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@/shared/ui/collapsible";
+} from "@/shared/ui";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import type { ToolUIPart } from "ai";
 import { ChevronDownIcon, Code } from "lucide-react";
 import type { ComponentProps } from "react";

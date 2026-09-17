@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useAvatarImage, useAvatarMedia } from "@/shared/hooks/useAvatarSrc";
+import { useAvatarImage, useAvatarMedia } from "@/shared/hooks";
 import type { Avatar } from "@/shared/types/agents";
 import { AvatarMedia } from "@/shared/ui/avatar-media";
 

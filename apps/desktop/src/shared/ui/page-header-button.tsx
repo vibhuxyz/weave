@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import { Button, type ButtonProps } from "@/shared/ui/button";
 import { APP_CHROME_NAV_TEXT_IMPORTANT_CLASS } from "@/shared/ui/sidebar-tokens";
 

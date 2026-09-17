@@ -1,5 +1,5 @@
 import berdIconMask from "@/shared/assets/berd-icon-mask.png";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 /** Berd app mark — silhouette mask tinted with `currentColor`. */
 export function BerdIcon({ className = "" }: { className?: string }) {

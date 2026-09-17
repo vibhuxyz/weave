@@ -1,4 +1,4 @@
-import { createBooleanLocalStoragePreference } from "@/shared/preferences/createBooleanLocalStoragePreference";
+import { createBooleanLocalStoragePreference } from "@/shared/preferences";
 
 const ANIMATED_AVATARS_STORAGE_KEY = "goose:animated-avatars-enabled";
 export const ANIMATED_AVATARS_CHANGED_EVENT = "goose:animated-avatars-changed";

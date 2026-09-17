@@ -3,8 +3,8 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@/shared/ui/collapsible";
-import { cn } from "@/shared/lib/cn";
+} from "@/shared/ui";
+import { cn } from "@/shared/lib";
 import {
   createVirtualLayoutStabilityAttributes,
   useVirtualLayoutPendingForChange,

@@ -4,20 +4,20 @@ import {
   QueryClientContext,
   useQuery,
 } from "@tanstack/react-query";
-import { selectAvatarImageUrl } from "@/shared/api/artifacts";
 import {
   avatarCachedRefQueryKey,
   cachedAssetToMedia,
   getCachedAvatarForRef,
-} from "@/shared/api/avatars";
+  selectAvatarImageUrl,
+} from "@/shared/api";
 import {
   isAppAvatarRef,
   isUserAvatarRef,
   parseAvatarRef,
-} from "@/shared/avatars/catalog";
-import { resolveAvatarMedia, resolveAvatarSrc } from "@/shared/lib/avatarUrl";
+  type ResolvedAvatarMedia,
+} from "@/shared/avatars";
+import { resolveAvatarMedia, resolveAvatarSrc } from "@/shared/lib";
 import type { Avatar } from "@/shared/types/agents";
-import type { ResolvedAvatarMedia } from "@/shared/avatars/catalog";
 import { useArtifacts } from "./useArtifacts";
 
 export interface AvatarMediaState {

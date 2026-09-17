@@ -1,13 +1,6 @@
-import { Button } from "@/shared/ui/button";
+import { Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui";
 import { createVirtualLayoutStabilityAttributes } from "@/features/chat/transcript/measurement";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/ui/select";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
 import {

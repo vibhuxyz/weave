@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 const inlineComponents = {
   a: ({ children }) => (

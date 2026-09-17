@@ -35,7 +35,7 @@ export interface ComposerConfigOptions {
  * places instead of spilling out as one pill each.
  */
 export function splitConfigOptions(
-  options: SessionConfigOption[],
+   options: readonly SessionConfigOption[],
 ): ComposerConfigOptions {
   // Booleans need a switch, not a menu — the composer renders selects only.
   const selects = options.filter((option) => option.type === "select");

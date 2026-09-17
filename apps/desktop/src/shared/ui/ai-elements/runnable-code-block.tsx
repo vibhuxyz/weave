@@ -9,8 +9,8 @@ import {
 import {
   isRunnableShellLanguage,
   normalizeRunnableShellCommand,
-} from "@/shared/lib/runnableShellCommand";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
+} from "@/shared/lib";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui";
 
 export interface RunCommandOptions {
   newTerminal?: boolean;

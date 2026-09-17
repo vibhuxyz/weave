@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePersistedState } from "./usePersistedState";
 
-/**
- * Width-only panel resize, generalised from `useResizableSidebar`.
- *
- * `edge` says which side the drag rail lives on: a rail on a panel's left
- * edge (the right-hand inspector) grows the panel as the pointer moves left,
- * which is the opposite sign from a left sidebar's rail.
- */
+
 export interface ResizablePanelOptions {
   storageKey: string;
   defaultWidth: number;

@@ -41,7 +41,7 @@ export function findingsFromKnownText(
       if (m) {
         hits.push({
           line: i,
-          severity: m[1].toLowerCase() as FindingSeverity,
+          severity: (m[1] ?? "").toLowerCase() as FindingSeverity,
           title: cleanTitle(m[2] ?? ""),
         });
         return;
@@ -50,13 +50,14 @@ export function findingsFromKnownText(
     // Bullet issue without an explicit severity word.
     const bullet = /^[-*]\s+(?:\*\*)?(.+?)(?:\*\*)?$/.exec(line);
     if (bullet && ISSUE_HINT.test(line) && (FILE_REF.test(line) || /`[^`]+`/.test(line))) {
-      hits.push({ line: i, severity: "medium", title: cleanTitle(bullet[1]) });
+      hits.push({ line: i, severity: "medium", title: cleanTitle(bullet[1] ?? "") });
     }
   });
 
   return hits.map((hit, idx) => {
     const bodyStart = hit.line + 1;
-    const bodyEnd = idx + 1 < hits.length ? hits[idx + 1].line : lines.length;
+    const nextHit = hits[idx + 1];
+    const bodyEnd = nextHit ? nextHit.line : lines.length;
     const body = lines.slice(bodyStart, bodyEnd).join("\n").trim();
     return makeFinding({
       id: `finding-${idx + 1}`,
@@ -140,13 +141,13 @@ function locate(text: string): FindingBlock["location"] | undefined {
     /(?:in|at)\s+([\w.\-/]+\.[a-z]{1,5})(?:[:\s]+(?:line\s+)?(\d+))?/i.exec(text) ??
     FILE_REF.exec(text);
   if (!m) return undefined;
-  return { file: m[1], line: m[2] ? Number(m[2]) : undefined };
+  return { file: m[1] ?? "", line: m[2] ? Number(m[2]) : undefined };
 }
 
 function firstFence(text: string): FindingBlock["evidenceCode"] {
   const m = /```(\w+)?\n([\s\S]*?)```/.exec(text);
   if (!m) return undefined;
-  return { language: m[1], code: m[2].replace(/\s+$/, "") };
+  return { language: m[1], code: (m[2] ?? "").replace(/\s+$/, "") };
 }
 
 function extractEvidence(text: string): FindingBlock["evidence"] {
@@ -156,7 +157,7 @@ function extractEvidence(text: string): FindingBlock["evidence"] {
     if (http) {
       const code = Number(http[3]);
       rows.push({
-        label: `${http[1].toUpperCase()} ${http[2]}`,
+        label: `${(http[1] ?? "").toUpperCase()} ${http[2]}`,
         value: String(code),
         status: code >= 500 ? "failed" : code >= 400 ? "warning" : "ok",
       });
@@ -166,7 +167,7 @@ function extractEvidence(text: string): FindingBlock["evidence"] {
     if (exit) {
       rows.push({
         label: "exit code",
-        value: exit[1],
+        value: exit[1] ?? "",
         status: exit[1] === "0" ? "ok" : "failed",
       });
       continue;
@@ -176,7 +177,7 @@ function extractEvidence(text: string): FindingBlock["evidence"] {
       const code = Number(status[1]);
       rows.push({
         label: "status",
-        value: status[1],
+        value: status[1] ?? "",
         status: code >= 400 ? "failed" : "ok",
       });
     }

@@ -1,18 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Button } from "@/shared/ui/button";
-import { Checkbox } from "@/shared/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/dialog";
-import { Label } from "@/shared/ui/label";
-import { extractDomain, trustDomain } from "@/shared/lib/trustedDomains";
+import { Button, Checkbox, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Label } from "@/shared/ui";
+import { extractDomain, trustDomain } from "@/shared/lib";
 
 interface LinkSafetyModalProps {
   isOpen: boolean;

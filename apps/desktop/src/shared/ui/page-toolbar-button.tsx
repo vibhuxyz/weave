@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import { Button, type ButtonProps } from "@/shared/ui/button";
 
 /** White, rounded actions that sit beside page-level tabs and filters. */

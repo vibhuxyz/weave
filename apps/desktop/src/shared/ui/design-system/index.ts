@@ -1,0 +1,1 @@
+export { getDesignSystemMetadata } from "./metadata";

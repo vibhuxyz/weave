@@ -1,4 +1,4 @@
-import type { LayoutConstraints } from "../layout/layout";
+import type { LayoutConstraints } from "@/home/canvas/layout";
 
 export const GRID_SIZE = 24;
 

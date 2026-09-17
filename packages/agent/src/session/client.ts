@@ -56,6 +56,9 @@ function notifyPlanModeExit(
 }
 
 export class SessionClient implements acp.Client {
+
+  async ["_auth/status_update"](params: any): Promise<void> {}
+
   readonly task: TaskContract;
   readonly sink: SessionSink;
   readonly policy: PermissionPolicy;

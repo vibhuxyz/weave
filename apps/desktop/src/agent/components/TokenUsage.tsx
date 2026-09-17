@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { ChevronDownIcon } from "lucide-react";
-import { cn } from "@/shared/lib/cn";
-import { tokenReportingFor } from "@weave/agent/engines-registry.ts";
-import type { AgentRunMeta } from "../normalize/types";
-import { formatTokens } from "../lib/formatTokens";
+import { cn } from "@/shared/lib";
+import { tokenReportingFor } from "@weave/agent/browser";
+import type { AgentRunMeta } from "@/agent/normalize";
+import { formatTokens } from "@/agent/lib";
 
 /**
  * Token spend for one turn, rendered from whatever the engine actually
@@ -84,9 +84,9 @@ export function TokenUsage({
                 {formatTokens(used)}
                 {size ? ` / ${formatTokens(size)}` : ""} tokens
               </>
-            ) : (
-              <>{formatTokens(total!)} tokens used</>
-            )}
+            ) : total != null ? (
+              <>{formatTokens(total)} tokens used</>
+            ) : null}
             {expandable && (
               <ChevronDownIcon
                 className={cn(

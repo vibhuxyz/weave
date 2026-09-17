@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocaleFormatting } from "@/shared/i18n";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import { clockModeOf } from "./clockWidgetMode";
 import { useWidgetActivationGuard } from "./useWidgetActivationGuard";
 import type { WidgetRenderProps } from "./types";

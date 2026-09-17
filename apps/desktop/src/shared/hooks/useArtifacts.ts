@@ -10,7 +10,7 @@ import {
   ARTIFACTS_QUERY_KEY,
   getArtifacts,
   type Artifacts,
-} from "@/shared/api/artifacts";
+} from "@/shared/api";
 
 type ArtifactsQueryOptions<TData> = Pick<
   UseQueryOptions<Artifacts, Error, TData, typeof ARTIFACTS_QUERY_KEY>,

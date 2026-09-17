@@ -1,4 +1,4 @@
-import { usePersistedState } from "@/shared/hooks/usePersistedState";
+import { usePersistedState } from "@/shared/hooks";
 
 /**
  * Ported from upstream `starterTasks.ts` (4-item checklist: connect a

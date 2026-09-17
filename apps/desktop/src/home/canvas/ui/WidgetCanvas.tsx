@@ -5,29 +5,27 @@ import { useTranslation } from "react-i18next";
 import type {
   LayoutCamera,
   LayoutConstraints,
-} from "@/home/canvas/layout/layout";
-import { cn } from "@/shared/lib/cn";
-import { GlassButton } from "@/shared/ui/glass-button";
+} from "@/home/canvas/layout";
+import { cn } from "@/shared/lib";
+import { GlassButton } from "@/shared/ui";
 // Phase-1: onboarding starter-widget/starter-layout helpers are no-ops.
 const clearStarterHomeLayoutEligibility = (): void => {};
 import {
   hasVisibleHomeCanvasWidget,
   isHomeCanvasPointInsideViewport,
   isHomeCanvasWidgetVisible,
-} from "../lib/homeCanvasVisibility";
-import { snapCanvasPointToDevicePixels } from "../lib/layoutCamera";
-import { useHomeWidgetStore } from "../stores/homeWidgetStore";
+  snapCanvasPointToDevicePixels,
+} from "@/home/canvas/lib";
+import { useHomeWidgetStore } from "@/home/canvas/stores";
 import {
   HOME_WIDGET_CATALOG_BY_ID,
   widgetSizeForInstance,
   widgetSizeProfile,
-} from "../widgets/catalog";
-import type { WorkspaceNameRequest } from "../widgets/types";
-import type {
-  WidgetInstance,
-  WidgetMutationHandlers,
-  WidgetNavigationHandlers,
-} from "../widgets/types";
+  type WidgetInstance,
+  type WidgetMutationHandlers,
+  type WidgetNavigationHandlers,
+  type WorkspaceNameRequest,
+} from "@/home/canvas/widgets";
 import { WidgetFrame } from "./WidgetFrame";
 import {
   WIDGET_PICKER_SIDE_OFFSET,
@@ -596,6 +594,7 @@ export function WidgetCanvas({
       <div className="absolute left-0 top-0 size-0">
         {renderedInstances.map((instance) => {
           const catalogEntry = HOME_WIDGET_CATALOG_BY_ID[instance.type];
+          if (!catalogEntry) return null;
           const position = dragPositions[instance.id] ?? {
             x: instance.x,
             y: instance.y,

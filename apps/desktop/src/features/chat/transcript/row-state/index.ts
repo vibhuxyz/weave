@@ -1,9 +1,11 @@
 export {
-  DEFAULT_TRANSCRIPT_KEEP_ALIVE_POLICY,
-  TRANSCRIPT_KEEP_ALIVE_PRIORITY_WEIGHT,
   TranscriptRowStateRegistry,
   createTranscriptRowStateRegistry,
 } from "./transcriptRowStateRegistry";
+export {
+  DEFAULT_TRANSCRIPT_KEEP_ALIVE_POLICY,
+  TRANSCRIPT_KEEP_ALIVE_PRIORITY_WEIGHT,
+} from "./types";
 export {
   TRANSCRIPT_SELECTED_TEXT_CONTEXT_MENU_EVENT,
   TranscriptRowStateProvider,
@@ -41,7 +43,7 @@ export type {
   TranscriptSessionCleanupResult,
   TranscriptSessionPromotionResult,
   TranscriptToolChainRowState,
-} from "./transcriptRowStateRegistry";
+} from "./types";
 export type {
   TranscriptSelectedTextContextMenuEventDetail,
   TranscriptMcpActivityReporter,

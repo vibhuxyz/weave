@@ -10,7 +10,7 @@ import {
   CommandList,
 } from "@/shared/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 
 interface SearchableSelectOption {
   value: string;

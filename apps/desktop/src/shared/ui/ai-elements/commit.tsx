@@ -1,12 +1,6 @@
-import { Avatar, AvatarFallback } from "@/shared/ui/avatar";
-import { Button } from "@/shared/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/shared/ui/collapsible";
+import { Avatar, AvatarFallback, Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui";
 import { useLocaleFormatting } from "@/shared/i18n";
-import { cn } from "@/shared/lib/cn";
+import { cn } from "@/shared/lib";
 import {
   CheckIcon,
   CopyIcon,

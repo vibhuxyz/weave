@@ -400,6 +400,22 @@ export function CursorIcon({ className = "" }: { className?: string }) {
   );
 }
 
+export function PiIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M4.5 6C4.5 5.17 5.17 4.5 6 4.5h12c.83 0 1.5.67 1.5 1.5v1.5H17V17c0 1.38-1.12 2.5-2.5 2.5h-1a1 1 0 01-1-1V7.5H10.5V15c0 2.48-2.02 4.5-4.5 4.5H4.5v-2.5H6c1.1 0 2-.9 2-2V7.5H4.5V6z" />
+    </svg>
+  );
+}
+
 export function CopilotIcon({ className = "" }: { className?: string }) {
   return (
     <svg
@@ -421,6 +437,8 @@ export function CopilotIcon({ className = "" }: { className?: string }) {
 }
 
 const PROVIDER_ICON_MAP: Record<string, (className: string) => ReactNode> = {
+  pi: (className) => <PiIcon className={className} />,
+  copilot: (className) => <CopilotIcon className={className} />,
   goose: (className) => (
     <GooseIcon className={`${className} text-foreground`} />
   ),

@@ -1,4 +1,4 @@
-import type { MarkdownBlock as MarkdownBlockModel } from "../normalize/types";
+import type { MarkdownBlock as MarkdownBlockModel } from "@/agent/normalize";
 import { Prose } from "./Prose";
 
 /**

@@ -1,8 +1,8 @@
 import { useReducedMotion } from "motion/react";
 
-import { cn } from "@/shared/lib/cn";
-import { RESPONDING_SHIMMER_PROPS } from "@/shared/ui/ai-elements/shimmer";
-import { useWorkingIndicatorAnimationPreference } from "@/shared/preferences/workingIndicatorAnimationPreference";
+import { cn } from "@/shared/lib";
+import { RESPONDING_SHIMMER_PROPS } from "@/shared/ui/ai-elements";
+import { useWorkingIndicatorAnimationPreference } from "@/shared/preferences";
 import { BerdLoaderInline } from "@/shared/ui/berd-loader-inline";
 
 const ACTIVE_CHAT_BERD_SIZE_PX = 14;

@@ -34,6 +34,5 @@ const enabled = isEnabled();
 
 export function perfLog(message: string): void {
   if (!enabled) return;
-  // eslint-disable-next-line no-console
   console.log(message);
 }

@@ -1,14 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-/**
- * Renderer (WKWebView WebContent) memory telemetry bridge.
- *
- * The Rust `renderer_monitor` service samples the WebContent process RSS and
- * emits `berd:renderer-stats`; it also logs silent OOM reaps. This module is
- * the frontend counterpart: it lets the UI observe those samples and forward
- * its own lifecycle signals (e.g. an unexpected reload) into `goose.log`.
- */
+
 export const RENDERER_STATS_EVENT = "berd:renderer-stats";
 
 export interface RendererStatsPayload {
@@ -19,12 +12,7 @@ export interface RendererStatsPayload {
 
 export type RendererLogLevel = "info" | "warn" | "error";
 
-/**
- * Log target for dev-time telemetry-viewer lines. The Rust side validates to
- * this closed set (anything else falls back to its default target) and its
- * Stdout formatter renders these records grey in the `just dev` terminal;
- * the file target prints them uncolored.
- */
+
 export type RendererLogTarget = "telemetry";
 
 /** Forward a renderer lifecycle event to the backend app log. */

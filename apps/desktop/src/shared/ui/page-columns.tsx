@@ -1,6 +1,6 @@
 import { useId, type CSSProperties, type ReactNode } from "react";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { cn } from "@/shared/lib/cn";
+import { useIsMobile } from "@/shared/hooks";
+import { cn } from "@/shared/lib";
 import {
   ResizableHandle,
   ResizablePanel,

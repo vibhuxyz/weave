@@ -1,5 +1,5 @@
 import type React from "react";
-import type { LayoutConstraints } from "@/home/canvas/layout/layout";
+import type { LayoutConstraints } from "@/home/canvas/layout";
 // Phase-1 stub: skills API not ported yet.
 export type SkillInfo = { id: string; name: string; [k: string]: unknown };
 // Phase-1 stub: chat session controller not ported.
