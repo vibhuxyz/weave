@@ -23,6 +23,7 @@ export interface ProjectEntry {
   agents?: ProjectAgent[];
   plugins?: ProjectPlugin[];
   sandboxed?: boolean;
+  archivedAt?: string;
 }
 
 export interface ProjectMeta {
@@ -38,26 +39,13 @@ export interface ProjectMeta {
 export function useProjects() {
   const [projects, setProjects] = usePersistedState<ProjectEntry[]>(
     "berd:projects",
-    [
-      { dir: "/Users/xyz/Coding/Perp", name: "Perp" },
-      { dir: "/Users/xyz/Coding/Weave", name: "Weave" },
-    ],
+    [],
     (value, defaults) => {
       if (!Array.isArray(value)) return defaults;
-      const valid = value.filter(
+      return value.filter(
         (entry): entry is ProjectEntry =>
           !!entry && typeof (entry as ProjectEntry).dir === "string",
       );
-      if (valid.length === 0) return defaults;
-      const hasWeave = valid.some(
-        (e) =>
-          e.name?.toLowerCase() === "weave" ||
-          e.dir.toLowerCase().includes("weave"),
-      );
-      if (!hasWeave) {
-        return [...valid, { dir: "/Users/xyz/Coding/Weave", name: "Weave" }];
-      }
-      return valid;
     },
   );
 
@@ -98,5 +86,18 @@ export function useProjects() {
     [setProjects],
   );
 
-  return { projects, remember, forget, setProjectAgents, setProjectPlugins };
+  const setArchivedAt = useCallback(
+    (dir: string, archivedAt: string | undefined) =>
+      setProjects((current) =>
+        current.map((entry) => (entry.dir === dir ? { ...entry, archivedAt } : entry)),
+      ),
+    [setProjects],
+  );
+  const archive = useCallback(
+    (dir: string, now: Date) => setArchivedAt(dir, now.toISOString()),
+    [setArchivedAt],
+  );
+  const unarchive = useCallback((dir: string) => setArchivedAt(dir, undefined), [setArchivedAt]);
+
+  return { projects, remember, forget, archive, unarchive, setProjectAgents, setProjectPlugins };
 }

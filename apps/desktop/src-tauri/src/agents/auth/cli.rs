@@ -1,3 +1,4 @@
+use crate::agents::agent_env::agent_path;
 use std::path::Path;
 use std::process::Command;
 
@@ -11,20 +12,7 @@ pub fn run_cli_login(program: &Path, args: &[&str]) -> Result<CliAuthResult, Str
     let mut cmd = Command::new(program);
     cmd.args(args);
 
-    if let Some(path_var) = std::env::var_os("PATH") {
-        let mut new_path = std::ffi::OsString::new();
-        if let Some(parent) = program.parent() {
-            new_path.push(parent);
-            new_path.push(":");
-        }
-        if let Some(home) = std::env::var_os("HOME") {
-            let local_bin = std::path::PathBuf::from(&home).join(".local").join("bin");
-            new_path.push(local_bin);
-            new_path.push(":");
-        }
-        new_path.push(path_var);
-        cmd.env("PATH", new_path);
-    }
+    cmd.env("PATH", agent_path(program));
 
     let output = cmd
         .output()

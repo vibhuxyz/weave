@@ -1,35 +1,28 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useContext, useMemo } from "react";
+import { QueryClientContext, useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { normalizeProviderId } from "@weave/providers";
-import type { HarnessDescriptor, HarnessInstallLog, HarnessAuthMethodInfo } from "../components/types";
-
-interface ProviderReport {
-  readonly providerId: string;
-  readonly installed: boolean;
-  readonly authenticated: boolean;
-  readonly usable: boolean;
-  readonly version?: string;
-  readonly authMethods?: readonly HarnessAuthMethodInfo[];
-  readonly capabilities?: {
-    readonly models: boolean;
-    readonly reasoning: boolean;
-    readonly tools: boolean;
-    readonly sessions: boolean;
-  };
-  readonly error?: string;
-}
-
-interface AgentSetupEvent {
-  readonly state: "checking" | "not_installed" | "auth_required" | "authenticating" | "authenticated" | "failed";
-  readonly provider: string;
-  readonly methods?: readonly HarnessAuthMethodInfo[];
-  readonly error?: string;
-}
+import type { HarnessDescriptor, HarnessInstallLog } from "../components/types";
+import {
+  PROVIDER_REPORTS_QUERY_KEY,
+  PROVIDER_REPORTS_STALE_TIME_MS,
+  applySetupEvent,
+  fallbackQueryClient,
+  fetchProviderReports,
+  type AgentSetupEvent,
+  type ProviderReport,
+} from "./provider-reports";
 
 interface UseHarnessesProps {
-  readonly engines?: readonly { id: string; label: string; installed: boolean; authenticated?: boolean }[];
+  readonly engines?: readonly {
+    id: string;
+    label: string;
+    installed: boolean;
+    authenticated?: boolean;
+    authState?: "unknown" | "authenticated" | "auth_required";
+  }[];
   readonly onRefreshEngines?: () => void;
   readonly onAuthenticate?: (url: string) => void;
 }
@@ -39,40 +32,30 @@ export function useHarnesses({
   onRefreshEngines,
   onAuthenticate,
 }: UseHarnessesProps = {}) {
-  const [providerReports, setProviderReports] = useState<Map<string, ProviderReport>>(new Map());
-  const [refreshing, setRefreshing] = useState(false);
+  const queryClient = useContext(QueryClientContext) ?? fallbackQueryClient;
+  const reportsQuery = useQuery(
+    {
+      queryKey: PROVIDER_REPORTS_QUERY_KEY,
+      queryFn: fetchProviderReports,
+      staleTime: PROVIDER_REPORTS_STALE_TIME_MS,
+      refetchOnWindowFocus: false,
+    },
+    queryClient,
+  );
+  const providerReports = useMemo(
+    () => new Map((reportsQuery.data ?? []).map((report) => [report.providerId, report])),
+    [reportsQuery.data],
+  );
+  const refreshing = reportsQuery.isFetching;
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [activeLog, setActiveLog] = useState<HarnessInstallLog | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const applyReports = useCallback((reports: readonly ProviderReport[]) => {
-    const nextMap = new Map<string, ProviderReport>();
-    for (const r of reports) {
-      nextMap.set(r.providerId, r);
-    }
-    setProviderReports(nextMap);
-  }, []);
-
   const refresh = useCallback(async () => {
-    setRefreshing(true);
     setErrorMessage(null);
-    try {
-      const reports = await invoke<ProviderReport[]>("list_providers_command");
-      applyReports(reports);
-      if (onRefreshEngines) {
-        onRefreshEngines();
-      }
-    } catch (err) {
-      console.error("Failed to list providers:", err);
-      setErrorMessage(String(err));
-    } finally {
-      setRefreshing(false);
-    }
-  }, [applyReports, onRefreshEngines]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    onRefreshEngines?.();
+    await queryClient.invalidateQueries({ queryKey: PROVIDER_REPORTS_QUERY_KEY });
+  }, [onRefreshEngines, queryClient]);
 
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
@@ -81,22 +64,10 @@ export function useHarnesses({
     const setupListener = async () => {
       unlisten = await listen<AgentSetupEvent>("agent-setup:state", (event) => {
         if (destroyed) return;
-        const { provider, state, error, methods } = event.payload;
-        setProviderReports((prev) => {
-          const next = new Map(prev);
-          const norm = normalizeProviderId(provider);
-          const current = next.get(norm);
-          if (current) {
-            next.set(norm, {
-              ...current,
-              installed: state !== "not_installed",
-              authenticated: state === "authenticated",
-              authMethods: methods ?? current.authMethods,
-              error: error ?? current.error,
-            });
-          }
-          return next;
-        });
+        const { state, error } = event.payload;
+        queryClient.setQueryData<ProviderReport[]>(PROVIDER_REPORTS_QUERY_KEY, (reports) =>
+          applySetupEvent(reports, event.payload),
+        );
 
         if (state === "authenticating" || state === "authenticated" || state === "failed") {
           setActiveLog(null);
@@ -118,23 +89,39 @@ export function useHarnesses({
         unlisten();
       }
     };
-  }, [refresh]);
+  }, [queryClient, refresh]);
+
+  const installHarness = useCallback(
+    async (harness: HarnessDescriptor) => {
+      setInstallingId(normalizeProviderId(harness.id));
+      setErrorMessage(null);
+      try {
+        await invoke("install_engine", { packageName: harness.packageName });
+      } catch (err) {
+        console.error("Failed to install harness:", err);
+        setErrorMessage(err instanceof Error ? err.message : String(err));
+      } finally {
+        void refresh();
+        setInstallingId(null);
+      }
+    },
+    [refresh],
+  );
 
   const removeHarness = useCallback(
     async (harness: HarnessDescriptor) => {
-      const norm = normalizeProviderId(harness.id);
-      const conf = confirm(
-        `Are you sure you want to remove ${harness.id}? This will remove the authentication configuration, but leaving CLI packages globally installed.`,
+      const confirmed = confirm(
+        `Remove ${harness.label}? This uninstalls ${harness.packageName} from Weave's engines. Your sign-in with the provider is left alone.`,
       );
-      if (!conf) return;
+      if (!confirmed) return;
 
+      setInstallingId(normalizeProviderId(harness.id));
+      setErrorMessage(null);
       try {
-        setInstallingId(norm);
-        setErrorMessage(null);
-        await invoke("setup_provider_command", { providerId: norm, methodId: "none" });
+        await invoke("uninstall_engine", { packageName: harness.packageName });
       } catch (err) {
-        console.error("Failed to remove provider:", err);
-        setErrorMessage(String(err));
+        console.error("Failed to remove harness:", err);
+        setErrorMessage(err instanceof Error ? err.message : String(err));
       } finally {
         void refresh();
         setInstallingId(null);
@@ -217,10 +204,14 @@ export function useHarnesses({
     if (!engines) return [];
     return engines.map((engine) => {
       const report = providerReports.get(normalizeProviderId(engine.id));
+      const liveAuthState = engine.authState ?? "unknown";
       return {
         ...engine,
         installed: report ? report.installed : engine.installed,
-        authenticated: report ? report.authenticated : engine.authenticated,
+        authenticated:
+          liveAuthState !== "unknown"
+            ? liveAuthState === "authenticated"
+            : report?.authenticated ?? engine.authenticated,
       };
     });
   }, [engines, providerReports]);
@@ -229,9 +220,10 @@ export function useHarnesses({
     refreshing,
     installingId,
     activeLog,
-    errorMessage,
+    errorMessage: errorMessage ?? (reportsQuery.error ? String(reportsQuery.error) : null),
     refresh,
     setupHarness,
+    installHarness,
     removeHarness,
     isHarnessInstalled,
     isHarnessAuthenticated,

@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { cn, flattenConfigValues, splitConfigOptions } from "@/shared/lib";
+import { flattenConfigValues } from "@/shared/lib";
 import type { EnginePickerProps } from "./types";
-import { AgentListColumn } from "./AgentListColumn";
-import { ModelListColumn } from "./ModelListColumn";
-import { EffortListColumn } from "./EffortListColumn";
+import { EnginePickerPanel } from "./EnginePickerPanel";
 import { EnginePickerTrigger } from "./EnginePickerTrigger";
-import { DISPLAY_AGENTS, REASONING_EFFORTS, type DisplayModel } from "./constants";
+import { REASONING_EFFORTS } from "./constants";
 
 export function EnginePicker({
   selectedEngineId,
@@ -18,12 +16,15 @@ export function EnginePicker({
   loading,
   isSettingModel,
   pendingModelValue,
+  isSwitchingEngine,
+  targetEngineId,
   onSelect,
   onSelectModel,
   onSelectEffort,
   onRequestManageProviders,
 }: EnginePickerProps) {
   const [open, setOpen] = useState(false);
+  const [isSwitchingAgent, setIsSwitchingAgent] = useState(false);
   const [focusedEngineId, setFocusedEngineId] = useState<string>("");
   const [localModelValue, setLocalModelValue] = useState<string | null>(null);
 
@@ -40,11 +41,13 @@ export function EnginePicker({
     [engines],
   );
 
-  useEffect(() => {
-    if (open) {
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) {
       setFocusedEngineId(selectedEngineId || "");
+      setIsSwitchingAgent(false);
     }
-  }, [open, selectedEngineId]);
+    setOpen(nextOpen);
+  };
 
   const activeEngineId = focusedEngineId || selectedEngineId || "";
   const isAgentConnected = checkConnected(activeEngineId);
@@ -55,6 +58,8 @@ export function EnginePicker({
   );
 
   const activeModelValue = pendingModelValue ?? localModelValue ?? modelValue;
+  const loadingEngineId = isSwitchingEngine ? targetEngineId ?? focusedEngineId : null;
+  const isLoadingOptions = Boolean(isSwitchingEngine) || (isAgentConnected && liveModelValues.length === 0);
 
   const handleSelectAgent = (agentId: string, isReady: boolean) => {
     if (!isReady) return;
@@ -93,7 +98,7 @@ export function EnginePicker({
       : undefined;
 
   return (
-    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+    <PopoverPrimitive.Root open={open} onOpenChange={handleOpenChange}>
       <PopoverPrimitive.Trigger asChild>
         <div>
           <EnginePickerTrigger
@@ -101,8 +106,8 @@ export function EnginePicker({
             isConnected={checkConnected(selectedEngineId)}
             modelName={displayModelName}
             effortLabel={displayEffortLabel || ""}
-            loading={loading || isSettingModel || false}
-            onClick={() => setOpen(!open)}
+            loading={Boolean(loading || isSettingModel || isSwitchingEngine)}
+            onClick={() => handleOpenChange(!open)}
           />
         </div>
       </PopoverPrimitive.Trigger>
@@ -111,40 +116,29 @@ export function EnginePicker({
         <PopoverPrimitive.Content
           align="start"
           sideOffset={8}
-          className="z-50 flex overflow-hidden rounded-xl border border-white/10 bg-[#1e1e1e] shadow-xl animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95"
+          collisionPadding={12}
+          className="z-50 overflow-hidden rounded-2xl border border-white/10 bg-[#1e1e1e] shadow-2xl animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95"
         >
-          <div
-            className={cn(
-              "flex p-2 transition-all duration-200",
-              isAgentConnected && effortOption ? "min-w-[530px]" : isAgentConnected ? "min-w-[340px]" : "min-w-[210px]",
-            )}
-          >
-            <AgentListColumn
-              activeEngineId={activeEngineId}
-              engines={engines}
-              hasRightBorder={isAgentConnected}
-              onSelectAgent={handleSelectAgent}
-              onRequestManageProviders={() => {
-                onRequestManageProviders();
-                setOpen(false);
-              }}
-            />
-            {isAgentConnected && (
-              <>
-                <ModelListColumn
-                  models={liveModelValues}
-                  selectedModelValue={activeModelValue || ""}
-                  onSelectModel={handleSelectModel}
-                />
-                {effortOption && (
-                  <EffortListColumn
-                    selectedEffortValue={effortValue || ""}
-                    onSelectEffort={handleSelectEffort}
-                  />
-                )}
-              </>
-            )}
-          </div>
+          <EnginePickerPanel
+            isShowingAgents={isSwitchingAgent || !isAgentConnected}
+            isAgentConnected={isAgentConnected}
+            hasEffortOption={Boolean(effortOption)}
+            isLoadingOptions={isLoadingOptions}
+            loadingEngineId={loadingEngineId}
+            activeEngineId={activeEngineId}
+            engines={engines}
+            models={liveModelValues}
+            selectedModelValue={activeModelValue || ""}
+            selectedEffortValue={effortValue || ""}
+            onSelectAgent={handleSelectAgent}
+            onSelectModel={handleSelectModel}
+            onSelectEffort={handleSelectEffort}
+            onSwitchAgent={() => setIsSwitchingAgent(true)}
+            onRequestManageProviders={() => {
+              onRequestManageProviders();
+              setOpen(false);
+            }}
+          />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>

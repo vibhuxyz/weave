@@ -1,5 +1,6 @@
 import { AgentPinWidget } from "./AgentPinWidget";
 import { ClockWidget } from "./ClockWidget";
+import { ProjectPinWidget } from "./ProjectPinWidget";
 import { clockModeOf } from "./clockWidgetMode";
 import type {
   WidgetCatalogEntry,
@@ -77,6 +78,21 @@ export const HOME_WIDGET_CATALOG: WidgetCatalogEntry[] = [
       lockAspectRatio: true,
     },
     Component: AgentPinWidget,
+  },
+  {
+    id: "projectPin",
+    category: "project",
+    labelKey: "widgets.projectPin.label",
+    descriptionKey: "widgets.projectPin.description",
+    defaultSize: { width: 180, height: 180 },
+    sizeBounds: {
+      minWidth: 132,
+      maxWidth: 360,
+      minHeight: 132,
+      maxHeight: 360,
+      lockAspectRatio: true,
+    },
+    Component: ProjectPinWidget,
   },
 ];
 

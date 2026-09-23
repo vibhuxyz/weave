@@ -1,6 +1,7 @@
 import type { ToolCallStatus, ToolKind } from "@agentclientprotocol/sdk";
 import type { ConversationMeta } from "../../../../../server/index.ts";
 import type { CheckpointReason } from "@weave/protocol";
+import type { CompactionNotice } from "@/features/chat/compaction";
 
 export type { ConversationMeta };
 
@@ -27,11 +28,20 @@ export interface ToolEntry {
   output?: string;
   /** The tool's raw arguments (e.g. `{ command }`, `{ plan }`, `{ content }`). */
   rawInput?: unknown;
+  /** Weave's policy refused this without asking, e.g. plan mode. */
+  blockedReason?: string;
   /** File edits this call reported, newest snapshot wins. */
   diffs?: ToolDiff[];
   /** Epoch ms when the call first appeared, and when it finished. For timers. */
   startedAt?: number;
   endedAt?: number;
+  /**
+   * The turn ended while this call was still `pending`/`in_progress` — a Stop,
+   * a dropped connection, or an engine that never sent a terminal update. The
+   * ACP status stays as reported; this says the call will never resolve, so
+   * the spinner, the live timer and Stop must not keep running.
+   */
+  interrupted?: boolean;
   sourceEventIds?: string[];
   sourceSeq?: number;
 }
@@ -103,8 +113,10 @@ export interface TurnCheckpoint {
 
 export interface ChatTurn {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "notice";
   text: string;
+  compaction?: CompactionNotice;
+  historyGap?: number;
   checkpoint?: TurnCheckpoint;
   /** Names of agents @-mentioned on this prompt, for the pills on the bubble. */
   mentions?: string[];

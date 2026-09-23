@@ -1,3 +1,4 @@
+import type { ConsentLink, SessionModes, TerminalKeyName } from "@weave/agent";
 import type {
   ConversationMeta,
   GitStatus,
@@ -22,10 +23,31 @@ export interface PromptImageData {
   readonly prompt?: string;
 }
 
+/** What the setup panel should show for an engine's consent page. */
+export type SetupConsent =
+  | {
+      readonly kind: "card";
+      readonly title: string | null;
+      readonly notice: string | null;
+      readonly agreement: string;
+      readonly checked: boolean;
+      readonly links: readonly ConsentLink[];
+    }
+  | { readonly kind: "applying" }
+  | { readonly kind: "manual"; readonly reason: string };
+
+export interface PermissionOption {
+  readonly optionId: string;
+  readonly name: string;
+  readonly kind: string;
+}
+
 export type ClientMessage =
   | {
       readonly type: "prompt";
       readonly text: string;
+      readonly promptId?: string;
+      readonly autoCompactThreshold?: number;
       readonly persona?: string;
       readonly plugins?: readonly ActivePluginRef[];
       readonly images?: readonly PromptImageData[];
@@ -42,11 +64,30 @@ export type ClientMessage =
       readonly methodId: string;
       readonly secret?: string;
     }
+  | { readonly type: "set-mode"; readonly modeId: string }
+  | { readonly type: "start-setup"; readonly engineId: string }
+  | { readonly type: "cancel-setup" }
+  | { readonly type: "submit-setup-key"; readonly key: TerminalKeyName }
+  | { readonly type: "submit-setup-consent"; readonly agreed: boolean }
   | { readonly type: "cancel-auth" }
+  | { readonly type: "submit-auth-input"; readonly text: string }
   | { readonly type: "list-files"; readonly query: string }
   | { readonly type: "read-attachment"; readonly path: string }
   | { readonly type: "refresh-engines" }
-  | { readonly type: "refresh-plugins" };
+  | {
+      readonly type: "permission-response";
+      readonly requestId: string;
+      /** `null` rejects: the user declined, or closed the card. */
+      readonly optionId: string | null;
+    }
+  | { readonly type: "refresh-plugins" }
+  | { readonly type: "compact"; readonly operationId: string }
+  | {
+      readonly type: "save-history";
+      readonly sessionId: string;
+      readonly turns: readonly unknown[];
+      readonly droppedTurnCount: number;
+    };
 
 export interface CheckpointStats {
   readonly filesModified: number;
@@ -56,13 +97,54 @@ export interface CheckpointStats {
   readonly notes: readonly string[];
 }
 
+export type EngineAuthState = "unknown" | "authenticated" | "auth_required";
+
 export interface EngineEntry {
   readonly id: string;
   readonly label: string;
   readonly installed: boolean;
+  readonly authState: EngineAuthState;
 }
 
+export interface ContextSnapshot {
+  readonly contextTokens: number;
+  readonly contextLimit: number;
+}
+
+export type CompactionTrigger = "manual" | "automatic";
+
+interface CompactionEventBase {
+  readonly type: "compaction";
+  readonly operationId: string;
+  readonly sessionId: string;
+  readonly trigger: CompactionTrigger;
+}
+
+export type CompactionEvent =
+  | (CompactionEventBase & {
+      readonly status: "started";
+      readonly promptId: string | null;
+      readonly contextBefore: ContextSnapshot | null;
+    })
+  | (CompactionEventBase & {
+      readonly status: "completed";
+      readonly contextAfter: ContextSnapshot | null;
+      readonly summary: string | null;
+    })
+  | (CompactionEventBase & { readonly status: "failed"; readonly reason: string })
+  | (CompactionEventBase & { readonly status: "cancelled" });
+
 export type ServerMessage =
+  | CompactionEvent
+  | { readonly type: "prompt-withdrawn"; readonly promptId: string }
+  | {
+      readonly type: "history-archive";
+      readonly sessionId: string;
+      readonly turns: readonly unknown[];
+      readonly droppedTurnCount: number;
+    }
+  | { readonly type: "compaction-summary"; readonly sessionId: string; readonly summary: string }
+  | { readonly type: "session-capabilities"; readonly sessionId: string; readonly supportsCompaction: boolean }
   | {
       readonly type: "ready";
       readonly sessionId: string;
@@ -70,6 +152,7 @@ export type ServerMessage =
       readonly engineId: string;
       readonly engineLabel: string;
       readonly configOptions: readonly SessionConfigOption[];
+      readonly modes: SessionModes | null;
       readonly resumed: boolean;
     }
   | {
@@ -84,6 +167,47 @@ export type ServerMessage =
   | { readonly type: "attachment"; readonly path: string; readonly dataUri: string | null }
   | { readonly type: "turn-end"; readonly stopReason: string; readonly usage?: Usage | null }
   | { readonly type: "error"; readonly message: string }
+  | {
+      readonly type: "permission-request";
+      readonly requestId: string;
+      readonly toolCallId: string | null;
+      readonly title: string;
+      readonly kind: string;
+      /** The shell command, when the tool call carries one. */
+      readonly command: string | null;
+      /** The agent's own choices, in the order it offered them. */
+      readonly options: readonly PermissionOption[];
+    }
+  | { readonly type: "permission-cancelled"; readonly requestId: string }
+  | { readonly type: "modes"; readonly modes: SessionModes | null }
+  | {
+      readonly type: "policy-block";
+      readonly toolCallId: string;
+      readonly title: string;
+      readonly reason: string;
+    }
+  | {
+      readonly type: "setup-required";
+      readonly engineId: string;
+      readonly engineLabel: string;
+      readonly description: string;
+    }
+  | {
+      readonly type: "setup-state";
+      readonly engineId: string;
+      readonly status: "running" | "succeeded" | "failed";
+      readonly error: string | null;
+    }
+  | {
+      readonly type: "setup-consent";
+      readonly engineId: string;
+      readonly consent: SetupConsent;
+    }
+  | {
+      readonly type: "setup-output";
+      readonly engineId: string;
+      readonly lines: readonly string[];
+    }
   | {
       readonly type: "auth-required";
       readonly engineId: string;

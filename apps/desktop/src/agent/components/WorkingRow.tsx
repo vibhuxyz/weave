@@ -1,11 +1,7 @@
 import { cn } from "@/shared/lib";
 import { Shimmer } from "@/shared/ui/ai-elements";
-import type { ChatTurn, ToolEntry } from '@/features/chat/hooks';
-import { activeTitle, shorten } from "@/agent/lib";
-
-function isRunning(tool: ToolEntry) {
-  return tool.status === "in_progress" || tool.status === "pending";
-}
+import type { ChatTurn } from '@/features/chat/hooks';
+import { currentActivity } from "@/agent/lib";
 
 /**
  * What the agent is doing right now, named as an operation rather than as
@@ -19,14 +15,7 @@ export function WorkingRow({
   turn: ChatTurn;
   projectDir?: string | null;
 }) {
-  const tool = turn.tools.filter(isRunning).at(-1);
-  const activity = tool
-    ? tool.kind === "think"
-      ? `Exploring — ${shorten(tool.title, projectDir ?? null)}`
-      : shorten(activeTitle(tool.title), projectDir ?? null)
-    : turn.thought.trim().length > 0
-      ? "Planning the next step"
-      : "Working";
+  const activity = currentActivity(turn, projectDir ?? null);
 
   return (
     <div className="flex items-center gap-2.5 border-agent-border border-b bg-agent-surface-raised px-4 py-2.5">
@@ -37,9 +26,11 @@ export function WorkingRow({
       <span className="shrink-0 font-medium text-agent-text-bright text-xs">
         Working
       </span>
-      <Shimmer className="min-w-0 flex-1 truncate text-agent-text-muted text-xs">
-        {activity}
-      </Shimmer>
+      {activity && (
+        <Shimmer className="min-w-0 flex-1 truncate text-agent-text-muted text-xs">
+          {activity}
+        </Shimmer>
+      )}
     </div>
   );
 }

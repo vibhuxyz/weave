@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   SessionConfigOption,
   SessionUpdate,
 } from "@agentclientprotocol/sdk";
-import type { GitStatus, ServerMessage } from "../../../../server/index.ts";
+import type { EngineEntry, GitStatus, PermissionOption, ServerMessage, SessionModes, SetupConsent, TerminalKeyName } from "../../../../server/index.ts";
 import type { NormalizedPlugin, ActivePluginRef } from "@weave/core/browser";
 import {
   isAuthRequiredError,
@@ -11,18 +11,41 @@ import {
   type EngineAuthOperation,
 } from "@weave/protocol";
 import type { ChatImageAttachmentDraft } from "@/shared/types/messages";
+import { flattenConfigValues, planExitTarget } from "@/shared/lib/sessionConfig";
 import {
   authMethodsForEngine,
   engineLabelFallback,
 } from "./acpChat/authErrorRecovery";
 import {
   rawInputDiffs,
+  sealRunningTools,
   splitAttachments,
   stripSystemPreamble,
   TERMINAL_STATUS,
   toolDiffs,
   toolText,
 } from "./acpChat/messageParsing";
+import {
+  latestContextUsage,
+  rememberCapability,
+  useAutoCompactThreshold,
+  type CompactionCapabilities,
+} from "@/features/chat/compaction";
+import { buildHistoryArchive, restoreArchivedTurns } from "./acpChat/history-archive";
+import {
+  applyCompactionSettled,
+  applyCompactionStarted,
+  applyCompactionUpdate,
+  applyReplayedSummary,
+  failRunningNotices,
+  withdrawPromptTurn,
+} from "./acpChat/compaction-turns";
+import {
+  readPreferredModeId,
+  readPreferredModel,
+  writePreferredModeId,
+  writePreferredModel,
+} from "./acpChat/session-preferences";
 import type {
   ChatTurn,
   ConnectionState,
@@ -46,6 +69,61 @@ export type {
   TurnUsage,
 } from "./acpChat/types";
 export { splitAttachments } from "./acpChat/messageParsing";
+export type { SessionModes, SessionModeInfo, TerminalKeyName, SetupConsent, ConsentLink } from "../../../../server/index.ts";
+
+const OPEN_CHAT_TIMEOUT_MS = 20_000;
+
+/**
+ * Stands in for the session id while a new chat is being created.
+ *
+ * The server names the session, so there is nothing to key the skeleton on
+ * until it answers — and waiting for that name is exactly the pause this
+ * removes. Any non-null value drives `isOpeningChat`.
+ */
+const NEW_CHAT_PENDING = "pending-new-chat";
+
+const CONNECTION_LOST_DURING_COMPACTION = "Connection to the engine server closed during compaction.";
+const PROMPT_WITHDRAWN_WITHOUT_DRAFT = "Compaction was cancelled, so your message was not sent. Send it again when ready.";
+
+export interface EngineSetupPrompt {
+  readonly engineId: string;
+  readonly engineLabel: string;
+  readonly description: string;
+  readonly status: "needed" | "running" | "failed";
+  readonly error: string | null;
+  readonly lines: readonly string[];
+  readonly consent: SetupConsent | null;
+  readonly consentSubmitted: boolean;
+}
+
+export interface PermissionRequest {
+  readonly requestId: string;
+  readonly title: string;
+  readonly kind: string;
+  readonly command: string | null;
+  readonly options: readonly PermissionOption[];
+}
+
+function latestUnarchivedNoticeId(turns: readonly ChatTurn[], archived: ReadonlySet<string>): string | null {
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const notice = turns[index]?.compaction;
+    if (!notice) continue;
+    const isArchivable = notice.origin === "live" && notice.status === "completed";
+    return isArchivable && !archived.has(notice.operationId) ? notice.operationId : null;
+  }
+  return null;
+}
+
+function sealTurns(turns: readonly ChatTurn[], endedAt: number): ChatTurn[] | null {
+  let changed = false;
+  const next = turns.map((turn) => {
+    const tools = sealRunningTools(turn.tools, endedAt);
+    if (tools === turn.tools) return turn;
+    changed = true;
+    return { ...turn, tools: [...tools] };
+  });
+  return changed ? next : null;
+}
 
 /**
  * Owns the WebSocket to the ACP server and folds `session/update`
@@ -59,6 +137,7 @@ export function useAcpChat(port: number | null) {
   const [state, setState] = useState<ConnectionState>("idle");
   const [cwd, setCwd] = useState<string | null>(null);
   const [engineId, setEngineId] = useState<string | null>(null);
+  const engineIdRef = useRef<string | null>(null);
   const [engineLabel, setEngineLabel] = useState<string | null>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
@@ -78,14 +157,19 @@ export function useAcpChat(port: number | null) {
     useState<EngineAuthOperation | null>(null);
 /** The agent's own settings — `model`, `mode`, whatever else it advertises. */
 const [configOptions, setConfigOptions] = useState<readonly SessionConfigOption[]>([]);
+  const configOptionsRef = useRef<readonly SessionConfigOption[]>([]);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [git, setGit] = useState<GitStatus>({ branch: null, changes: [] });
   const [resumed, setResumed] = useState(false);
   const [chats, setChats] = useState<ConversationMeta[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [engines, setEngines] = useState<
-    { id: string; label: string; installed: boolean }[]
-  >([]);
+  const [openingSessionId, setOpeningSessionId] = useState<string | null>(null);
+  const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null);
+  const [modes, setModes] = useState<SessionModes | null>(null);
+  const [engineSetup, setEngineSetup] = useState<EngineSetupPrompt | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
+  const pendingOpenRef = useRef<{ readonly previousSessionId: string | null } | null>(null);
+  const [engines, setEngines] = useState<EngineEntry[]>([]);
   const [pluginCatalog, setPluginCatalog] = useState<NormalizedPlugin[]>([]);
   const [isSwitchingEngine, setIsSwitchingEngine] = useState(false);
   const [targetEngineId, setTargetEngineId] = useState<string | null>(null);
@@ -102,6 +186,15 @@ const [configOptions, setConfigOptions] = useState<readonly SessionConfigOption[
     return () => clearTimeout(timer);
   }, [isSwitchingEngine, targetEngineId]);
   const [isSettingConfig, setIsSettingConfig] = useState(false);
+  const [compactionCapabilities, setCompactionCapabilities] = useState<CompactionCapabilities>(
+    () => new Map(),
+  );
+  const [isCompacting, setIsCompacting] = useState(false);
+  const compactingOperationRef = useRef<string | null>(null);
+  const compactingPromptRef = useRef<string | null>(null);
+  const manualCompactPendingRef = useRef(false);
+  const withdrawHandlersRef = useRef(new Map<string, () => void>());
+  const autoCompactThreshold = useAutoCompactThreshold();
   const [pendingConfigId, setPendingConfigId] = useState<string | null>(null);
   const [pendingConfigValue, setPendingConfigValue] = useState<string | null>(null);
 /** Pre-change config values, kept only until the agent confirms or refuses. */
@@ -163,6 +256,15 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     }, 60_000);
     return () => clearTimeout(timer);
   }, [awaitingFirstUpdate, stallNonce]);
+
+  useEffect(() => {
+    if (!openingSessionId) return;
+    const timer = setTimeout(() => {
+      pendingOpenRef.current = null;
+      setOpeningSessionId(null);
+    }, OPEN_CHAT_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [openingSessionId]);
 
   const withAssistantTurn = useCallback(
     (mutate: (turn: ChatTurn) => ChatTurn) => {
@@ -257,6 +359,12 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       source?: { runId: string; seq: number },
     ) => {
       const sourceEventIds = source ? [`${source.runId}:${source.seq}`] : undefined;
+
+      const compactingOperationId = compactingOperationRef.current;
+      if (compactingOperationId && !replay) {
+        setTurns((current) => applyCompactionUpdate(current, compactingOperationId, update) ?? current);
+        return;
+      }
 
       // Only replays carry user_message_chunk; live prompts are echoed
       // optimistically in send(), so honouring both would duplicate the turn.
@@ -386,7 +494,6 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           return;
         }
         default:
-          // user_message_chunk / commands — not rendered yet.
           return;
       }
     },
@@ -396,14 +503,28 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
   useEffect(() => {
     // Clear state from previous connections when port changes
     setTurns([]);
+    configOptionsRef.current = [];
     setConfigOptions([]);
     setConfigValues({});
+    engineIdRef.current = null;
     setEngineId(null);
     setEngineLabel(null);
     setError(null);
     setResumed(false);
     setChats([]);
+    setPermissionRequest(null);
+    setModes(null);
+    setEngineSetup(null);
+    compactingOperationRef.current = null;
+    compactingPromptRef.current = null;
+    manualCompactPendingRef.current = false;
+    withdrawHandlersRef.current.clear();
+    setIsCompacting(false);
+    setCompactionCapabilities(new Map());
+    activeSessionIdRef.current = null;
     setActiveSessionId(null);
+    pendingOpenRef.current = null;
+    setOpeningSessionId(null);
 
     if (port == null) {
       setState("idle");
@@ -447,13 +568,23 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
             setPendingConfigValue(null);
             setAuthRequired(null);
             setCwd(message.cwd);
+            engineIdRef.current = message.engineId;
             setEngineId(message.engineId);
             setEngineLabel(message.engineLabel);
             setResumed(message.resumed);
+            activeSessionIdRef.current = message.sessionId;
             setActiveSessionId(message.sessionId);
+            pendingOpenRef.current = null;
+            setOpeningSessionId(null);
             // A fresh chat starts empty; a resumed one is wiped by the
             // preceding `reset` and rebuilt by the replay that follows.
             if (!message.resumed) setTurns([]);
+            // A call the engine never closed before the transcript was saved
+            // would otherwise spin forever every time the chat is reopened.
+            setTurns((current) => sealTurns(current, Date.now()) ?? current);
+
+            setModes(message.modes);
+            configOptionsRef.current = message.configOptions;
             setConfigOptions([...message.configOptions]);
             setConfigValues(
               Object.fromEntries(
@@ -464,6 +595,53 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
                 ),
               ),
             );
+
+            // A resumed chat keeps whatever mode/model it was left on. A
+            // fresh one lands on the user's saved preference, falling back
+            // to accept-edits so new chats don't default to Manual.
+            if (!message.resumed) {
+              const availableModeIds =
+                message.modes?.availableModes.map((mode) => mode.id) ?? [];
+              const desiredModeId =
+                readPreferredModeId(message.engineId) ??
+                planExitTarget(availableModeIds, "accept-edits");
+              if (
+                desiredModeId &&
+                desiredModeId !== message.modes?.currentModeId &&
+                availableModeIds.includes(desiredModeId)
+              ) {
+                setModes((current) =>
+                  current ? { ...current, currentModeId: desiredModeId } : current,
+                );
+                next.send(JSON.stringify({ type: "set-mode", modeId: desiredModeId }));
+              }
+
+              const modelOption = message.configOptions.find(
+                (option) =>
+                  option.type === "select" &&
+                  (option.category === "model" || option.id === "model"),
+              );
+              const preferredModel = readPreferredModel(message.engineId);
+              if (
+                modelOption &&
+                modelOption.type === "select" &&
+                preferredModel &&
+                preferredModel !== modelOption.currentValue &&
+                flattenConfigValues(modelOption).some((entry) => entry.value === preferredModel)
+              ) {
+                setConfigValues((current) => ({
+                  ...current,
+                  [modelOption.id]: preferredModel,
+                }));
+                next.send(
+                  JSON.stringify({
+                    type: "set-config",
+                    configId: modelOption.id,
+                    value: preferredModel,
+                  }),
+                );
+              }
+            }
             return;
           case "git-status":
             setGit(message.git);
@@ -498,14 +676,24 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           case "update":
             // A live update means the engine picked the prompt up — stand the
             // stall watchdog down.
-            if (message.replay !== true) {
+            if (message.replay !== true && !compactingOperationRef.current) {
               sawUpdateSinceSendRef.current = true;
               setAwaitingFirstUpdate(false);
+            }
+            // The agent can switch its own mode mid-turn (Claude Code leaves
+            // plan mode when a plan is approved); keep the picker honest.
+            if (message.update.sessionUpdate === "current_mode_update") {
+              const { currentModeId } = message.update;
+              setModes((current) =>
+                current ? { ...current, currentModeId } : current,
+              );
             }
             applyUpdate(message.update, message.replay === true, message.source);
             return;
           case "turn-end": {
+            withdrawHandlersRef.current.clear();
             setAwaitingFirstUpdate(false);
+            setTurns((current) => sealTurns(current, Date.now()) ?? current);
             const usage = message.usage;
             if (usage) {
               withAssistantTurn((turn) => ({
@@ -539,8 +727,10 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
             return;
           case "chats":
             setChats([...message.chats]);
-            if (message.activeSessionId)
+            if (message.activeSessionId && !pendingOpenRef.current) {
+              activeSessionIdRef.current = message.activeSessionId;
               setActiveSessionId(message.activeSessionId);
+            }
             return;
           case "engines":
             setEngines([...message.engines]);
@@ -585,6 +775,60 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           case "reset":
             setTurns([]);
             return;
+          case "compaction": {
+            if (message.sessionId !== activeSessionIdRef.current) return;
+            if (message.status === "started") {
+              compactingOperationRef.current = message.operationId;
+              compactingPromptRef.current = message.promptId;
+              manualCompactPendingRef.current = false;
+              setIsCompacting(true);
+              setAwaitingFirstUpdate(false);
+              const startedAt = Date.now();
+              setTurns((current) => applyCompactionStarted(current, message, startedAt) ?? current);
+              return;
+            }
+            if (compactingOperationRef.current === message.operationId) {
+              compactingOperationRef.current = null;
+              compactingPromptRef.current = null;
+              setIsCompacting(false);
+            }
+            manualCompactPendingRef.current = false;
+            const settledAt = Date.now();
+            setTurns((current) => applyCompactionSettled(current, message, settledAt) ?? current);
+            if (message.status !== "cancelled" && lastPromptPayloadRef.current && !sawUpdateSinceSendRef.current) {
+              setAwaitingFirstUpdate(true);
+              setStallNonce((n) => n + 1);
+            }
+            return;
+          }
+          case "prompt-withdrawn": {
+            setAwaitingFirstUpdate(false);
+            setBusy(false);
+            lastPromptPayloadRef.current = null;
+            sawUpdateSinceSendRef.current = true;
+            setTurns((current) => withdrawPromptTurn(current, message.promptId) ?? current);
+            const onWithdrawn = withdrawHandlersRef.current.get(message.promptId);
+            withdrawHandlersRef.current.delete(message.promptId);
+            if (onWithdrawn) onWithdrawn();
+            else setError(PROMPT_WITHDRAWN_WITHOUT_DRAFT);
+            return;
+          }
+          case "history-archive":
+            setTurns(restoreArchivedTurns(message.turns, message.droppedTurnCount));
+            return;
+          case "compaction-summary": {
+            const noticeId = crypto.randomUUID();
+            const restoredAt = Date.now();
+            setTurns((current) =>
+              applyReplayedSummary(current, { summary: message.summary, noticeId, now: restoredAt }),
+            );
+            return;
+          }
+          case "session-capabilities":
+            setCompactionCapabilities((current) =>
+              rememberCapability(current, message.sessionId, message.supportsCompaction),
+            );
+            return;
           case "auth-required":
             setAwaitingFirstUpdate(false);
             setIsSwitchingEngine(false);
@@ -606,8 +850,84 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
             // arrives separately and rebinds the conversation.
             if (message.operation.status === "succeeded") setAuthRequired(null);
             return;
+          case "permission-request":
+            setPermissionRequest({
+              requestId: message.requestId,
+              title: message.title,
+              kind: message.kind,
+              command: message.command,
+              options: [...message.options],
+            });
+            return;
+          case "modes":
+            setModes(message.modes);
+            return;
+          case "policy-block":
+            // The agent asked, Weave said no, and no card was ever shown. Mark
+            // the tool so the transcript can say why it did nothing.
+            withAssistantTurn((turn) => ({
+              ...turn,
+              tools: turn.tools.map((tool) =>
+                tool.id === message.toolCallId
+                  ? { ...tool, blockedReason: message.reason }
+                  : tool,
+              ),
+            }));
+            return;
+          case "setup-required":
+            setEngineSetup({
+              engineId: message.engineId,
+              engineLabel: message.engineLabel,
+              description: message.description,
+              status: "needed",
+              error: null,
+              lines: [],
+              consent: null,
+              consentSubmitted: false,
+            });
+            return;
+          case "setup-state":
+            if (message.status === "succeeded") {
+              setEngineSetup(null);
+              return;
+            }
+            setEngineSetup((current) =>
+              current && current.engineId === message.engineId
+                ? {
+                    ...current,
+                    status: message.status === "running" ? "running" : "failed",
+                    error: message.error,
+                  }
+                : current,
+            );
+            return;
+          case "setup-consent":
+            setEngineSetup((current) =>
+              current && current.engineId === message.engineId
+                ? { ...current, consent: message.consent }
+                : current,
+            );
+            return;
+          case "setup-output":
+            setEngineSetup((current) =>
+              current && current.engineId === message.engineId
+                ? { ...current, lines: [...message.lines] }
+                : current,
+            );
+            return;
+          case "permission-cancelled":
+            setPermissionRequest((current) =>
+              current?.requestId === message.requestId ? null : current,
+            );
+            return;
           case "error":
             setAwaitingFirstUpdate(false);
+            if (pendingOpenRef.current) {
+              activeSessionIdRef.current = pendingOpenRef.current.previousSessionId;
+              setActiveSessionId(pendingOpenRef.current.previousSessionId);
+              pendingOpenRef.current = null;
+              setOpeningSessionId(null);
+            }
             setIsSwitchingEngine(false);
             setTargetEngineId(null);
             setIsSettingConfig(false);
@@ -635,6 +955,22 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       next.onclose = () => {
         if (disposed || socket !== next) return;
         setBusy(false);
+        const heldPromptId = compactingOperationRef.current ? compactingPromptRef.current : null;
+        const restoreHeldPrompt = heldPromptId ? withdrawHandlersRef.current.get(heldPromptId) : undefined;
+        compactingOperationRef.current = null;
+        compactingPromptRef.current = null;
+        manualCompactPendingRef.current = false;
+        withdrawHandlersRef.current.clear();
+        setIsCompacting(false);
+        const closedAt = Date.now();
+        setTurns((current) => {
+          const failed = failRunningNotices(current, CONNECTION_LOST_DURING_COMPACTION, closedAt) ?? current;
+          const withdrawn = heldPromptId ? withdrawPromptTurn(failed, heldPromptId) ?? failed : failed;
+          return sealTurns(withdrawn, Date.now()) ?? withdrawn;
+        });
+        restoreHeldPrompt?.();
+        pendingOpenRef.current = null;
+        setOpeningSessionId(null);
         if (attempt <= 40) {
           setState("connecting");
           retry = setTimeout(connect, Math.min(250 * attempt, 1000));
@@ -653,6 +989,30 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     };
   }, [applyUpdate, withAssistantTurn, port]);
 
+  const latestUsage = latestContextUsage(turns);
+  const contextUsed = latestUsage?.contextTokens;
+  const contextSize = latestUsage?.contextLimit;
+  const contextUsage = useMemo(
+    () =>
+      contextUsed === undefined || contextSize === undefined
+        ? null
+        : { contextTokens: contextUsed, contextLimit: contextSize },
+    [contextUsed, contextSize],
+  );
+  const isCompactSupported =
+    activeSessionId !== null && compactionCapabilities.get(activeSessionId) === true;
+
+  const archivedNoticeIdsRef = useRef(new Set<string>());
+  const unarchivedNoticeId = latestUnarchivedNoticeId(turns, archivedNoticeIdsRef.current);
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!unarchivedNoticeId || !activeSessionId || socket?.readyState !== WebSocket.OPEN) return;
+    const archive = buildHistoryArchive(turns, unarchivedNoticeId);
+    archivedNoticeIdsRef.current.add(unarchivedNoticeId);
+    if (!archive) return;
+    socket.send(JSON.stringify({ type: "save-history", sessionId: activeSessionId, ...archive }));
+  }, [unarchivedNoticeId, activeSessionId, turns]);
+
   const send = useCallback(
     (
       text: string,
@@ -662,6 +1022,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
         personas?: TurnPersona[];
         images?: ChatImageAttachmentDraft[];
         plugins?: ActivePluginRef[];
+        onWithdrawn?: () => void;
       },
     ) => {
       const trimmed = text.trim();
@@ -669,13 +1030,15 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       const socket = socketRef.current;
       if ((!trimmed && !images) || !socket || socket.readyState !== WebSocket.OPEN) return;
 
+      const promptId = crypto.randomUUID();
+      if (opts?.onWithdrawn) withdrawHandlersRef.current.set(promptId, opts.onWithdrawn);
       setError(null);
       setBusy(true);
       personasRef.current = opts?.personas?.length ? opts.personas : undefined;
       setTurns((current) => [
         ...current,
         {
-          id: crypto.randomUUID(),
+          id: promptId,
           role: "user",
           text: stripSystemPreamble(trimmed),
           mentions: opts?.mentions?.length ? opts.mentions : undefined,
@@ -692,6 +1055,8 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       const payload = JSON.stringify({
           type: "prompt",
           text: trimmed,
+          promptId,
+          autoCompactThreshold,
           persona: opts?.persona,
           plugins: opts?.plugins?.length ? opts.plugins : undefined,
           images: images?.map((image) => ({
@@ -703,12 +1068,64 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       lastPromptPayloadRef.current = payload;
       sawUpdateSinceSendRef.current = false;
       promptRetriesRef.current = 0;
-      setAwaitingFirstUpdate(true);
-      setStallNonce((n) => n + 1);
+      if (!compactingOperationRef.current) {
+        setAwaitingFirstUpdate(true);
+        setStallNonce((n) => n + 1);
+      }
       socket.send(payload);
     },
-    [],
+    [autoCompactThreshold],
   );
+
+  const compact = useCallback(() => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (compactingOperationRef.current || manualCompactPendingRef.current) return;
+    manualCompactPendingRef.current = true;
+    setError(null);
+    socket.send(JSON.stringify({ type: "compact", operationId: crypto.randomUUID() }));
+  }, []);
+
+  const startEngineSetup = useCallback((engineId: string) => {
+    socketRef.current?.send(JSON.stringify({ type: "start-setup", engineId }));
+  }, []);
+
+  const cancelEngineSetup = useCallback(() => {
+    socketRef.current?.send(JSON.stringify({ type: "cancel-setup" }));
+    setEngineSetup((current) =>
+      current
+        ? { ...current, status: "needed", lines: [], consent: null, consentSubmitted: false }
+        : current,
+    );
+  }, []);
+
+  const submitSetupConsent = useCallback((agreed: boolean) => {
+    socketRef.current?.send(JSON.stringify({ type: "submit-setup-consent", agreed }));
+    setEngineSetup((current) => (current ? { ...current, consentSubmitted: true } : current));
+  }, []);
+
+  const sendSetupKey = useCallback((key: TerminalKeyName) => {
+    socketRef.current?.send(JSON.stringify({ type: "submit-setup-key", key }));
+  }, []);
+
+  const setMode = useCallback((modeId: string) => {
+    const socket = socketRef.current;
+    if (socket?.readyState !== WebSocket.OPEN || compactingOperationRef.current) return;
+    // Optimistic: the agent confirms with a `modes` message, and a refusal
+    // re-sends whatever it actually has.
+    setModes((current) => (current ? { ...current, currentModeId: modeId } : current));
+    if (engineIdRef.current) writePreferredModeId(engineIdRef.current, modeId);
+    socket.send(JSON.stringify({ type: "set-mode", modeId }));
+  }, []);
+
+  const answerPermission = useCallback((requestId: string, optionId: string | null) => {
+    setPermissionRequest((current) =>
+      current?.requestId === requestId ? null : current,
+    );
+    socketRef.current?.send(
+      JSON.stringify({ type: "permission-response", requestId, optionId }),
+    );
+  }, []);
 
   const cancel = useCallback(() => {
     // A manual Stop ends the watchdog too — the user is now driving.
@@ -727,6 +1144,10 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
 
   const cancelAuth = useCallback(() => {
     socketRef.current?.send(JSON.stringify({ type: "cancel-auth" }));
+  }, []);
+
+  const submitAuthInput = useCallback((text: string) => {
+    socketRef.current?.send(JSON.stringify({ type: "submit-auth-input", text }));
   }, []);
 
   /** Drop a finished sign-in the UI has shown. */
@@ -755,7 +1176,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
    */
   const switchEngine = useCallback((nextEngineId: string) => {
     const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN || compactingOperationRef.current) return;
     setIsSwitchingEngine(true);
     setTargetEngineId(nextEngineId);
     setBusy(false);
@@ -767,7 +1188,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
 
   const setConfig = useCallback((configId: string, value: string) => {
     const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN || compactingOperationRef.current) return;
 
     setIsSettingConfig(true);
     setPendingConfigId(configId);
@@ -780,6 +1201,13 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       return { ...current, [configId]: value };
     });
     setError(null);
+
+    const option = configOptionsRef.current.find((entry) => entry.id === configId);
+    const isModelOption = option?.category === "model" || option?.id === "model";
+    if (engineIdRef.current && isModelOption) {
+      writePreferredModel(engineIdRef.current, value);
+    }
+
     socket.send(JSON.stringify({ type: "set-config", configId, value }));
   }, []);
 
@@ -787,6 +1215,15 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     const socket = socketRef.current;
     if (socket?.readyState !== WebSocket.OPEN) return;
     setBusy(false);
+    setError(null);
+    // Same opening sequence as `openChat`: drop the old transcript and show the
+    // skeleton now, rather than leaving the previous chat on screen until the
+    // server answers. `ready` clears both.
+    setTurns([]);
+    pendingOpenRef.current = { previousSessionId: activeSessionIdRef.current };
+    activeSessionIdRef.current = null;
+    setActiveSessionId(null);
+    setOpeningSessionId(NEW_CHAT_PENDING);
     socket.send(
       JSON.stringify({
         type: "new-chat",
@@ -801,6 +1238,11 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       if (socket?.readyState !== WebSocket.OPEN) return;
       setBusy(false);
       setError(null);
+      setTurns([]);
+      pendingOpenRef.current = { previousSessionId: activeSessionIdRef.current };
+      activeSessionIdRef.current = sessionId;
+      setActiveSessionId(sessionId);
+      setOpeningSessionId(sessionId);
       socket.send(JSON.stringify({ type: "open-chat", sessionId }));
     },
     [],
@@ -849,7 +1291,21 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     pluginCatalog,
     chats,
     activeSessionId,
+    permissionRequest,
+    answerPermission,
+    modes,
+    setMode,
+    engineSetup,
+    startEngineSetup,
+    cancelEngineSetup,
+    sendSetupKey,
+    submitSetupConsent,
+    isOpeningChat: openingSessionId !== null,
     send,
+    compact,
+    isCompacting,
+    isCompactSupported,
+    contextUsage,
     switchEngine,
     isSwitchingEngine,
     targetEngineId,
@@ -857,6 +1313,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     authOperation,
     startAuth,
     cancelAuth,
+    submitAuthInput,
     clearAuth,
     fileMatches,
     requestFiles,

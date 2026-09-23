@@ -43,7 +43,9 @@ export function handleStartAuth(input: StartAuthInput): void {
       status: "running",
       output: [],
       error: null,
+      acceptsInput: false,
     },
+    submitInput: null,
   };
 
   input.setAuthSession(auth);
@@ -59,6 +61,10 @@ export function handleStartAuth(input: StartAuthInput): void {
       supervisor: input.getSupervisor(),
       publishAuth: input.publishAuth,
       bindEngine: input.bindEngine,
+      onInputReady: (submitInput) => {
+        auth.submitInput = submitInput;
+        input.publishAuth({ acceptsInput: submitInput !== null });
+      },
     }),
   );
 }

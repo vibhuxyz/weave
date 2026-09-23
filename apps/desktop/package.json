@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "server": "bun server/index.ts",
     "typecheck": "tsc --noEmit",
+    "check:strip-types": "node --experimental-strip-types --input-type=module -e \"import('./server/index.ts')\"",
     "tauri": "tauri",
     "bundle:server": "node scripts/bundle-server.mjs",
     "server:bundled": "bun run bundle:server && node src-tauri/resources/server.mjs"

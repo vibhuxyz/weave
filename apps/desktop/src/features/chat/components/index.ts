@@ -1,4 +1,9 @@
 export { CONTEXT_PANEL_TABS, ContextPanel } from "./ContextPanel";
 export type { ContextPanelTab } from "./ContextPanel";
+export { ChatSkeleton } from "./ChatSkeleton";
+export { EngineSetupPanel } from "./EngineSetupPanel";
+export { SetupConsentCard } from "./SetupConsentCard";
+export { hasSelectableModes, ModePicker } from "./ModePicker";
+export { PermissionCard } from "./PermissionCard";
 export { cleanOutput, ToolSteps } from "./ToolSteps";
 export { UserMessage } from "./UserMessage";

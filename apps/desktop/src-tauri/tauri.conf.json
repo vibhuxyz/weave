@@ -45,7 +45,9 @@
     "targets": ["app", "dmg"],
     "resources": {
       "resources/server.mjs": "server.mjs",
-      "resources/server.mjs.map": "server.mjs.map"
+      "resources/server.mjs.map": "server.mjs.map",
+      "resources/prebuilds/": "prebuilds/",
+      "resources/patches/": "patches/"
     },
     "icon": [
       "icons/32x32.png",

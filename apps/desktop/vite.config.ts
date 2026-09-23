@@ -16,6 +16,9 @@ export default defineConfig({
       "@weave/core": here("../../packages/core/src"),
     },
   },
+  optimizeDeps: {
+    entries: ["index.html", "src/**/*.{ts,tsx}"],
+  },
   server: {
     port: 5180,
     strictPort: true,

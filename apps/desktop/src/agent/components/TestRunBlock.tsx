@@ -48,7 +48,7 @@ function Chip({
 }: {
   icon: LucideIcon;
   label: string;
-  tone?: "success" | "critical" | "running" | "neutral";
+  tone?: "success" | "critical" | "running" | "warn" | "neutral";
   iconClassName?: string;
 }) {
   const iconClass =
@@ -58,7 +58,9 @@ function Chip({
         ? "text-agent-critical"
         : tone === "running"
           ? "text-agent-running"
-          : "text-agent-progress-fg";
+          : tone === "warn"
+            ? "text-agent-warn"
+            : "text-agent-progress-fg";
   return (
     <div className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-agent-border bg-agent-surface-inset px-2.5">
       <Icon className={cn("size-3.5 shrink-0", iconClass, iconClassName)} />
@@ -75,7 +77,11 @@ export function TestRunBlock({
   /** Lets the failure banner hand a follow-up prompt back to the agent. */
   onSend?: (text: string) => void;
 }) {
-  const failing = block.steps.filter((s) => s.status === "failed" || s.badgeTone === "crit").length;
+  const isFailedStep = (step: Step) => step.status === "failed" || step.badgeTone === "crit";
+  const failing = block.steps.filter(isFailedStep).length;
+  // A failure a later run already answered stays in the log but asks for
+  // nothing: offering Retry for it sends the agent after work it has redone.
+  const outstanding = block.steps.filter((s) => isFailedStep(s) && !s.superseded);
   const [problemsOnly, setProblemsOnly] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   // Long, all-green logs collapse by default; anything failing stays open.
@@ -90,9 +96,8 @@ export function TestRunBlock({
       : block.steps;
 
   const totalMs = block.steps.reduce((sum, s) => sum + (s.durationMs ?? 0), 0);
-  const firstFailure = block.steps.find(
-    (s) => s.status === "failed" || s.badgeTone === "crit",
-  );
+  const firstFailure = outstanding[0];
+  const supersededCount = failing - outstanding.length;
   const heading = block.title && block.title !== "Test run" ? block.title : "Run log";
 
   function toggleExpand(id: string) {
@@ -113,7 +118,7 @@ export function TestRunBlock({
       >
         <Chip
           icon={
-            block.status === "passed"
+            block.status === "passed" || block.status === "recovered"
               ? CheckIcon
               : block.status === "failed"
                 ? CircleIcon
@@ -126,7 +131,9 @@ export function TestRunBlock({
               ? "success"
               : block.status === "failed"
                 ? "critical"
-                : "running"
+                : block.status === "recovered"
+                  ? "warn"
+                  : "running"
           }
         />
         <Chip
@@ -143,13 +150,22 @@ export function TestRunBlock({
         )}
       </div>
 
+      {/* A failure a later run answered is history, not a call to action. */}
+      {outstanding.length === 0 && supersededCount > 0 && (
+        <p className="px-1 text-agent-text-muted text-xs">
+          {supersededCount === 1
+            ? "1 step failed earlier and passed when it was run again."
+            : `${supersededCount} steps failed earlier and passed when they were run again.`}
+        </p>
+      )}
+
       {/* A failure is a prompt for the next action, not just a red row. */}
-      {failing > 0 && onSend && (
+      {outstanding.length > 0 && onSend && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-agent-critical/40 bg-agent-critical-bg px-3 py-2.5">
           <p className="min-w-0 flex-1 text-agent-text-bright text-xs">
             {firstFailure
               ? `${firstFailure.label} failed.`
-              : `${failing} step${failing === 1 ? "" : "s"} failed.`}
+              : `${outstanding.length} step${outstanding.length === 1 ? "" : "s"} failed.`}
           </p>
           <div className="flex shrink-0 items-center gap-2">
             <button

@@ -4,26 +4,11 @@ import { resolveCodexCliEntry, type EngineDescriptor } from "../engines/index.ts
 function getAgyFallbackAuth(): AuthMethod[] {
   return [
     {
-      id: "oauth-personal",
-      name: "Log in with Google",
+      id: "agy-login",
+      name: "Sign in with Google Antigravity",
       type: "terminal",
-      description: "Log in with your Google account",
-      _meta: {
-        "acp-auth": {
-          methodId: "oauth-personal",
-        },
-      },
-    } as unknown as AuthMethod,
-    {
-      id: "gemini-api-key",
-      name: "Gemini API key",
-      type: "terminal",
-      description: "Use an API key with Gemini Developer API",
-      _meta: {
-        "acp-auth": {
-          methodId: "gemini-api-key",
-        },
-      },
+      description: "Sign in with Google AI Pro or an API key",
+      args: ["--login"],
     } as unknown as AuthMethod,
   ];
 }

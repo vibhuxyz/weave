@@ -3,9 +3,12 @@ import type {
   TaskContract,
 } from "@weave/protocol";
 
+/** Who decided. A refusal the user never saw has to be shown to them. */
+export type PermissionSource = "policy" | "user";
+
 export type PermissionDecision =
-  | { decision: "allow"; optionId: string; reason: string }
-  | { decision: "reject"; reason: string; optionId?: string };
+  | { decision: "allow"; optionId: string; reason: string; source?: PermissionSource }
+  | { decision: "reject"; reason: string; optionId?: string; source?: PermissionSource };
 
 export type PermissionPolicy = (
   task: TaskContract,

@@ -58,6 +58,16 @@ export const ENGINES: Record<string, EngineDescriptor> = {
     capabilities: ANTIGRAVITY_CAPABILITIES,
     tokens: NO_TOKEN_REPORTING,
     pluginModel: "prompt-only",
+    terminalAuth: {
+      transport: "pty",
+      promptAnswers: [{ whenOutputIncludes: "Select login method", input: "\r" }],
+    },
+    setup: {
+      command: "agy",
+      completedWhenExists: ".gemini/antigravity-cli/settings.json",
+      description:
+        "Antigravity's CLI runs a one-time setup wizard before it will do any work. Weave answers the cosmetic pages; the data-sharing page is left for you, because that one is your decision.",
+    },
   },
 };
 
@@ -66,7 +76,15 @@ Object.defineProperty(ENGINES, "agy", {
   enumerable: false,
 });
 
-export const DEFAULT_ENGINE_ID = "antigravity";
+/**
+ * Claude Code, not Antigravity. Both bridges speak ACP, but agy-acp answers
+ * permission prompts by typing into agy's terminal UI, and that keystroke does
+ * not land — every command stalls at `pending` while agy logs "resolved by
+ * another client". claude-agent-acp and codex-acp answer over the protocol and
+ * have no such bridge. Antigravity stays selectable; it is just not the
+ * default a new install lands on.
+ */
+export const DEFAULT_ENGINE_ID = "claude-code";
 
 export function tokenReportingFor(engineId: string | null | undefined): EngineTokenReporting {
   if (!engineId) return NO_TOKEN_REPORTING;

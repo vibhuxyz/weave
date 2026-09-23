@@ -12,6 +12,17 @@ import {
   ListOrdered,
 } from "lucide-react";
 import type { PlanBlockEntry } from "@/agent/normalize";
+import type { PlanExitIntent } from "@/shared/lib";
+
+/**
+ * What happens once the plan is approved. The agent's own mode ids differ
+ * between engines, so the choice is expressed as intent and resolved against
+ * the modes the agent actually advertises.
+ */
+const CONTINUE_CHOICES: readonly { readonly intent: PlanExitIntent; readonly label: string }[] = [
+  { intent: "accept-edits", label: "Apply edits" },
+  { intent: "default", label: "Review each edit" },
+];
 
 interface PlanApprovalModalProps {
   open: boolean;
@@ -21,7 +32,11 @@ interface PlanApprovalModalProps {
   /** Fallback step list (ACP todo-list plans, which carry no markdown). */
   entries: PlanBlockEntry[];
   engineLabel?: string;
-  onApprove: (approved: { markdown?: string; entries: PlanBlockEntry[] }, note?: string) => void;
+  onApprove: (
+    approved: { markdown?: string; entries: PlanBlockEntry[] },
+    note?: string,
+    continueAs?: PlanExitIntent,
+  ) => void;
   onReject: () => void;
 }
 
@@ -39,6 +54,7 @@ export function PlanApprovalModal({
   const [draft, setDraft] = useState(markdown ?? "");
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState("");
+  const [continueAs, setContinueAs] = useState<PlanExitIntent>("accept-edits");
 
   useEffect(() => {
     if (open) {
@@ -50,6 +66,7 @@ export function PlanApprovalModal({
       setDraft(markdown ?? "");
       setEditing(false);
       setNote("");
+      setContinueAs("accept-edits");
     }
   }, [open, initialEntries, markdown]);
 
@@ -80,11 +97,12 @@ export function PlanApprovalModal({
 
   const handleApprove = () => {
     if (isMarkdown) {
-      onApprove({ markdown: draft.trim(), entries: [] }, note.trim() || undefined);
+      onApprove({ markdown: draft.trim(), entries: [] }, note.trim() || undefined, continueAs);
     } else {
       onApprove(
         { entries: items.filter((i) => i.content.trim().length > 0) },
         note.trim() || undefined,
+        continueAs,
       );
     }
     onOpenChange(false);
@@ -101,6 +119,7 @@ export function PlanApprovalModal({
         size="xl"
         positionerClassName="items-start p-0"
         className="mx-auto h-[100dvh] max-h-[100dvh] w-full max-w-none rounded-none border-x-0 border-t-0 sm:h-[92dvh] sm:max-h-[92dvh] sm:max-w-3xl sm:rounded-b-xl"
+        onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <DialogHeader>
           <div className="flex items-center gap-2">
@@ -224,7 +243,7 @@ export function PlanApprovalModal({
           </div>
         </DialogBody>
 
-        <DialogFooter className="flex items-center justify-between gap-2 border-t pt-3 sm:justify-between">
+        <DialogFooter className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 sm:justify-between">
           <Button
             type="button"
             variant="alert"
@@ -235,6 +254,28 @@ export function PlanApprovalModal({
             <X className="size-3.5" />
             Reject Plan
           </Button>
+
+          <div
+            role="radiogroup"
+            aria-label="What the agent may do once the plan is approved"
+            className="flex items-center gap-1.5"
+          >
+            <span className="text-muted-foreground text-xs">Then:</span>
+            {CONTINUE_CHOICES.map((choice) => (
+              <Button
+                key={choice.intent}
+                type="button"
+                role="radio"
+                aria-checked={continueAs === choice.intent}
+                variant={continueAs === choice.intent ? "primary" : "outline"}
+                size="xs"
+                onClick={() => setContinueAs(choice.intent)}
+              >
+                {choice.label}
+              </Button>
+            ))}
+          </div>
+
           <Button type="button" variant="primary" size="sm" onClick={handleApprove} className="gap-1.5">
             <Check className="size-3.5" />
             Approve &amp; Execute

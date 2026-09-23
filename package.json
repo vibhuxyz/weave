@@ -26,5 +26,8 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "patchedDependencies": {
+    "agy-acp@0.5.2": "patches/agy-acp@0.5.2.patch"
+  }
 }

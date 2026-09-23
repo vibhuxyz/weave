@@ -21,7 +21,10 @@ export interface SidebarProps {
   onSelectProject: (dir: string) => void;
   onAddProject: () => void;
   onEditProject: (entry: ProjectEntry) => void;
-  onRemoveProject: (dir: string) => void;
+  onArchiveProject: (entry: ProjectEntry) => void;
+  onNewChatInProject: (dir: string) => void;
+  homeProjectDirs: ReadonlySet<string>;
+  onToggleProjectHome: (dir: string) => void;
   chats: ConversationMeta[];
   chatsByProject?: Record<string, ConversationMeta[]>;
   nonProjectChats?: ConversationMeta[];
@@ -117,7 +120,10 @@ export function Sidebar({
   onSelectProject,
   onAddProject,
   onEditProject,
-  onRemoveProject,
+  onArchiveProject,
+  onNewChatInProject,
+  homeProjectDirs,
+  onToggleProjectHome,
   chats,
   chatsByProject,
   nonProjectChats,
@@ -129,6 +135,7 @@ export function Sidebar({
   onViewChange,
 }: SidebarProps) {
   const standaloneChats = nonProjectChats || (chatsByProject && chatsByProject[""]) || [];
+  const visibleProjects = projects.filter((entry) => !entry.archivedAt);
 
   return (
     <aside className="flex h-fit min-h-[710px] max-h-[calc(100vh-2.5rem)] w-full shrink-0 flex-col overflow-hidden rounded-[14px] border border-sidebar-shell-border bg-sidebar-shell p-3 shadow-[var(--sidebar-shell-shadow)]">
@@ -167,7 +174,7 @@ export function Sidebar({
         </SectionLabel>
 
         <div className="flex flex-col gap-1">
-          {projects.length === 0 && (
+          {visibleProjects.length === 0 && (
             <button
               type="button"
               onClick={onAddProject}
@@ -177,7 +184,7 @@ export function Sidebar({
               <span>Create a project</span>
             </button>
           )}
-          {projects.map((entry) => {
+          {visibleProjects.map((entry) => {
             const projectChats = findChatsForProject(
               entry,
               chatsByProject,
@@ -190,13 +197,15 @@ export function Sidebar({
                 key={entry.dir}
                 entry={entry}
                 active={entry.dir === activeProjectDir}
+                isOnHome={homeProjectDirs.has(entry.dir)}
                 chats={projectChats}
                 activeSessionId={activeSessionId}
                 onSelectProject={onSelectProject}
                 onSelectChat={onSelectChat}
-                onNewChat={onNewChat}
+                onNewChat={onNewChatInProject}
                 onEditProject={onEditProject}
-                onRemoveProject={onRemoveProject}
+                onArchiveProject={onArchiveProject}
+                onToggleHome={onToggleProjectHome}
               />
             );
           })}

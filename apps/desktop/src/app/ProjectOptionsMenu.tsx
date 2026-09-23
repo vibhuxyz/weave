@@ -1,4 +1,4 @@
-import { MoreHorizontalIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import { ArchiveIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,30 +8,36 @@ import {
 
 export interface ProjectOptionsMenuProps {
   label: string;
+  isOnHome: boolean;
+  onToggleHome: () => void;
   onEdit: () => void;
-  onRemove: () => void;
+  onArchive: () => void;
 }
 
-export function ProjectOptionsMenu({ label, onEdit, onRemove }: ProjectOptionsMenuProps) {
+export function ProjectOptionsMenu({ label, isOnHome, onToggleHome, onEdit, onArchive }: ProjectOptionsMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
           aria-label={`${label} options`}
-          className="absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded-md text-sidebar-text-tertiary opacity-0 transition-opacity duration-150 ease-out hover:bg-sidebar-hover hover:text-sidebar-text-primary group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+          className="flex size-6 items-center justify-center rounded-md text-sidebar-text-tertiary transition-colors duration-150 ease-out hover:bg-sidebar-hover hover:text-sidebar-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <MoreHorizontalIcon className="size-3.5" />
+          <MoreHorizontalIcon className="size-4" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="start" sideOffset={6}>
+        <DropdownMenuItem onClick={onToggleHome}>
+          {isOnHome ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
+          {isOnHome ? "Remove from Home" : "Add to Home"}
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={onEdit}>
           <PencilIcon className="size-3.5" />
           Edit
         </DropdownMenuItem>
-        <DropdownMenuItem variant="destructive" onClick={onRemove}>
-          <Trash2Icon className="size-3.5" />
-          Remove from workspace
+        <DropdownMenuItem onClick={onArchive}>
+          <ArchiveIcon className="size-3.5" />
+          Archive
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

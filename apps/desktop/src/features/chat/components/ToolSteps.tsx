@@ -1,15 +1,9 @@
 import { useState } from "react";
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  Loader2Icon,
-  WrenchIcon,
-  XIcon,
-} from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { Shimmer, TaskItem } from "@/shared/ui/ai-elements";
 import { cn } from "@/shared/lib";
-import { activeTitle, formatElapsed, KIND_ICONS, shorten, useNow } from "@/agent/lib";
+import { activeTitle, formatElapsed, shorten, useNow } from "@/agent/lib";
+import { ToolStatusIcon, toolRunState } from "./ToolStatusIcon";
 import type { ToolEntry } from '@/features/chat/hooks';
 
 /** Completed operations kept visible before the rest folds away. */
@@ -33,7 +27,7 @@ const KIND_LABEL: Record<string, string> = {
 const SLOW_AFTER_S = 60;
 
 function isRunning(tool: ToolEntry) {
-  return tool.status === "in_progress" || tool.status === "pending";
+  return toolRunState(tool) === "running";
 }
 
 /**
@@ -65,9 +59,10 @@ function ToolRow({
   // the user can watch it rather than staring at a collapsed row.
   const isSubagent = tool.kind === "think";
   const [open, setOpen] = useState(isSubagent);
-  const Icon = KIND_ICONS[tool.kind] ?? WrenchIcon;
-  const running = isRunning(tool);
-  const failed = tool.status === "failed";
+  const state = toolRunState(tool);
+  const running = state === "running";
+  const failed = state === "failed";
+  const interrupted = state === "interrupted";
   const isShell = tool.kind === "execute";
 
   const now = useNow(running);
@@ -86,7 +81,9 @@ function ToolRow({
     ? "text-agent-critical-fg"
     : running
       ? "text-agent-text-bright"
-      : "text-agent-text-muted";
+      : interrupted
+        ? "text-agent-text-faint"
+        : "text-agent-text-muted";
 
   return (
     <div
@@ -99,19 +96,7 @@ function ToolRow({
       )}
     >
       <TaskItem className={cn("flex items-center gap-2", highlight && "px-2.5 py-2")}>
-        {running ? (
-          <span className="relative flex size-3.5 shrink-0 items-center justify-center">
-            <Loader2Icon className="absolute size-3.5 animate-spin text-agent-accent" />
-            <Icon className="size-2.5 text-agent-accent" />
-          </span>
-        ) : failed ? (
-          <XIcon className="size-3.5 shrink-0 text-agent-critical-fg" />
-        ) : (
-          <span className="relative flex size-3.5 shrink-0 items-center justify-center">
-            <Icon className="size-3.5 text-agent-text-muted" />
-            <CheckIcon className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-agent-surface-base text-agent-success" />
-          </span>
-        )}
+        <ToolStatusIcon tool={tool} state={state} />
         <button
           type="button"
           disabled={!hasLog}
@@ -130,9 +115,10 @@ function ToolRow({
             </Shimmer>
           ) : (
             <span className="truncate">
-              {isSubagent
+              {isSubagent && !interrupted
                 ? `Explored — ${shorten(tool.title, projectDir)}`
                 : shorten(tool.title, projectDir)}
+              {interrupted && " — stopped"}
             </span>
           )}
           <ChevronRightIcon
@@ -207,9 +193,7 @@ export function ToolSteps({
 
   if (tools.length === 0) return null;
 
-  const done = tools.filter(
-    (tool) => tool.status === "completed" || tool.status === "failed",
-  );
+  const done = tools.filter((tool) => !isRunning(tool));
   const active = tools.filter(isRunning);
   const shown = showAll ? done : done.slice(-RECENT_STEPS);
   const hidden = done.length - shown.length;

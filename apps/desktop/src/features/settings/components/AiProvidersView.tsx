@@ -2,7 +2,12 @@ import { RefreshCwIcon } from "lucide-react";
 import { cn } from "@/shared/lib";
 import { DEFAULT_HARNESSES } from "./constants";
 import { HarnessRow } from "./HarnessRow";
+import { HarnessRowSkeleton } from "./HarnessRowSkeleton";
 import type { HarnessDescriptor, HarnessInstallLog, HarnessAuthMethodInfo } from "./types";
+
+const SKELETON_ROW_STAGGER_MS = 120;
+const SKELETON_LABEL_WIDTHS = ["w-28", "w-20", "w-24"] as const;
+const SKELETON_SUBTITLE_WIDTHS = ["w-48", "w-40", "w-56"] as const;
 
 interface AiProvidersViewProps {
   readonly isInstalled: (id: string) => boolean;
@@ -16,6 +21,7 @@ interface AiProvidersViewProps {
   readonly errorMessage: string | null;
   readonly onRefresh: () => void;
   readonly onSetup: (harness: HarnessDescriptor, methodId?: string) => void;
+  readonly onInstall: (harness: HarnessDescriptor) => void;
   readonly onRemove?: (harness: HarnessDescriptor) => void;
 }
 
@@ -31,8 +37,11 @@ export function AiProvidersView({
   errorMessage,
   onRefresh,
   onSetup,
+  onInstall,
   onRemove,
 }: AiProvidersViewProps) {
+  const showSkeletons = refreshing && installingId === null;
+
   return (
     <div className="flex w-full flex-col max-w-4xl mx-auto py-8 px-6 sm:px-10">
       <h1 className="text-2xl font-semibold tracking-tight text-white mb-8">
@@ -67,22 +76,37 @@ export function AiProvidersView({
           </div>
         )}
 
-        <div className="flex flex-col divide-y divide-white/10 border-t border-white/10">
-          {DEFAULT_HARNESSES.map((harness) => (
-            <HarnessRow
-              key={harness.id}
-              harness={harness}
-              isInstalled={isInstalled(harness.id)}
-              isAuthenticated={isAuthenticated(harness.id)}
-              isUsable={isUsable(harness.id)}
-              isInstalling={installingId === harness.id}
-              version={getVersion(harness.id)}
-              authMethods={getAuthMethods(harness.id)}
-              log={activeLog}
-              onSetup={onSetup}
-              onRemove={onRemove}
-            />
-          ))}
+        <div
+          className="flex flex-col divide-y divide-white/10 border-t border-white/10"
+          role={showSkeletons ? "status" : undefined}
+          aria-busy={showSkeletons || undefined}
+          aria-label={showSkeletons ? "Checking agent harnesses" : undefined}
+        >
+          {DEFAULT_HARNESSES.map((harness, index) =>
+            showSkeletons ? (
+              <HarnessRowSkeleton
+                key={harness.id}
+                labelWidth={SKELETON_LABEL_WIDTHS[index] ?? "w-24"}
+                subtitleWidth={SKELETON_SUBTITLE_WIDTHS[index] ?? "w-48"}
+                delayMs={index * SKELETON_ROW_STAGGER_MS}
+              />
+            ) : (
+              <HarnessRow
+                key={harness.id}
+                harness={harness}
+                isInstalled={isInstalled(harness.id)}
+                isAuthenticated={isAuthenticated(harness.id)}
+                isUsable={isUsable(harness.id)}
+                isInstalling={installingId === harness.id}
+                version={getVersion(harness.id)}
+                authMethods={getAuthMethods(harness.id)}
+                log={activeLog}
+                onSetup={onSetup}
+                onInstall={onInstall}
+                onRemove={onRemove}
+              />
+            ),
+          )}
         </div>
       </div>
     </div>

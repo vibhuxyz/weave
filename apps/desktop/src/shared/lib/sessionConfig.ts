@@ -17,6 +17,47 @@ export function flattenConfigValues(
   );
 }
 
+const MODE_OPTION_ID = "mode";
+const PLAN_MODE_ID = "plan";
+
+/** What the user chose to happen once they approve a plan. */
+export type PlanExitIntent = "accept-edits" | "default";
+
+/** Mode ids worth landing on for each intent, best first. */
+const PLAN_EXIT_PREFERENCES: Readonly<Record<PlanExitIntent, readonly string[]>> = {
+  "accept-edits": ["acceptEdits", "accept-edits", "default"],
+  default: ["default", "acceptEdits", "accept-edits"],
+};
+
+function isModeOption(option: SessionConfigOption): boolean {
+  return option.category === MODE_OPTION_ID || option.id === MODE_OPTION_ID;
+}
+
+/**
+ * Where to go when a plan is approved, chosen from the ids an agent actually
+ * offers. Agents spell the same mode differently — Claude Code `acceptEdits`,
+ * agy `accept-edits` — so the id is picked from their list, never assumed.
+ */
+export function planExitTarget(
+  ids: readonly string[],
+  intent: PlanExitIntent = "accept-edits",
+): string | null {
+  const preferred = PLAN_EXIT_PREFERENCES[intent].find((id) => ids.includes(id));
+  return preferred ?? ids.find((id) => id !== PLAN_MODE_ID) ?? null;
+}
+
+export interface SplitConfigOptions {
+  /**
+   * Whether the composer already renders the agent's native session modes.
+   *
+   * agy advertises its `--mode` twice — as ACP session modes and as a `mode`
+   * config option — and mirrors `session/set_mode` onto both. Rendering both
+   * gives the composer two controls for one setting, which is how a chosen
+   * mode ends up next to a pill still reading the old one.
+   */
+  readonly hasNativeModes: boolean;
+}
+
 export interface ComposerConfigOptions {
   /** The model selector, rendered as the agent picker's Model column. */
   model: SessionConfigOption | undefined;
@@ -35,10 +76,13 @@ export interface ComposerConfigOptions {
  * places instead of spilling out as one pill each.
  */
 export function splitConfigOptions(
-   options: readonly SessionConfigOption[],
+  options: readonly SessionConfigOption[],
+  { hasNativeModes }: SplitConfigOptions = { hasNativeModes: false },
 ): ComposerConfigOptions {
   // Booleans need a switch, not a menu — the composer renders selects only.
-  const selects = options.filter((option) => option.type === "select");
+  const selects = options
+    .filter((option) => option.type === "select")
+    .filter((option) => !hasNativeModes || !isModeOption(option));
 
   // `category` is the agent's own answer, so it wins. The id fallback is an
   // exact match on purpose: `model_reasoning_effort` is not a model list.
@@ -47,9 +91,7 @@ export function splitConfigOptions(
     selects.find((option) => option.id === "model");
 
   const rest = selects.filter((option) => option !== model);
-  const primary =
-    rest.find((option) => option.category === "mode" || option.id === "mode") ??
-    rest[0];
+  const primary = rest.find(isModeOption) ?? rest[0];
 
   return {
     model,

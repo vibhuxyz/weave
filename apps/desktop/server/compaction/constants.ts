@@ -1,0 +1,11 @@
+export const COMPACT_COMMAND = "/compact";
+export const COMPACT_COMMAND_NAME = "compact";
+export const MAX_ENGINE_TEXT_CHARS = 2_000;
+export const MAX_FAILURE_REASON_CHARS = 240;
+export const MAX_TRACKED_SESSIONS = 32;
+export const MAX_REMEMBERED_OPERATIONS = 64;
+export const END_TURN_STOP_REASON = "end_turn";
+export const CANCELLED_STOP_REASON = "cancelled";
+export const CONTEXT_COMPACTION_META_KEY = "contextCompaction";
+export const COMPACTION_STALL_TIMEOUT_MS = 600_000;
+export const DEFAULT_AUTO_COMPACT_THRESHOLD = 0.8;

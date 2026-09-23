@@ -177,7 +177,7 @@ fn resolve_node() -> Result<PathBuf, String> {
     })
 }
 
-fn node() -> Result<&'static Path, String> {
+pub(crate) fn node() -> Result<&'static Path, String> {
     NODE.get_or_init(resolve_node)
         .as_deref()
         .map_err(|error| error.clone())
@@ -201,7 +201,7 @@ fn npm_beside(node: &Path) -> Result<PathBuf, String> {
 /// PATH for anything we spawn: node's own directory first, then the usual
 /// prefixes, then whatever we inherited. Engines shell out to `git` and
 /// friends, and the inherited PATH may be the Finder minimum.
-fn child_path(node: &Path) -> String {
+pub(crate) fn child_path(node: &Path) -> String {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(bin) = node.parent() {
         dirs.push(bin.to_path_buf());
@@ -221,6 +221,13 @@ fn child_path(node: &Path) -> String {
     std::env::join_paths(dirs)
         .map(|joined| joined.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "/usr/bin:/bin".to_string())
+}
+
+pub(crate) fn engine_path() -> String {
+    match node() {
+        Ok(node) => child_path(node),
+        Err(_) => std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".to_string()),
+    }
 }
 
 #[derive(Default)]
@@ -415,6 +422,113 @@ fn engines_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// Give every linked engine binary its execute bit back.
+///
+/// Some packages publish their `bin` entry without it — `claude-agent-acp`
+/// ships `dist/index.js` as 0644 — and npm does not always repair that on a
+/// `--prefix` install. The shebang is present, so the only thing standing
+/// between us and running it is the mode, and spawning it fails with EACCES.
+#[cfg(unix)]
+fn make_engine_bins_executable(dir: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let bin_dir = dir.join("node_modules").join(".bin");
+    let Ok(entries) = std::fs::read_dir(&bin_dir) else {
+        return;
+    };
+    let mut targets: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| std::fs::canonicalize(entry.path()).ok())
+        .collect();
+    targets.sort();
+
+    for target in targets {
+        let Ok(metadata) = std::fs::metadata(&target) else {
+            continue;
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        let mode = metadata.permissions().mode();
+        if mode & 0o111 != 0 {
+            continue;
+        }
+        let _ = std::fs::set_permissions(
+            &target,
+            std::fs::Permissions::from_mode(mode | 0o111),
+        );
+    }
+}
+
+#[cfg(not(unix))]
+fn make_engine_bins_executable(_dir: &Path) {}
+
+/// Re-apply Weave's engine patches to a freshly installed package.
+///
+/// The workspace gets these through bun's `patchedDependencies`, but engines in
+/// the app's data directory are installed with plain `npm`, which knows nothing
+/// about them. Without this, the shipped app runs an unpatched engine — and the
+/// agy-acp patch is what stops a tool-only turn being declared finished 300ms
+/// after the last tool call, before the model has written its answer.
+///
+/// Best effort: a patch that will not apply is reported and skipped rather than
+/// failing the install, because an unpatched engine still mostly works.
+fn apply_engine_patches(app: &tauri::AppHandle, package_name: &str, dir: &Path) -> Vec<String> {
+    let Ok(resources) = app.path().resource_dir() else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(resources.join("patches")) else {
+        return Vec::new();
+    };
+
+    let package_dir = dir.join("node_modules").join(package_name);
+    if !package_dir.is_dir() {
+        return Vec::new();
+    }
+
+    let mut patches: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().is_some_and(|ext| ext == "patch")
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(&format!("{package_name}@")))
+        })
+        .collect();
+    patches.sort();
+
+    let mut applied = Vec::new();
+    for patch in patches {
+        // `--check` first so a patch that is already in place is a no-op rather
+        // than a corrupted file.
+        let already = Command::new("git")
+            .args(["apply", "--reverse", "--check", "-p1"])
+            .arg(&patch)
+            .current_dir(&package_dir)
+            .output()
+            .map(|out| out.status.success())
+            .unwrap_or(false);
+        if already {
+            continue;
+        }
+        let ok = Command::new("git")
+            .args(["apply", "-p1"])
+            .arg(&patch)
+            .current_dir(&package_dir)
+            .output()
+            .map(|out| out.status.success())
+            .unwrap_or(false);
+        if ok {
+            if let Some(name) = patch.file_name().and_then(|name| name.to_str()) {
+                applied.push(name.to_string());
+            }
+        }
+    }
+    applied
+}
+
 #[tauri::command]
 async fn install_engine(app: tauri::AppHandle, package_name: String) -> Result<(), String> {
     let node = node()?;
@@ -455,6 +569,10 @@ async fn install_engine(app: tauri::AppHandle, package_name: String) -> Result<(
         ));
     }
 
+    make_engine_bins_executable(&dir);
+    for patch in apply_engine_patches(&app, &package_name, &dir) {
+        println!("[weave] applied engine patch {patch}");
+    }
     Ok(())
 }
 

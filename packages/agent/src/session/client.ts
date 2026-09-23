@@ -56,9 +56,6 @@ function notifyPlanModeExit(
 }
 
 export class SessionClient implements acp.Client {
-
-  async ["_auth/status_update"](params: any): Promise<void> {}
-
   readonly task: TaskContract;
   readonly sink: SessionSink;
   readonly policy: PermissionPolicy;
@@ -100,6 +97,14 @@ export class SessionClient implements acp.Client {
       notifyPlanModeExit(this.sink, params, this.replaying);
     }
 
+    if (decision.decision === "reject" && decision.source === "policy") {
+      this.sink.onPolicyBlock?.({
+        toolCallId: params.toolCall.toolCallId ?? "",
+        title: params.toolCall.title ?? "tool call",
+        reason: decision.reason,
+      });
+    }
+
     this.sink.onPermission(
       params.toolCall.title ?? params.toolCall.toolCallId ?? "tool call",
       params.options.map((option) => ({
@@ -115,8 +120,10 @@ export class SessionClient implements acp.Client {
   }
 
   async sessionUpdate(params: acp.SessionNotification): Promise<void> {
-    this.sink.onUpdate(params.update, this.replaying);
+    this.sink.onUpdate(params.update, this.replaying, params.sessionId);
   }
+
+  async extNotification(_method: string, _params: Record<string, unknown>): Promise<void> {}
 
   async readTextFile(
     params: acp.ReadTextFileRequest,

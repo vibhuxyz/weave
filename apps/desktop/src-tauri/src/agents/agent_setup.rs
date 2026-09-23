@@ -1,12 +1,57 @@
 use crate::agents::agent_doctor::{doctor, AgentDoctorResult};
-use crate::agents::agent_spawn::resolve_binary;
 use crate::agents::auth::acp::run_acp_auth;
 use crate::agents::auth::cli::run_cli_login;
+use crate::agents::providers::{
+    get_provider, resolve_provider_binary, AuthStrategy, CliAuthCommands,
+};
 use serde_json::json;
+use std::path::Path;
 use tauri::{AppHandle, Emitter};
 
 fn emit_setup_state(app: &AppHandle, payload: serde_json::Value) {
     let _ = app.emit("agent-setup:state", payload);
+}
+
+fn run_cli_auth_strategy(
+    provider_id: &str,
+    bin: &Path,
+    commands: CliAuthCommands,
+    app: &AppHandle,
+) -> Result<(), String> {
+    let res = run_cli_login(bin, commands.login_args)?;
+    if res.success {
+        return Ok(());
+    }
+    let error = res.error.unwrap_or_else(|| "Authentication failed".to_string());
+    emit_setup_state(
+        app,
+        json!({ "state": "failed", "provider": provider_id, "error": error }),
+    );
+    Err("Authentication failed".to_string())
+}
+
+fn run_acp_auth_strategy(
+    provider_id: &str,
+    bin: &Path,
+    method_id: Option<&str>,
+    app: &AppHandle,
+) -> Result<(), String> {
+    let Some(method_id) = method_id else {
+        return Err("An authentication method must be selected for this provider".to_string());
+    };
+
+    let res = run_acp_auth(bin, method_id)?;
+    if res.success {
+        return Ok(());
+    }
+    let error = res
+        .error
+        .unwrap_or_else(|| "ACP authentication failed".to_string());
+    emit_setup_state(
+        app,
+        json!({ "state": "failed", "provider": provider_id, "error": error }),
+    );
+    Err("ACP authentication failed".to_string())
 }
 
 pub async fn setup_provider(
@@ -16,10 +61,7 @@ pub async fn setup_provider(
 ) -> Result<AgentDoctorResult, String> {
     emit_setup_state(
         &app,
-        json!({
-            "state": "checking",
-            "provider": &provider_id
-        }),
+        json!({ "state": "checking", "provider": &provider_id }),
     );
 
     let initial = doctor(&provider_id, &app);
@@ -59,6 +101,10 @@ pub async fn setup_provider(
         return Ok(initial);
     }
 
+    let provider = get_provider(&provider_id).ok_or("Unknown provider")?;
+    let bin = resolve_provider_binary(provider, &app)
+        .ok_or_else(|| format!("{} binary not found", provider.id))?;
+
     emit_setup_state(
         &app,
         json!({
@@ -68,70 +114,13 @@ pub async fn setup_provider(
         }),
     );
 
-    let normalized = match provider_id.as_str() {
-        "claude-code" | "claude-acp" | "claude" => "claude-acp",
-        "codex" | "codex-acp" => "codex-acp",
-        "antigravity" | "antigravity-acp" | "gemini" | "agy" => "antigravity-acp",
-        _ => &provider_id,
-    };
-
-    match normalized {
-        "claude-acp" => {
-            let bin = resolve_binary("claude-agent-acp", &app)
-                .or_else(|| resolve_binary("claude", &app))
-                .ok_or("claude binary not found")?;
-            let res = run_cli_login(&bin, &["auth", "login"])
-                .or_else(|_| run_cli_login(&bin, &["--cli", "auth", "login"]))?;
-            if !res.success {
-                emit_setup_state(
-                    &app,
-                    json!({
-                        "state": "failed",
-                        "provider": &provider_id,
-                        "error": res.error.unwrap_or_else(|| "Authentication failed".to_string())
-                    }),
-                );
-                return Err("Authentication failed".to_string());
-            }
+    match provider.auth {
+        AuthStrategy::CliAuth(commands) => {
+            run_cli_auth_strategy(&provider_id, &bin, commands, &app)?
         }
-        "codex-acp" => {
-            let bin = resolve_binary("codex-acp", &app)
-                .or_else(|| resolve_binary("codex", &app))
-                .ok_or("codex binary not found")?;
-            let res = run_cli_login(&bin, &["cli", "login"])
-                .or_else(|_| run_cli_login(&bin, &["login"]))?;
-            if !res.success {
-                emit_setup_state(
-                    &app,
-                    json!({
-                        "state": "failed",
-                        "provider": &provider_id,
-                        "error": res.error.unwrap_or_else(|| "Authentication failed".to_string())
-                    }),
-                );
-                return Err("Authentication failed".to_string());
-            }
+        AuthStrategy::AcpAuth => {
+            run_acp_auth_strategy(&provider_id, &bin, method_id.as_deref(), &app)?
         }
-        "antigravity-acp" => {
-            let bin = resolve_binary("agy_acp_server.par", &app)
-                .or_else(|| resolve_binary("agy-acp", &app))
-                .or_else(|| resolve_binary("agy", &app))
-                .ok_or("antigravity binary not found")?;
-            let chosen_method = method_id.as_deref().unwrap_or("oauth-personal");
-            let res = run_acp_auth(&bin, chosen_method)?;
-            if !res.success {
-                emit_setup_state(
-                    &app,
-                    json!({
-                        "state": "failed",
-                        "provider": &provider_id,
-                        "error": res.error.unwrap_or_else(|| "ACP authentication failed".to_string())
-                    }),
-                );
-                return Err("ACP authentication failed".to_string());
-            }
-        }
-        _ => return Err("Unknown provider".to_string()),
     }
 
     let post_check = doctor(&provider_id, &app);

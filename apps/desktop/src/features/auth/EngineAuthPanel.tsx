@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import type { EngineAuthMethod, EngineAuthOperation } from "@weave/protocol";
 import { LinkifiedText, Button, Input, Spinner } from "@/shared/ui";
 import { cn } from "@/shared/lib";
+import { AuthCodeInput } from "./AuthCodeInput";
 import {
   ClaudeIcon,
   CodexIcon,
@@ -376,6 +377,7 @@ export interface EngineAuthPanelProps {
   methods: EngineAuthMethod[];
   operation: EngineAuthOperation | null;
   onStart: (methodId: string, secret?: string) => void;
+  onSubmitInput: (text: string) => void;
   onCancel: () => void;
   onDismiss: () => void;
 }
@@ -387,6 +389,7 @@ export function EngineAuthPanel({
   methods,
   operation,
   onStart,
+  onSubmitInput,
   onCancel,
   onDismiss,
 }: EngineAuthPanelProps) {
@@ -404,7 +407,8 @@ export function EngineAuthPanel({
   const apiKeyDocsUrl = agent.apiKeyDocsUrl;
   const output = operation?.output ?? [];
   const running = operation?.status === "running";
-  const deviceCode = findDeviceCode(output);
+  const acceptsInput = running && operation?.acceptsInput === true;
+  const deviceCode = acceptsInput ? null : findDeviceCode(output);
   const url = findUrl(output);
 
   // Auto-open detected URL in browser once when running
@@ -858,6 +862,8 @@ export function EngineAuthPanel({
             )}
           </div>
         )}
+
+        {acceptsInput && <AuthCodeInput onSubmit={onSubmitInput} />}
 
         {/* Running status banner when no code/url is present yet */}
         {running && !deviceCode && !url && (

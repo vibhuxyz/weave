@@ -78,7 +78,8 @@ export type StepStatus = "queued" | "running" | "passed" | "failed" | "cancelled
 export interface TestRunBlock extends AgentBlockBase {
   type: "test";
   title: string;
-  status: "running" | "passed" | "failed";
+  /** `recovered`: something failed, and a later run of the same kind passed. */
+  status: "running" | "passed" | "failed" | "recovered";
   durationMs?: number;
   steps: Array<{
     id: string;
@@ -89,6 +90,8 @@ export interface TestRunBlock extends AgentBlockBase {
     /** Semantic result label parsed from output, e.g. "500 crash", "201 created". */
     badge?: string;
     badgeTone?: "crit" | "ok" | "warn" | "neutral";
+    /** This failure was answered by a later passing run, so it needs no action. */
+    superseded?: boolean;
     /** Raw command output, when captured. */
     output?: string;
   }>;

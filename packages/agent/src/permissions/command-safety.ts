@@ -14,6 +14,19 @@ const TRAVERSAL_PATTERN = /(?:^|[\s"'`=])(?:\.\.\/|\/\.\.)/;
 
 const USER_PATH_PATTERN = /(?:\/Users|\/home)\/[^\s"'`;]+/g;
 
+/**
+ * Output an engine wrote for itself and has to read back.
+ *
+ * agy runs a command that outruns `WaitMsBeforeAsync` as a background task and
+ * puts its output here, then reads it with `cat`. Refusing that leaves the
+ * agent unable to collect the result of a search the user already approved.
+ *
+ * Anchored to the task-log leaf on purpose. The same tree holds
+ * `antigravity-oauth-token`, which stays out of reach.
+ */
+const ENGINE_TASK_LOG_PATTERN =
+  /^(?:\/Users|\/home)\/[^/]+\/\.gemini\/antigravity-cli\/brain\/[^/]+\/\.system_generated\/tasks\/[^/]+\.log$/;
+
 export function extractCommand(rawInput: unknown): string | null {
   if (rawInput == null) return null;
   if (typeof rawInput === "string") return rawInput.trim();
@@ -34,6 +47,7 @@ function findOutsideUserPath(command: string, normalizedCwd: string): string | n
   if (!matches) return null;
   for (const rawPath of matches) {
     const cleanPath = rawPath.replace(/[,:;)"']+$/, "");
+    if (ENGINE_TASK_LOG_PATTERN.test(cleanPath)) continue;
     if (!isInside(normalizedCwd, cleanPath)) {
       return cleanPath;
     }

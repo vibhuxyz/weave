@@ -1,5 +1,9 @@
 import { titleFromPrompt, readGitStatus } from "@weave/core";
+import { EngineStalledError } from "@weave/agent";
 import { resolveSessionPlugins, composeSystemPrompt, buildPromptBlocks } from "../chat/index.ts";
+import { compactBeforePrompt } from "../compaction/index.ts";
+import type { CompactionController } from "../compaction/index.ts";
+import { summaryReaderFor } from "../history/index.ts";
 import type { DesktopSessionManager } from "../session/index.ts";
 import type { ClientMessage, ServerMessage } from "../shared/index.ts";
 import type { Ledger, TasksStore, ConversationStore, SessionStore, NormalizedPlugin } from "@weave/core";
@@ -7,6 +11,7 @@ import type { Ledger, TasksStore, ConversationStore, SessionStore, NormalizedPlu
 export interface PromptOptions {
   readonly msg: Extract<ClientMessage, { readonly type: "prompt" }>;
   readonly sessionMgr: DesktopSessionManager;
+  readonly compaction: CompactionController;
   readonly projectDir: string;
   readonly pluginsById: ReadonlyMap<string, NormalizedPlugin>;
   readonly ledger: Ledger;
@@ -24,6 +29,7 @@ export interface PromptOptions {
 export async function handlePrompt({
   msg,
   sessionMgr,
+  compaction,
   projectDir,
   pluginsById,
   ledger,
@@ -43,6 +49,43 @@ export async function handlePrompt({
       message: "Please sign in to the AI engine before sending a message.",
     });
     return;
+  }
+
+  // A stalled engine was killed mid-turn; give this prompt a live one rather
+  // than writing into a dead process's stdin.
+  try {
+    await sessionMgr.supervisor.reviveCurrent();
+  } catch (err: unknown) {
+    if (sessionMgr.handleAuthError(err, sessionMgr.currentEngineId)) return;
+    send({
+      type: "error",
+      message: `Could not start ${sessionMgr.currentEngineId}: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return;
+  }
+
+  const preflight = await compactBeforePrompt({
+    controller: compaction,
+    session: sessionMgr.supervisor.current,
+    promptId: msg.promptId,
+    threshold: msg.autoCompactThreshold,
+    send,
+    readSummary: summaryReaderFor(sessionMgr.currentEngineId, projectDir),
+  });
+  if (preflight.kind === "withdrawn") return;
+  if (preflight.error) {
+    if (sessionMgr.handleAuthError(preflight.error, sessionMgr.currentEngineId)) return;
+    try {
+      await sessionMgr.supervisor.reviveCurrent();
+    } catch (err: unknown) {
+      if (sessionMgr.handleAuthError(err, sessionMgr.currentEngineId)) return;
+      send({ type: "turn-end", stopReason: "stalled" });
+      send({
+        type: "error",
+        message: `Could not restart ${sessionMgr.currentEngineId} after compaction failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return;
+    }
   }
 
   const text = msg.text;
@@ -94,6 +137,7 @@ export async function handlePrompt({
     const { stopReason, usage } = await sessionMgr.supervisor.current.prompt([...blocks]);
 
     send({ type: "turn-end", stopReason, usage });
+    compaction.recordTurnCompleted(sessionMgr.supervisor.current.sessionId);
     ledger.append("task.finished", {
       taskId: "desktop",
       status: "ok",
@@ -114,7 +158,12 @@ export async function handlePrompt({
   } catch (err: unknown) {
     if (sessionMgr.handleAuthError(err, sessionMgr.currentEngineId)) return;
     const errMsg = err instanceof Error ? err.message : String(err);
-    ledger.append("error", { taskId: "desktop", where: "prompt", message: errMsg });
+    ledger.append("error", {
+      taskId: "desktop",
+      where: err instanceof EngineStalledError ? "engine.stalled" : "prompt",
+      message: errMsg,
+    });
+    send({ type: "turn-end", stopReason: "stalled" });
     send({ type: "error", message: errMsg });
   }
 }

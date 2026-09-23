@@ -1,3 +1,4 @@
+use crate::agents::agent_env::agent_path;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use tauri::AppHandle;
@@ -12,7 +13,6 @@ fn search_dirs(app: &AppHandle) -> Vec<PathBuf> {
         dirs.push(home_path.join("Library/Application Support/dev.vibhu.weave/engines/node_modules/.bin"));
         dirs.push(home_path.join("Library/Application Support/dev.vibhu.weave/engines/node_modules/@agentclientprotocol/claude-agent-acp"));
         dirs.push(home_path.join("Library/Application Support/dev.vibhu.weave/engines/node_modules/@agentclientprotocol/codex-acp"));
-        dirs.push(home_path.join("Library/Application Support/Zed/external_agents/registry/antigravity-acp/v_1.1.1_c5752c93158aa0bc_aed36ea90ae2ff2f"));
     }
     dirs.push(PathBuf::from("/opt/homebrew/bin"));
     dirs.push(PathBuf::from("/usr/local/bin"));
@@ -48,20 +48,7 @@ pub fn spawn_agent_process(
         cmd.current_dir(parent);
     }
 
-    if let Some(path_var) = std::env::var_os("PATH") {
-        let mut new_path = std::ffi::OsString::new();
-        if let Some(parent) = program.parent() {
-            new_path.push(parent);
-            new_path.push(":");
-        }
-        if let Some(home) = std::env::var_os("HOME") {
-            let local_bin = PathBuf::from(&home).join(".local").join("bin");
-            new_path.push(local_bin);
-            new_path.push(":");
-        }
-        new_path.push(path_var);
-        cmd.env("PATH", new_path);
-    }
+    cmd.env("PATH", agent_path(program));
 
     cmd.stdin(if pipe_stdin { Stdio::piped() } else { Stdio::inherit() });
     cmd.stdout(if pipe_stdout { Stdio::piped() } else { Stdio::inherit() });

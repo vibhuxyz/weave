@@ -41,6 +41,7 @@ export class DesktopSessionManager {
       error.authMethods,
     );
     this.ctx.authMethodsByEngine.set(error.engineId, rawMethods);
+    this.ctx.engineAuthStates.set(error.engineId, "auth_required");
     this.ctx.send({
       type: "auth-required",
       engineId: error.engineId,
@@ -69,8 +70,10 @@ export class DesktopSessionManager {
     const opts = createSupervisorOptions({
       ctx: this.ctx,
       getCurrentEngineId: () => this.currentEngineId,
-      onSessionReady: (sessionId, resumed, configOptions) => {
+      getCurrentModeId: () => this.supervisor?.current?.modes?.currentModeId ?? null,
+      onSessionReady: (sessionId, resumed, configOptions, modes) => {
         this.persisted = resumed;
+        this.ctx.engineAuthStates.set(this.currentEngineId, "authenticated");
         if (this.announced) return;
         this.announced = true;
         this.ctx.send({
@@ -80,6 +83,7 @@ export class DesktopSessionManager {
           engineId: this.currentEngineId,
           engineLabel: getEngine(this.currentEngineId).label,
           configOptions,
+          modes,
           resumed,
         });
       },
@@ -105,6 +109,7 @@ export class DesktopSessionManager {
 
     this.currentEngineId = engineId;
     this.persisted = false;
+    this.ctx.engineAuthStates.set(engineId, "authenticated");
 
     if (this.taskCreated) {
       const checkpoint = await readLatest(
@@ -147,13 +152,33 @@ export class DesktopSessionManager {
       engineId: this.currentEngineId,
       engineLabel: getEngine(this.currentEngineId).label,
       configOptions: this.supervisor.current.configOptions,
+      modes: this.supervisor.current.modes,
       resumed: false,
     });
     await this.ctx.sendChats();
     return true;
   }
 
+  async prepareReplay(sessionId: string): Promise<void> {
+    const loaded = await this.ctx.history.load(sessionId);
+    if (!loaded.ok) this.ctx.send({ type: "error", message: loaded.reason });
+    this.ctx.replayGate.arm(sessionId, loaded.ok ? loaded.value : null);
+  }
+
+  finishReplay(): void {
+    this.ctx.replayGate.disarm();
+  }
+
   async openFirstUsableEngine(wanted: string, resumeId: string | null): Promise<void> {
+    if (resumeId) await this.prepareReplay(resumeId);
+    try {
+      await this.openEngineInOrder(wanted, resumeId);
+    } finally {
+      this.finishReplay();
+    }
+  }
+
+  private async openEngineInOrder(wanted: string, resumeId: string | null): Promise<void> {
     const order = [
       wanted,
       ...installedEngines()
@@ -171,6 +196,7 @@ export class DesktopSessionManager {
         return;
       } catch (error) {
         if (error instanceof AuthRequiredError) {
+          this.ctx.engineAuthStates.set(engineId, "auth_required");
           if (engineId === wanted) throw error;
           refusal ??= error;
           continue;
@@ -180,6 +206,7 @@ export class DesktopSessionManager {
           const authMethods = (errData as { readonly authMethods?: readonly AuthMethod[] } | undefined)?.authMethods;
           const methods: AuthMethod[] = authMethods ? [...authMethods] : [...(this.ctx.authMethodsByEngine.get(engineId) ?? [])];
           const authErr = new AuthRequiredError(engineId, methods, error);
+          this.ctx.engineAuthStates.set(engineId, "auth_required");
           if (engineId === wanted) throw authErr;
           refusal ??= authErr;
           continue;

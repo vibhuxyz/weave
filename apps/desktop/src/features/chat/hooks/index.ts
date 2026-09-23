@@ -1,7 +1,15 @@
 export { useAcpChat } from "./useAcpChat";
 export type {
+  EngineSetupPrompt,
+  SetupConsent,
+  ConsentLink,
+  TerminalKeyName,
+  SessionModes,
+  SessionModeInfo,
+  PermissionRequest,
   ChatImageAttachment,
   ChatTurn,
+  ConnectionState,
   ConversationMeta,
   ToolDiff,
   ToolEntry,

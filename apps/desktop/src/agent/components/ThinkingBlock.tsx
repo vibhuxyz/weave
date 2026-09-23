@@ -23,12 +23,14 @@ export function ThinkingBlock({
   const [open, setOpen] = useState(false);
   const hasText = text.trim().length > 0;
   const steps = extractSteps(text);
-  const current = steps.at(-1) ?? lastLine(text);
 
   const { elapsed, sinceChange } = useActivityClock(text, streaming);
   const stale = streaming && sinceChange >= 20;
 
-  const label = current ?? (streaming ? "Thinking…" : "Thought for a moment");
+  // Only a real section title stands in for the label. Freeform reasoning
+  // stays behind the expander — put on the header it reads as the agent's
+  // answer, which is exactly what it is not.
+  const label = steps.at(-1) ?? (streaming ? "Thinking…" : "Thought for a moment");
 
   return (
     <div className="dark w-full rounded-xl border border-agent-border bg-agent-surface-base text-agent-text">
@@ -160,13 +162,4 @@ function extractSteps(text: string): string[] {
     }
   }
   return steps;
-}
-
-/** Last non-empty line, markdown emphasis stripped — a fallback activity line. */
-function lastLine(text: string): string | undefined {
-  const lines = text
-    .split("\n")
-    .map((l) => l.replace(/[*_`#>]/g, "").trim())
-    .filter(Boolean);
-  return lines.at(-1);
 }

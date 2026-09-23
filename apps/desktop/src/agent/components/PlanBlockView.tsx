@@ -14,10 +14,13 @@ import type { PlanBlock, PlanBlockEntry } from "@/agent/normalize";
 import { PlanApprovalModal } from "./PlanApprovalModal";
 import { Prose } from "./Prose";
 import type { TurnPlan } from '@/features/chat/hooks';
+import type { PlanExitIntent } from "@/shared/lib";
 
 // The transcript re-derives blocks on every render, so a plan's decision has
 // to live outside component state or a rejected plan pops its modal again on
-// the next scroll. Keyed by the stable `plan-<turnId>` block id.
+// the next scroll. Keyed by `plan-<turnId>` — only good for the current app
+// session, since a replayed chat gives every turn a fresh id (see
+// `isLatestTurn` below for what survives an actual reopen).
 const planDecisions = new Map<string, "approved" | "rejected">();
 // After approving a plan the engine often re-plans one more time before it
 // actually starts. Suppress the auto-open briefly so that echo doesn't pop a
@@ -31,13 +34,26 @@ export function PlanBlockView({
   onUpdatePlan,
   onExitPlanMode,
   onStop,
+  isLatestTurn = true,
 }: {
   block: PlanBlock;
   engineLabel?: string;
   onSend?: (text: string) => void;
   onUpdatePlan?: (plan: TurnPlan) => void;
-  onExitPlanMode?: () => void;
+  onExitPlanMode?: (intent?: PlanExitIntent) => void;
   onStop?: () => void;
+  /**
+   * False once the conversation has moved past this turn.
+   *
+   * `block.id` is `plan-<turnId>`, and a replayed chat reassigns a fresh
+   * random `turnId` to every turn on each reopen (see `withAssistantTurn` in
+   * `useAcpChat.ts`) — so `planDecisions` can never recognize a plan it saw
+   * approved in a previous open. Whether this turn is still the newest one
+   * in the transcript doesn't have that problem: it's recomputed straight
+   * from the same replayed history on every open, so a plan the user has
+   * already acted on (approved, or just moved on from) never re-prompts.
+   */
+  isLatestTurn?: boolean;
 }) {
   const isMarkdown = typeof block.markdown === "string";
   const [modalOpen, setModalOpen] = useState(false);
@@ -50,6 +66,8 @@ export function PlanBlockView({
     planDecisions.set(block.id, next);
     setDecisionState(next);
   };
+  // Nothing left to decide on an old turn — the transcript already moved on.
+  const stale = !isLatestTurn && decision === "pending";
 
   // Blocked-on-user plan → open the modal once. A dismiss/decision sticks;
   // re-renders never reopen it, and a rejected plan is never shown again.
@@ -58,25 +76,28 @@ export function PlanBlockView({
     if (
       block.awaitingApproval &&
       decision === "pending" &&
+      isLatestTurn &&
       !autoOpenedRef.current &&
       Date.now() - lastDecisionAt > 90_000
     ) {
       autoOpenedRef.current = true;
       setModalOpen(true);
     }
-  }, [block.awaitingApproval, decision]);
+  }, [block.awaitingApproval, decision, isLatestTurn]);
 
   const completedCount = entries.filter((e) => e.status === "completed").length;
 
   const handleApprove = (
     approved: { markdown?: string; entries: PlanBlockEntry[] },
     note?: string,
+    continueAs: PlanExitIntent = "accept-edits",
   ) => {
     setDecision("approved");
     lastDecisionAt = Date.now();
     // Take the engine out of plan mode so the approval prompt actually runs
-    // instead of triggering another ExitPlanMode → another modal.
-    onExitPlanMode?.();
+    // instead of triggering another ExitPlanMode → another modal, and land it
+    // in the mode the user picked when they approved.
+    onExitPlanMode?.(continueAs);
 
     let body: string;
     if (approved.markdown != null) {
@@ -121,7 +142,7 @@ export function PlanBlockView({
             <PlanTitle className="text-sm font-semibold">
               {block.title ?? "Execution Plan"}
             </PlanTitle>
-            {decision === "approved" ? (
+            {decision === "approved" || stale ? (
               <Badge
                 variant="outline"
                 className="border-agent-success font-mono text-[10px] uppercase text-agent-success"
@@ -146,7 +167,7 @@ export function PlanBlockView({
               className="gap-1 text-xs"
             >
               <Edit3 className="size-3" />
-              {decision === "approved" ? "View" : "Review & Approve"}
+              {decision === "approved" || stale ? "View" : "Review & Approve"}
             </Button>
             <PlanTrigger />
           </div>
@@ -188,7 +209,7 @@ export function PlanBlockView({
           )}
         </PlanContent>
 
-        {decision === "pending" && (
+        {decision === "pending" && !stale && (
           <PlanFooter className="flex justify-end gap-2 border-t bg-muted/20 px-4 py-2">
             <Button
               type="button"

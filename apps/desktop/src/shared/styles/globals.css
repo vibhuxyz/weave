@@ -249,6 +249,17 @@
   --color-zinc-950: #09090b;
 
   --color-amber-500: #f59e0b;
+
+  --color-splash-violet: #a78bfa;
+  --color-splash-violet-deep: #7c3aed;
+  --color-splash-fuchsia: #e879f9;
+  --color-splash-indigo: #818cf8;
+  --color-splash-pink: #f472b6;
+  --color-splash-rose: #fda4af;
+  --color-splash-amber: #fcd34d;
+  --color-splash-sky: #38bdf8;
+  --color-splash-sky-soft: #7dd3fc;
+  --color-splash-cyan: #67e8f9;
 }
 
 /* ═══════════════════════════════════════════════════════════

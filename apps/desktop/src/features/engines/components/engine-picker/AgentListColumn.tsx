@@ -1,5 +1,6 @@
 import { CheckIcon } from "lucide-react";
 import { cn } from "@/shared/lib";
+import { Spinner } from "@/shared/ui";
 import { getProviderIcon } from "@/shared/ui/icons";
 import {
   DISPLAY_AGENTS,
@@ -11,6 +12,7 @@ interface AgentListColumnProps {
   activeEngineId: string;
   engines?: readonly EngineItem[];
   hasRightBorder?: boolean;
+  loadingEngineId?: string | null;
   onSelectAgent: (agentId: string, isInstalled: boolean) => void;
   onRequestManageProviders: () => void;
 }
@@ -19,6 +21,7 @@ export function AgentListColumn({
   activeEngineId,
   engines,
   hasRightBorder = true,
+  loadingEngineId,
   onSelectAgent,
   onRequestManageProviders,
 }: AgentListColumnProps) {
@@ -42,7 +45,7 @@ export function AgentListColumn({
         hasRightBorder && "border-r border-white/10 pr-2",
       )}
     >
-      <div className="px-2 pb-2 text-xs font-semibold tracking-wide text-zinc-400">
+      <div className="px-2 pb-2 pt-1 text-sm font-semibold text-white">
         Agent
       </div>
       <div className="flex flex-col gap-0.5">
@@ -83,8 +86,10 @@ export function AgentListColumn({
               </div>
 
               {isReady ? (
-                isSelected && (
-                  <CheckIcon className="size-3.5 text-zinc-400 shrink-0" />
+                agent.id === loadingEngineId ? (
+                  <Spinner className="size-3.5 text-zinc-400 shrink-0" />
+                ) : (
+                  isSelected && <CheckIcon className="size-3.5 text-zinc-400 shrink-0" />
                 )
               ) : (
                 <span

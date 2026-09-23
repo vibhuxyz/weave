@@ -16,6 +16,7 @@ interface HarnessRowProps {
   readonly authMethods?: readonly HarnessAuthMethodInfo[];
   readonly log?: HarnessInstallLog | null;
   readonly onSetup: (harness: HarnessDescriptor, methodId?: string) => void;
+  readonly onInstall: (harness: HarnessDescriptor) => void;
   readonly onRemove?: (harness: HarnessDescriptor) => void;
 }
 
@@ -29,6 +30,7 @@ export function HarnessRow({
   authMethods,
   log,
   onSetup,
+  onInstall,
   onRemove,
 }: HarnessRowProps) {
   const [showMethods, setShowMethods] = useState(false);
@@ -96,18 +98,20 @@ export function HarnessRow({
                   <ChevronDownIcon className="size-3" />
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => onRemove?.(harness)}
-                className="rounded-full border border-white/10 px-2.5 py-0.5 text-[11px] text-zinc-400 hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400 transition-colors"
-              >
-                Remove
-              </button>
+              {isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={() => onRemove?.(harness)}
+                  className="rounded-full border border-white/10 px-2.5 py-0.5 text-[11px] text-zinc-400 hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                >
+                  Remove
+                </button>
+              )}
             </div>
           ) : (
             <button
               type="button"
-              onClick={() => onSetup(harness)}
+              onClick={() => onInstall(harness)}
               className={cn(
                 "flex items-center gap-1 rounded-full border border-white/15 px-3 py-1 text-xs font-medium text-zinc-200 transition-colors hover:bg-white/10 hover:border-white/25",
               )}

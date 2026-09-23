@@ -25,3 +25,7 @@ export const REASONING_EFFORTS: readonly DisplayEffort[] = [
   { value: "high", label: "High" },
   { value: "xhigh", label: "Xhigh" },
 ] as const;
+
+export const MODEL_SKELETON_WIDTHS: readonly string[] = ["w-[70%]", "w-[55%]", "w-[62%]", "w-[48%]", "w-[76%]"] as const;
+export const EFFORT_SKELETON_WIDTHS: readonly string[] = ["w-[40%]", "w-[58%]", "w-[45%]", "w-[52%]"] as const;
+export const SKELETON_STAGGER_MS = 90;

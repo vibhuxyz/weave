@@ -1,3 +1,4 @@
+use crate::agents::agent_env::agent_path;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -11,6 +12,7 @@ pub struct ProcessOutput {
 pub fn run_capture(program: &Path, args: &[&str]) -> Result<ProcessOutput, String> {
     let mut cmd = Command::new(program);
     cmd.args(args);
+    cmd.env("PATH", agent_path(program));
     cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());

@@ -52,6 +52,13 @@ function parseStepSignal(output: string | undefined): StepSignal {
   return { badge, badgeTone, durationMs };
 }
 
+/**
+ * Output that reports a test result. Narrower than RUN_SIGNATURE on purpose: an
+ * HTTP 200 says nothing about whether a failing suite was put right.
+ */
+const TEST_SIGNATURE =
+  /\b(?:PASS|FAIL|Tests?:|\d+\s+(?:tests?\s+)?(?:pass|fail)(?:ed|ing)?|passing|failing)\b/i;
+
 /** Test/HTTP-shaped output that justifies a RUN LOG even for a lone command. */
 const RUN_SIGNATURE =
   /\b(?:PASS|FAIL|Tests?:|passing|failing|→\s*\d{3}|HTTP\/\d|status[=:]\s*\d{3}|exit code)\b/i;
@@ -87,6 +94,32 @@ function isBenignSearchExit(tool: ToolEntry): boolean {
   return !exit || Number(exit[1]) <= 2;
 }
 
+function isTestShaped(tool: ToolEntry): boolean {
+  return TEST_SIGNATURE.test(tool.output ?? "");
+}
+
+/**
+ * Which failing steps a later test run has already answered.
+ *
+ * An agent that runs the suite, fixes what broke and runs it again leaves a red
+ * row behind it. The row stays — it happened — but it is no longer the state of
+ * the branch, so it must not keep asking to be retried.
+ *
+ * Only a test failure can be superseded, and only by a later passing test: a
+ * green build says nothing about a red suite.
+ */
+function supersededStepIds(tools: readonly ToolEntry[]): ReadonlySet<string> {
+  const superseded = new Set<string>();
+  for (const [index, tool] of tools.entries()) {
+    if (tool.status !== "failed" || isBenignSearchExit(tool) || !isTestShaped(tool)) continue;
+    const answered = tools
+      .slice(index + 1)
+      .some((later) => later.status === "completed" && isTestShaped(later));
+    if (answered) superseded.add(tool.id);
+  }
+  return superseded;
+}
+
 export function testRunFromTools(tools: ToolEntry[]): TestRunBlock | null {
   const commandTools = tools.filter((tool) => tool.kind === "execute");
   if (commandTools.length === 0) return null;
@@ -99,9 +132,11 @@ export function testRunFromTools(tools: ToolEntry[]): TestRunBlock | null {
   const allSearch = commandTools.every((t) => isSearchOnlyCommand(t.title));
   if (allSearch && !hasRunSignal) return null;
 
-  const failed = commandTools.some(
+  const superseded = supersededStepIds(commandTools);
+  const failures = commandTools.filter(
     (tool) => tool.status === "failed" && !isBenignSearchExit(tool),
   );
+  const outstanding = failures.filter((tool) => !superseded.has(tool.id));
   const running = commandTools.some(
     (tool) => tool.status === "pending" || tool.status === "in_progress",
   );
@@ -121,11 +156,14 @@ export function testRunFromTools(tools: ToolEntry[]): TestRunBlock | null {
       durationMs: sig.durationMs ?? wallMs,
       badge: benign ? "no match" : sig.badge,
       badgeTone: benign ? ("neutral" as const) : sig.badgeTone,
+      superseded: superseded.has(tool.id),
       output: tool.output,
     };
   });
 
-  const stepHasCrash = steps.some((s) => s.badgeTone === "crit");
+  const stepHasCrash = steps.some((s) => s.badgeTone === "crit" && !s.superseded);
+  const failedNow = outstanding.length > 0 || stepHasCrash;
+  const recovered = !failedNow && failures.length > 0;
 
   return {
     id: "test-run",
@@ -138,7 +176,7 @@ export function testRunFromTools(tools: ToolEntry[]): TestRunBlock | null {
     sourceSeq: commandTools.at(-1)?.sourceSeq,
     type: "test",
     title: "Run log",
-    status: running ? "running" : failed || stepHasCrash ? "failed" : "passed",
+    status: running ? "running" : failedNow ? "failed" : recovered ? "recovered" : "passed",
     steps,
     findings: 0,
   };

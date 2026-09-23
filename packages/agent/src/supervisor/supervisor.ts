@@ -44,6 +44,7 @@ export async function createEngineSupervisor(
       engineId,
       resumeSessionId,
       sandboxed: options.sandboxed ?? options.task.sandboxed,
+      stallTimeoutMs: options.stallTimeoutMs,
     });
 
   const first = await open(currentEngineId, options.resumeSessionId);
@@ -59,6 +60,24 @@ export async function createEngineSupervisor(
     },
     get currentEngineId() {
       return currentEngineId;
+    },
+
+    async reviveCurrent() {
+      const entry = warm.get(currentEngineId);
+      if (entry?.session.alive) return entry.session;
+
+      // Resume what the dead engine was working on. Without this the
+      // replacement starts cold and the user's next message lands in a
+      // session that knows nothing about the conversation on screen.
+      // `openSession` falls back to a new session when the resume is refused.
+      const interrupted = entry?.session.sessionId ?? null;
+      if (entry) {
+        cancelIdleTimer(entry);
+        warm.delete(currentEngineId);
+      }
+      const fresh: WarmEngine = { session: await open(currentEngineId, interrupted) };
+      warm.set(currentEngineId, fresh);
+      return fresh.session;
     },
 
     async switchTo(engineId: string) {

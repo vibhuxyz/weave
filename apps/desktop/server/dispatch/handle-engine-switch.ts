@@ -36,6 +36,7 @@ export function handleSwitchEngine({
         engineId: sessionMgr.currentEngineId,
         engineLabel: getEngine(sessionMgr.currentEngineId).label,
         configOptions: sessionMgr.supervisor.current.configOptions,
+        modes: sessionMgr.supervisor.current.modes,
         resumed: true,
       });
     }

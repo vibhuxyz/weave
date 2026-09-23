@@ -9,26 +9,11 @@ import type { AuthMethod } from "@weave/protocol";
 function createAntigravityFallback(): readonly AuthMethod[] {
   return [
     {
-      id: "oauth-personal",
-      name: "Log in with Google",
+      id: "agy-login",
+      name: "Sign in with Google Antigravity",
       type: "terminal",
-      description: "Log in with your Google account",
-      _meta: {
-        "acp-auth": {
-          methodId: "oauth-personal",
-        },
-      },
-    } as unknown as AuthMethod,
-    {
-      id: "oauth-business",
-      name: "Log in with Gemini Enterprise",
-      type: "terminal",
-      description: "Log in with your Gemini Enterprise account",
-      _meta: {
-        "acp-auth": {
-          methodId: "oauth-business",
-        },
-      },
+      description: "Sign in with Google AI Pro or an API key",
+      args: ["--login"],
     } as unknown as AuthMethod,
   ];
 }

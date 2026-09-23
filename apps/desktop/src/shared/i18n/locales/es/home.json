@@ -139,6 +139,11 @@
       "fallbackName": "Berd",
       "openAria": "Iniciar chat con {{name}}"
     },
+    "projectPin": {
+      "label": "Fijar un proyecto",
+      "description": "Fija un proyecto para acceso rápido",
+      "kicker": "Proyecto"
+    },
     "chatPin": {
       "label": "Fijar un chat",
       "description": "Fija una sesión de chat",

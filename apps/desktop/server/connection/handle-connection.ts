@@ -18,9 +18,13 @@ import {
   type NormalizedPlugin,
 } from "@weave/core";
 import type { TaskContract, AuthMethod } from "@weave/protocol";
-import { DesktopSessionManager, registerLiveSupervisor, unregisterLiveSupervisor } from "../session/index.ts";
+import { DesktopSessionManager, killStaleSupervisors, registerLiveSupervisor, unregisterLiveSupervisor } from "../session/index.ts";
+import { PendingPermissions } from "../permissions/index.ts";
+import { ActiveSetup, announceSetupRequired } from "../setup/index.ts";
 import { handleClientMessage } from "./dispatch.ts";
-import type { ActiveAuthSession } from "../auth/index.ts";
+import { CompactionController } from "../compaction/index.ts";
+import { HistoryStore, ReplayGate } from "../history/index.ts";
+import { EngineAuthStates, type ActiveAuthSession } from "../auth/index.ts";
 import type { ClientMessage, ServerMessage, EngineEntry } from "../shared/index.ts";
 
 function safeSend(socket: WebSocket, message: ServerMessage): void {
@@ -53,10 +57,19 @@ const KNOWN_CLIENT_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   "switch-engine",
   "start-auth",
   "cancel-auth",
+  "submit-auth-input",
   "list-files",
   "read-attachment",
   "refresh-engines",
   "refresh-plugins",
+  "permission-response",
+  "set-mode",
+  "start-setup",
+  "cancel-setup",
+  "submit-setup-key",
+  "submit-setup-consent",
+  "compact",
+  "save-history",
 ]);
 
 function parseClientMessage(raw: unknown): ClientMessage | null {
@@ -88,6 +101,7 @@ export async function handleConnection(
 
   ledger.append("run.started", { cwd: projectDir, config: { via: "desktop" } });
 
+  const engineAuthStates = new EngineAuthStates(() => sendEngineList());
   const sendEngineList = () => {
     const installed = new Set(installedEngines().map((e) => e.id));
     const unique = Array.from(
@@ -97,6 +111,7 @@ export async function handleConnection(
       id: e.id,
       label: e.label,
       installed: installed.has(e.id),
+      authState: engineAuthStates.get(e.id),
     }));
     send({ type: "engines", engines });
   };
@@ -123,6 +138,19 @@ export async function handleConnection(
     });
   };
 
+  // A reconnect (project switch, dropped socket, reloaded window) would
+  // otherwise leave the previous connection's engine running alongside this
+  // one, and two engines on one workspace deadlock each other's permissions.
+  killStaleSupervisors();
+
+  const pendingPermissions = new PendingPermissions();
+  const activeSetup = new ActiveSetup();
+  const history = new HistoryStore(projectDir);
+  const replayGate = new ReplayGate();
+  const compaction = new CompactionController((sessionId, supportsCompaction) =>
+    send({ type: "session-capabilities", sessionId, supportsCompaction }),
+  );
+
   const initialEngineId = process.env.ENGINE_ID || DEFAULT_ENGINE_ID;
   const sessionMgr = new DesktopSessionManager(initialEngineId, {
     projectDir,
@@ -134,6 +162,11 @@ export async function handleConnection(
     send,
     sendChats,
     authMethodsByEngine,
+    engineAuthStates,
+    pendingPermissions,
+    compaction,
+    history,
+    replayGate,
   });
 
   const [ruleCatalog, builtinSkillCatalog, skillCatalog] = await Promise.all([
@@ -153,6 +186,7 @@ export async function handleConnection(
     registerLiveSupervisor(sessionMgr.supervisor);
   }
   sendEngineList();
+  announceSetupRequired(initialEngineId, send);
   sendChats().catch((error: unknown) => {
     console.error(JSON.stringify({
       level: "error",
@@ -194,6 +228,10 @@ export async function handleConnection(
       msg,
       {
         sessionMgr,
+        pendingPermissions,
+        activeSetup,
+        compaction,
+        history,
         projectDir,
         store,
         tasksStore,
@@ -222,6 +260,8 @@ export async function handleConnection(
   socket.on("close", () => {
     ledger.append("run.finished", { status: "ok", wallMs: 0 });
     authSession?.abort.abort();
+    pendingPermissions.cancelAll();
+    activeSetup.cancel();
     if (sessionMgr.supervisor) {
       unregisterLiveSupervisor(sessionMgr.supervisor);
       sessionMgr.supervisor.killAll();

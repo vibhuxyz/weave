@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  classifyCommand,
   confineToTaskDir,
+  createGuardedPermissionPolicy,
   extractCommand,
   inspectCommandBoundaries,
   toAcpResponse,
@@ -182,4 +184,201 @@ test("the plan-mode hold still answers cancelled", async () => {
 
   const decision = await confineToTaskDir(FAKE_TASK, request);
   assert.deepEqual(toAcpResponse(decision), { outcome: { outcome: "cancelled" } });
+});
+
+function executeRequest(command: string): RequestPermissionRequest {
+  return {
+    sessionId: "s1",
+    options: [
+      { optionId: "opt-allow", name: "Yes", kind: "allow_once" },
+      { optionId: "opt-reject", name: "No", kind: "reject_once" },
+    ],
+    toolCall: {
+      toolCallId: "tc-guarded",
+      kind: "execute",
+      title: "Terminal",
+      rawInput: { command },
+    },
+  };
+}
+
+test("a read-only command is answered without troubling the user", async () => {
+  const asked: string[] = [];
+  const policy = createGuardedPermissionPolicy(async (_task, _request, command) => {
+    asked.push(command ?? "");
+    return { decision: "reject", reason: "user said no" };
+  });
+
+  const decision = await policy(FAKE_TASK, executeRequest("git status"));
+  assert.equal(decision.decision, "allow");
+  if (decision.decision === "allow") {
+    assert.equal(decision.optionId, "opt-allow");
+    assert.match(decision.reason, /read-only git/);
+  }
+  assert.deepEqual(asked, []);
+});
+
+test("a command that can write still goes to the user", async () => {
+  const asked: string[] = [];
+  const policy = createGuardedPermissionPolicy(async (_task, _request, command) => {
+    asked.push(command ?? "");
+    return { decision: "allow", optionId: "opt-allow", reason: "user said yes" };
+  });
+
+  await policy(FAKE_TASK, executeRequest("rm -rf build"));
+  await policy(FAKE_TASK, executeRequest("git push"));
+  await policy(FAKE_TASK, executeRequest("grep foo file.txt | sh"));
+  assert.deepEqual(asked, ["rm -rf build", "git push", "grep foo file.txt | sh"]);
+});
+
+test("the boundary guard still wins over the read-only list", async () => {
+  const policy = createGuardedPermissionPolicy(async () => ({
+    decision: "allow" as const,
+    optionId: "opt-allow",
+    reason: "user said yes",
+  }));
+
+  const decision = await policy(FAKE_TASK, executeRequest("cat ~/.ssh/id_ed25519"));
+  assert.equal(decision.decision, "reject");
+});
+
+function planningPolicy(mode: string) {
+  const asked: string[] = [];
+  const policy = createGuardedPermissionPolicy(
+    async (_task, _request, command) => {
+      asked.push(command ?? "");
+      return { decision: "allow", optionId: "opt-allow", reason: "user said yes" };
+    },
+    { currentModeId: () => mode },
+  );
+  return { policy, asked };
+}
+
+function toolRequest(
+  kind: RequestPermissionRequest["toolCall"]["kind"],
+  title: string,
+  rawInput: unknown,
+  locations?: readonly { path: string }[],
+): RequestPermissionRequest {
+  return {
+    sessionId: "s1",
+    options: [
+      { optionId: "opt-allow", name: "Yes", kind: "allow_once" },
+      { optionId: "opt-reject", name: "No", kind: "reject_once" },
+    ],
+    toolCall: {
+      toolCallId: "tc-plan",
+      kind,
+      title,
+      rawInput,
+      ...(locations ? { locations: [...locations] } : {}),
+    },
+  };
+}
+
+test("plan mode refuses to edit a file, without asking the user", async () => {
+  const { policy, asked } = planningPolicy("plan");
+  const decision = await policy(
+    FAKE_TASK,
+    toolRequest("edit", "Update packages/logger index.ts", { path: "packages/logger/index.ts" }),
+  );
+  assert.equal(decision.decision, "reject");
+  if (decision.decision === "reject") {
+    assert.equal(decision.optionId, "opt-reject");
+    assert.match(decision.reason, /plan mode/);
+  }
+  assert.deepEqual(asked, []);
+});
+
+test("plan mode refuses a build or a test run", async () => {
+  const { policy } = planningPolicy("plan");
+  for (const command of ["bun test", "bun run build", "turbo run check-types"]) {
+    const decision = await policy(FAKE_TASK, executeRequest(command));
+    assert.equal(decision.decision, "reject", command);
+  }
+});
+
+test("plan mode still reads the codebase", async () => {
+  const { policy, asked } = planningPolicy("plan");
+  for (const command of ["grep -rn logger packages", "git status", "find . -type f"]) {
+    const decision = await policy(FAKE_TASK, executeRequest(command));
+    assert.equal(decision.decision, "allow", command);
+  }
+  const read = await policy(FAKE_TASK, toolRequest("read", "Read README.md", { path: "README.md" }));
+  assert.equal(read.decision, "allow");
+  assert.deepEqual(asked, []);
+});
+
+test("plan mode lets the agent write the plan itself", async () => {
+  const { policy } = planningPolicy("plan");
+  const decision = await policy(
+    FAKE_TASK,
+    toolRequest("edit", "Write plan", { content: "1. step" }, [
+      { path: "/Users/xyz/Coding/weave/.claude/plans/refactor.md" },
+    ]),
+  );
+  assert.equal(decision.decision, "allow");
+});
+
+test("outside plan mode the same edit is allowed as before", async () => {
+  const { policy } = planningPolicy("accept-edits");
+  const decision = await policy(
+    FAKE_TASK,
+    toolRequest("edit", "Update packages/logger index.ts", { path: "packages/logger/index.ts" }),
+  );
+  assert.equal(decision.decision, "allow");
+});
+
+test("a tool that reports no kind is held back while planning", async () => {
+  const { policy } = planningPolicy("plan");
+  const decision = await policy(FAKE_TASK, toolRequest(undefined, "Do something", {}));
+  assert.equal(decision.decision, "reject");
+});
+
+test("switching to plan mid-turn stops the next change, not just the next turn", async () => {
+  const session = { mode: "accept-edits" };
+  const policy = createGuardedPermissionPolicy(
+    async () => ({ decision: "allow" as const, optionId: "opt-allow", reason: "user said yes" }),
+    { currentModeId: () => session.mode },
+  );
+  const edit = () =>
+    policy(FAKE_TASK, toolRequest("edit", "Update index.ts", { path: "src/index.ts" }));
+
+  assert.equal((await edit()).decision, "allow");
+  session.mode = "plan";
+  assert.equal((await edit()).decision, "reject");
+  session.mode = "accept-edits";
+  assert.equal((await edit()).decision, "allow");
+});
+
+const AGY_TASK_LOG =
+  "/Users/xyz/.gemini/antigravity-cli/brain/859fe3f5-049b-483c-babb-8d822a74ca6b/.system_generated/tasks/task-41.log";
+
+test("an engine may read back the task log it just wrote", () => {
+  const check = inspectCommandBoundaries(`cat ${AGY_TASK_LOG}`, FAKE_TASK.cwd);
+  assert.equal(check.allowed, true);
+});
+
+test("the exception does not open the rest of the engine's home", () => {
+  const token = inspectCommandBoundaries(
+    "cat /Users/xyz/.gemini/antigravity-cli/antigravity-oauth-token",
+    FAKE_TASK.cwd,
+  );
+  assert.equal(token.allowed, false);
+
+  const settings = inspectCommandBoundaries(
+    "cat /Users/xyz/.gemini/antigravity-cli/settings.json",
+    FAKE_TASK.cwd,
+  );
+  assert.equal(settings.allowed, false);
+
+  const sibling = inspectCommandBoundaries(
+    "cat /Users/xyz/.gemini/antigravity-cli/brain/abc/.system_generated/tasks/../../secrets.txt",
+    FAKE_TASK.cwd,
+  );
+  assert.equal(sibling.allowed, false);
+});
+
+test("reading a task log is a read-only command, so it needs no card", () => {
+  assert.equal(classifyCommand(`cat ${AGY_TASK_LOG}`).kind, "read-only");
 });

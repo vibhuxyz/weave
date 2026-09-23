@@ -1,6 +1,8 @@
 use crate::agents::agent_process::run_capture;
-use crate::agents::agent_spawn::resolve_binary;
 use crate::agents::antigravity_doctor::check_antigravity_doctor;
+use crate::agents::providers::{
+    get_provider, resolve_provider_binary, AuthStrategy, CliAuthCommands, ProviderConfig,
+};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
@@ -53,52 +55,20 @@ pub fn empty_result() -> AgentDoctorResult {
     }
 }
 
-fn check_claude_doctor(app: &AppHandle) -> AgentDoctorResult {
+fn check_cli_doctor(
+    provider: &ProviderConfig,
+    commands: CliAuthCommands,
+    app: &AppHandle,
+) -> AgentDoctorResult {
     let mut result = empty_result();
-    let bin = resolve_binary("claude-agent-acp", app).or_else(|| resolve_binary("claude", app));
-
-    let bin_path = match bin {
+    let bin_path = match resolve_provider_binary(provider, app) {
         Some(p) => p,
         None => return result,
     };
 
     result.installed = true;
-    let status_out = run_capture(&bin_path, &["auth", "status"])
-        .or_else(|_| run_capture(&bin_path, &["--cli", "auth", "status"]));
 
-    if let Ok(out) = status_out {
-        let combined = format!("{} {}", out.stdout, out.stderr);
-        if combined.contains("\"loggedIn\":true")
-            || combined.contains("\"loggedIn\": true")
-            || combined.contains("Logged in")
-        {
-            result.authenticated = true;
-            result.usable = true;
-        }
-    }
-
-    if let Ok(v_out) = run_capture(&bin_path, &["--version"]) {
-        result.version = Some(v_out.stdout.trim().to_string());
-    }
-
-    result
-}
-
-fn check_codex_doctor(app: &AppHandle) -> AgentDoctorResult {
-    let mut result = empty_result();
-    let bin = resolve_binary("codex-acp", app).or_else(|| resolve_binary("codex", app));
-
-    let bin_path = match bin {
-        Some(p) => p,
-        None => return result,
-    };
-
-    result.installed = true;
-    let status_out = run_capture(&bin_path, &["cli", "login", "status"])
-        .or_else(|_| run_capture(&bin_path, &["login", "status"]))
-        .or_else(|_| run_capture(&bin_path, &["auth", "status"]));
-
-    if let Ok(out) = status_out {
+    if let Ok(out) = run_capture(&bin_path, commands.status_args) {
         let combined = format!("{} {}", out.stdout, out.stderr);
         if combined.contains("\"loggedIn\":true")
             || combined.contains("\"loggedIn\": true")
@@ -117,17 +87,13 @@ fn check_codex_doctor(app: &AppHandle) -> AgentDoctorResult {
 }
 
 pub fn doctor(provider_id: &str, app: &AppHandle) -> AgentDoctorResult {
-    let normalized = match provider_id {
-        "claude-code" | "claude-acp" | "claude" => "claude-acp",
-        "codex" | "codex-acp" => "codex-acp",
-        "antigravity" | "antigravity-acp" | "gemini" | "agy" => "antigravity-acp",
-        _ => provider_id,
+    let provider = match get_provider(provider_id) {
+        Some(p) => p,
+        None => return empty_result(),
     };
 
-    match normalized {
-        "claude-acp" => check_claude_doctor(app),
-        "codex-acp" => check_codex_doctor(app),
-        "antigravity-acp" => check_antigravity_doctor(app, empty_result()),
-        _ => empty_result(),
+    match provider.auth {
+        AuthStrategy::CliAuth(commands) => check_cli_doctor(provider, commands, app),
+        AuthStrategy::AcpAuth => check_antigravity_doctor(provider, app, empty_result()),
     }
 }

@@ -12,14 +12,21 @@
  * finds them at runtime through `createRequire`, which esbuild cannot see and
  * must not try to follow — they are separate processes installed into the
  * app's data directory, not libraries of this one.
+ *
+ * node-pty is the one dependency esbuild cannot finish on its own: it inlines
+ * the JS, but the JS loads `prebuilds/<platform>-<arch>/pty.node` at import
+ * time. That file is copied next to the bundle here and shipped through
+ * `bundle.resources`.
  */
 import { build } from "esbuild";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { copyPtyNative } from "./pty-native.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktop = join(here, "..");
-const outfile = join(desktop, "src-tauri", "resources", "server.mjs");
+const resourcesDir = join(desktop, "src-tauri", "resources");
+const outfile = join(resourcesDir, "server.mjs");
 
 const result = await build({
   entryPoints: [join(desktop, "server", "index.ts")],
@@ -49,6 +56,16 @@ const result = await build({
     ].join("\n"),
   },
 });
+
+const native = copyPtyNative({
+  bundleInputs: result.metafile.inputs,
+  resourcesDir,
+});
+console.log(
+  native.skipped
+    ? `[bundle-server] no native files copied: ${native.skipped}`
+    : `[bundle-server] ${native.platformArch} native: ${native.copied.join(", ")} -> ${native.targetDir}`,
+);
 
 const bytes = Object.values(result.metafile.outputs).reduce(
   (total, output) => total + output.bytes,

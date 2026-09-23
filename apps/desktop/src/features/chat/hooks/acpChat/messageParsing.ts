@@ -1,7 +1,22 @@
 import type { ToolCallStatus } from "@agentclientprotocol/sdk";
-import type { ChatImageAttachment, ToolDiff } from "./types";
+import type { ChatImageAttachment, ToolDiff, ToolEntry } from "./types";
 
 export const TERMINAL_STATUS = new Set<ToolCallStatus>(["completed", "failed"]);
+
+/**
+ * Close out every call the engine left open. Returns the same array when
+ * there was nothing to seal, so callers can skip a re-render.
+ */
+export function sealRunningTools(
+  tools: readonly ToolEntry[],
+  endedAt: number,
+): readonly ToolEntry[] {
+  const isOpen = (tool: ToolEntry) => !TERMINAL_STATUS.has(tool.status) && !tool.interrupted;
+  if (!tools.some(isOpen)) return tools;
+  return tools.map((tool) =>
+    isOpen(tool) ? { ...tool, interrupted: true, endedAt: tool.endedAt ?? endedAt } : tool,
+  );
+}
 
 /** Pull plain-text output out of an ACP tool call's `content` array. */
 export function toolText(content: unknown): string | undefined {

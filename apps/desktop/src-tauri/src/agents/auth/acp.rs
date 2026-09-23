@@ -9,7 +9,7 @@ pub struct AcpAuthResult {
     pub error: Option<String>,
 }
 
-fn send_jsonrpc_request(
+pub(crate) fn send_jsonrpc_request(
     stdin: &mut std::process::ChildStdin,
     id: u64,
     method: &str,
@@ -29,7 +29,7 @@ fn send_jsonrpc_request(
     Ok(())
 }
 
-fn read_jsonrpc_response(
+pub(crate) fn read_jsonrpc_response(
     reader: &mut BufReader<std::process::ChildStdout>,
     expected_id: u64,
 ) -> Result<Value, String> {

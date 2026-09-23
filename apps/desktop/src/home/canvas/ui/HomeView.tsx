@@ -47,10 +47,12 @@ function seedLayout(
 
 export function HomeView({
   onOpenAgent,
+  onOpenProject,
   onCreateProject,
   onStartChat,
 }: {
   onOpenAgent: (agentId: string) => void;
+  onOpenProject?: (projectDir: string) => void;
   onCreateProject?: () => void;
   onStartChat?: () => void;
 }) {
@@ -118,6 +120,7 @@ export function HomeView({
         recenterTarget={recenterTarget}
         onOpenAgent={onOpenAgent}
         onTagAgentInComposer={onOpenAgent}
+        onOpenProject={onOpenProject}
       />
       <GreeterWidget />
     </div>

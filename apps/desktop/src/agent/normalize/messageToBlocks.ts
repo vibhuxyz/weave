@@ -223,6 +223,24 @@ export function messageToBlocks(options: {
     }
   }
 
+  // A tool Weave refused on its own never produced output, so it would
+  // otherwise appear in the log as a step that did nothing for no stated
+  // reason — which reads as the agent hanging.
+  for (const tool of options.tools) {
+    if (!tool.blockedReason) continue;
+    blocks.push({
+      id: `blocked-${tool.id}`,
+      schemaVersion: 1,
+      source: emptySource(tool.sourceEventIds, tool.sourceSeq),
+      sourceEventIds: tool.sourceEventIds,
+      sourceSeq: tool.sourceSeq,
+      type: "permission",
+      title: tool.title,
+      decision: "reject",
+      reason: tool.blockedReason,
+    });
+  }
+
   blocks.push(...toolBlocks);
 
   if (options.checkpoint) {
@@ -255,7 +273,7 @@ export function messageToBlocks(options: {
     blocks.filter(
       (b) => b.type === "finding" && (b.severity === "critical" || b.severity === "high"),
     ).length +
-    (testBlock?.steps.filter((s) => s.status === "failed").length ?? 0);
+    (testBlock?.steps.filter((s) => s.status === "failed" && !s.superseded).length ?? 0);
   meta.changed = meta.filesChanged > 0 || mutatesState(options.tools);
 
   if (options.usage) {

@@ -2,26 +2,10 @@ import { useRef } from "react";
 import { BerdLoaderInline } from "@/shared/ui";
 import { Shimmer } from "@/shared/ui/ai-elements";
 import { cn } from "@/shared/lib";
-import type { ChatTurn, ToolEntry } from '@/features/chat/hooks';
-import { formatElapsed, useNow, formatTokens, activeTitle, shorten } from "@/agent/lib";
+import type { ChatTurn } from '@/features/chat/hooks';
+import { formatElapsed, useNow, formatTokens, currentActivity } from "@/agent/lib";
 /** Config keys different engines use for the reasoning-effort knob. */
 const EFFORT_KEYS = ["effort", "reasoningEffort", "model_reasoning_effort"];
-
-function isRunning(tool: ToolEntry) {
-  return tool.status === "in_progress" || tool.status === "pending";
-}
-
-/** What the agent is doing right now, as a lowercase verb phrase. */
-function activityLabel(turn: ChatTurn, projectDir: string | null): string {
-  const tool = turn.tools.filter(isRunning).at(-1);
-  if (tool) {
-    if (tool.kind === "think") {
-      return `exploring — ${shorten(tool.title, projectDir)}`;
-    }
-    return shorten(activeTitle(tool.title), projectDir).toLowerCase();
-  }
-  return turn.thought.trim().length > 0 ? "thinking" : "working";
-}
 
 function tokenLabel(usage: ChatTurn["usage"]): string | null {
   if (!usage) return null;
@@ -59,12 +43,10 @@ export function AgentStatusLine({
 
   const elapsed = formatElapsed(now - startedAt.current);
   const effort = EFFORT_KEYS.map((k) => configValues[k]).find(Boolean);
-  const activity = activityLabel(turn, projectDir ?? null);
-  const detail = [
-    elapsed,
-    tokenLabel(turn.usage),
-    effort ? `${activity} with ${effort} effort` : activity,
-  ].filter(Boolean);
+  // The row already says "Working…", so a generic activity would only repeat it.
+  const activity = currentActivity(turn, projectDir ?? null)?.toLowerCase() ?? null;
+  const work = [activity, effort ? `${effort} effort` : null].filter(Boolean).join(" with ");
+  const detail = [elapsed, tokenLabel(turn.usage), work || null].filter(Boolean);
 
   return (
     <div className="dark flex items-center gap-2 px-1 text-agent-text-faint">

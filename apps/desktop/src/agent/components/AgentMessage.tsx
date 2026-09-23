@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { cn } from "@/shared/lib";
+import { cn, type PlanExitIntent } from "@/shared/lib";
 import type { GitStatus } from "../../../server/index.ts";
 import type { ChatTurn, TurnPlan } from '@/features/chat/hooks';
 import { type AgentBlock, type BlockAction, emptySource, messageToBlocks } from "@/agent/normalize";
@@ -62,6 +62,7 @@ export function AgentMessage({
   diffOpen,
   depth = "normal",
   otherEngines,
+  isLatestTurn = true,
 }: {
   turn: ChatTurn;
   projectDir: string | null;
@@ -74,7 +75,7 @@ export function AgentMessage({
   onSend?: (text: string) => void;
   onUpdatePlan?: (turnId: string, plan: TurnPlan) => void;
   /** Take the engine out of plan mode — called when a plan is approved. */
-  onExitPlanMode?: () => void;
+  onExitPlanMode?: (intent?: PlanExitIntent) => void;
   /** Hand this turn's file changes to the side panel, optionally one file. */
   onOpenDiff?: (path?: string) => void;
   /** The side panel is currently showing this turn's diff. */
@@ -84,6 +85,8 @@ export function AgentMessage({
   /** Installed engines other than `engineId` — the checkpoint's "Continue
    * with" choices. */
   otherEngines?: { id: string; label: string }[];
+  /** False once later turns exist — a stale plan block never re-prompts. */
+  isLatestTurn?: boolean;
 }) {
   const viewModel = useMemo(
     () =>
@@ -192,6 +195,7 @@ export function AgentMessage({
             onUpdatePlan,
             onExitPlanMode,
             stopRun,
+            isLatestTurn,
           )
         )}
         {diff.files.length > 0 && (
@@ -218,8 +222,9 @@ function renderBlocks(
   changed?: boolean,
   engineLabel?: string,
   onUpdatePlan?: (turnId: string, plan: TurnPlan) => void,
-  onExitPlanMode?: () => void,
+  onExitPlanMode?: (intent?: PlanExitIntent) => void,
   onStop?: () => void,
+  isLatestTurn?: boolean,
 ) {
   const toolBlocks = blocks.filter(
     (block): block is Extract<AgentBlock, { type: "tool" }> =>
@@ -291,6 +296,7 @@ function renderBlocks(
                 onUpdatePlan={(plan) =>
                   onUpdatePlan?.(block.turnId ?? block.id, plan)
                 }
+                isLatestTurn={isLatestTurn}
               />
             );
             break;

@@ -12,6 +12,8 @@ export {
 } from "./runnableShellCommand";
 export {
   flattenConfigValues,
+  planExitTarget,
   splitConfigOptions,
 } from "./sessionConfig";
+export type { PlanExitIntent } from "./sessionConfig";
 export { extractDomain, isUrlTrusted, trustDomain } from "./trustedDomains";

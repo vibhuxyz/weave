@@ -27,4 +27,5 @@ export interface EngineAuthOperation {
   status: EngineAuthStatus;
   output: string[];
   error: string | null;
+  acceptsInput: boolean;
 }

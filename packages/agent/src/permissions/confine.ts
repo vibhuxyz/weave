@@ -6,10 +6,13 @@ import type {
 import { firstMatch } from "./globs.ts";
 import { isInside, relativeInside } from "./path-confinement.ts";
 import { extractCommand, inspectCommandBoundaries } from "./command-safety.ts";
+import { classifyCommand } from "./read-only-commands.ts";
 import {
+  changesAnythingInPlanMode,
   findAllowOption,
   findRejectOption,
   isPlanModeExit,
+  PLAN_MODE_ID,
 } from "./options.ts";
 import type {
   PermissionDecision,
@@ -153,19 +156,65 @@ export const confineToTaskDir: PermissionPolicy = (task, request) => {
   return { decision: "allow", optionId: allow.optionId, reason };
 };
 
+const PLAN_MODE_REASON =
+  "plan mode: Weave is holding every change until the user approves a plan — " +
+  "keep reading and present the plan instead of editing";
+
+export interface GuardedPolicyOptions {
+  /**
+   * The agent's mode, read at decision time rather than captured once. The
+   * user can switch mid-turn, and an engine that passes its mode as a spawn
+   * flag will not apply the change to the turn already running.
+   */
+  readonly currentModeId?: () => string | null;
+}
+
+/**
+ * The task's guard, then the mode, then the user.
+ *
+ * A command that only reports — `grep`, `find`, `git status` — is answered
+ * here rather than shown: it has already cleared `confineToTaskDir`, so asking
+ * about it buys no safety and trains the user to click through the cards that
+ * do matter. Anything that could write, install, delete or reach the network
+ * still goes to them.
+ */
 export function createGuardedPermissionPolicy(
   prompter?: PermissionPrompter,
+  { currentModeId }: GuardedPolicyOptions = {},
 ): PermissionPolicy {
   return async (task, request) => {
     const autoDecision = await confineToTaskDir(task, request);
-    if (autoDecision.decision === "reject") return autoDecision;
+    // Marked as ours so the client can tell the user: a refusal they never saw
+    // a card for otherwise reads as the agent hanging.
+    if (autoDecision.decision === "reject") return { ...autoDecision, source: "policy" };
 
     const command = extractCommand(request.toolCall.rawInput);
-    const isExecute = request.toolCall.kind === "execute" || command !== null;
-    if (isExecute && prompter) {
-      return await prompter(task, request, command);
+    const classified = command === null ? null : classifyCommand(command);
+    const commandIsReadOnly = classified?.kind === "read-only";
+
+    if (
+      currentModeId?.() === PLAN_MODE_ID &&
+      changesAnythingInPlanMode(request, { commandIsReadOnly })
+    ) {
+      return {
+        decision: "reject",
+        optionId: findRejectOption(request) ?? undefined,
+        reason: PLAN_MODE_REASON,
+        source: "policy",
+      };
     }
-    return autoDecision;
+
+    const isExecute = request.toolCall.kind === "execute" || command !== null;
+    if (!isExecute || !prompter) return autoDecision;
+
+    if (classified?.kind === "read-only") {
+      return {
+        ...autoDecision,
+        reason: `read-only ${classified.binary}; ${autoDecision.reason}`,
+      };
+    }
+
+    return await prompter(task, request, command);
   };
 }
 

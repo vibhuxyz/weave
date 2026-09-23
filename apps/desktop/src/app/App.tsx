@@ -14,7 +14,7 @@ import {
   ActivityIcon,
   XIcon,
 } from "lucide-react";
-import { Button, ComposerActionButton, ComposerSendButton, GlassButton, ImageLightbox, JumpToLatestButton, DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger, ConfigPicker, Popover, PopoverContent, PopoverTrigger } from "@/shared/ui";
+import { Button, ComposerActionButton, ComposerSendButton, ConfirmDialog, GlassButton, ImageLightbox, JumpToLatestButton, DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger, ConfigPicker, Popover, PopoverContent, PopoverTrigger } from "@/shared/ui";
 import { DefaultProjectGlyphIcon } from "@/features/projects/ui";
 import type { ChatImageAttachmentDraft } from "@/shared/types/messages";
 import {
@@ -23,16 +23,30 @@ import {
   useResizableSidebar,
   useTextareaAutosize,
 } from "@/shared/hooks";
-import { cn, flattenConfigValues, splitConfigOptions } from "@/shared/lib";
+import { cn, flattenConfigValues, planExitTarget, splitConfigOptions, type PlanExitIntent } from "@/shared/lib";
 import { Message, MessageContent } from "@/shared/ui/ai-elements";
 import { isAuthRequiredError } from "@weave/protocol";
-import { ENGINES, DEFAULT_ENGINE_ID } from "@weave/agent/browser";
+import { ENGINES, DEFAULT_ENGINE_ID, tokenReportingFor } from "@weave/agent/browser";
 import { EnginePicker } from '@/features/engines/components';
 import { SettingsView } from '@/features/settings';
-import { ContextPanel, UserMessage, type ContextPanelTab } from '@/features/chat/components';
+import { ChatSkeleton, ContextPanel, EngineSetupPanel, hasSelectableModes, ModePicker, PermissionCard, UserMessage, type ContextPanelTab } from '@/features/chat/components';
 
 /** Inspector width: the spec's 400px to start, dragged from its left edge. */
 const INSPECTOR_DEFAULT_WIDTH = 400;
+
+/**
+ * The transcript widens with the window rather than sitting at one cap: a
+ * full-screen display was leaving most of the row empty, while an unbounded
+ * column would run prose past the width anyone reads comfortably.
+ */
+const TRANSCRIPT_WIDTH = "mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl";
+
+/**
+ * The composer stays at the narrower cap the transcript used to share. One line
+ * of input stretched to the full width of a large display reads as a gap in the
+ * page rather than a place to type.
+ */
+const COMPOSER_WIDTH = "mx-auto w-full max-w-4xl";
 import { DepthPicker, TurnDiffPanel, type DepthLevel, AgentMessage, AgentStatusLine, ThinkingBlock } from "@/agent/components";
 import { collectTurnDiffs } from "@/agent/diff";
 import { Sidebar } from "./Sidebar";
@@ -51,10 +65,20 @@ import { EngineAuthPanel } from "@/features/auth";
 import { HomeView } from "@/home/canvas/ui";
 import { basename } from '@/features/projects/lib';
 import { useAcpChat, type ChatImageAttachment, type ConversationMeta } from '@/features/chat/hooks';
-import { useProject, useProjects, type ProjectEntry } from '@/features/projects/hooks';
+import {
+  AutoCompactSetting,
+  CompactionNoticeRow,
+  ContextUsageButton,
+  HistoryGapRow,
+  mergeDraftImages,
+  mergeDraftText,
+} from '@/features/chat/compaction';
+import { useProject, useProjectHomePins, useProjects, type ProjectEntry } from '@/features/projects/hooks';
+import { useNewChatInProject } from "./use-new-chat-in-project";
 import { useRunningServers } from '@/features/engines/hooks';
 import { useHarnesses } from '@/features/settings/hooks';
 import { UsageLimitIsland, useQuotaStore } from "@/features/quota";
+import { StartupSplash, useStartupSplash } from "@/features/startup";
 
 function QuotaButton({ engineId }: { engineId: string | null | undefined }) {
   const isQuotaOpen = useQuotaStore((s) => s.isOpen);
@@ -102,7 +126,21 @@ export function App() {
     pluginCatalog,
     chats,
     activeSessionId,
+    permissionRequest,
+    answerPermission,
+    modes,
+    setMode,
+    engineSetup,
+    startEngineSetup,
+    cancelEngineSetup,
+    sendSetupKey,
+    submitSetupConsent,
+    isOpeningChat,
     send,
+    compact,
+    isCompacting,
+    isCompactSupported,
+    contextUsage,
     switchEngine,
     isSwitchingEngine,
     targetEngineId,
@@ -110,6 +148,7 @@ export function App() {
     authOperation,
     startAuth,
     cancelAuth,
+    submitAuthInput,
     clearAuth,
     fileMatches,
     requestFiles,
@@ -126,10 +165,18 @@ export function App() {
     updateTurnPlan,
   } = useAcpChat(port);
 
-  const { enrichedEngines, setupHarness } = useHarnesses({ engines, onRefreshEngines: refreshEngines });
+  const { enrichedEngines } = useHarnesses({ engines, onRefreshEngines: refreshEngines });
+  const startupSplash = useStartupSplash({
+    project,
+    connection,
+    hasAuthPrompt: authRequired !== null,
+    hasError: error !== null,
+  });
 
-  const { projects, remember, setProjectAgents, setProjectPlugins, forget } =
+  const { projects, remember, setProjectAgents, setProjectPlugins, archive, unarchive } =
     useProjects();
+  const { pinnedDirs: homeProjectDirs, togglePin: toggleProjectHome } = useProjectHomePins();
+  const [archivingProject, setArchivingProject] = useState<ProjectEntry | null>(null);
   const { agents } = useAgents();
   const { plugins: skillPlugins } = useSkillPlugins();
   const [createOpen, setCreateOpen] = useState(false);
@@ -186,14 +233,38 @@ export function App() {
     setManualActive([]);
     setSelectedAgentId(null);
   }, [project, choose, newChat, setView]);
+  const openProject = useCallback(
+    (dir: string) => {
+      setView("chat");
+      if (dir === activeDir) return;
+      const entry = projects.find((p) => p.dir === dir);
+      void startWith(dir, entry?.engineId);
+    },
+    [activeDir, projects, startWith, setView],
+  );
+  const newChatInProject = useNewChatInProject({
+    activeDir,
+    connection,
+    startNewChat,
+    openProject,
+  });
+  const confirmArchiveProject = useCallback(
+    (entry: ProjectEntry) => {
+      archive(entry.dir, new Date());
+      if (entry.dir !== activeDir) return;
+      const next = projects.find((p) => p.dir !== entry.dir && !p.archivedAt);
+      if (next) void startWith(next.dir, next.engineId);
+    },
+    [archive, activeDir, projects, startWith],
+  );
   const openChatAndShow = useCallback(
     (sessionId: string) => {
       setView("chat");
-      // Already the active chat with its transcript loaded — just show it.
-      if (sessionId === activeSessionId && turns.length > 0) return;
+      // Already the active chat, either loaded or still arriving — just show it.
+      if (sessionId === activeSessionId && (turns.length > 0 || isOpeningChat)) return;
       openChat(sessionId);
     },
-    [openChat, setView, activeSessionId, turns.length],
+    [openChat, setView, activeSessionId, turns.length, isOpeningChat],
   );
 
   // Every project dir Weave knows about, so a container started for one of
@@ -271,12 +342,23 @@ export function App() {
     [project, choose, startWith, newChat, setView],
   );
 
+  /**
+   * The mode is shown once. An agent may advertise it twice — agy sends both
+   * native session modes and a `mode` config option for the same `--mode` —
+   * and two pills for one setting is how the composer ended up showing a
+   * chosen mode beside a stale one.
+   */
+  const showsNativeModes = hasSelectableModes(modes);
+
   /** What this agent advertises, sorted into the composer's three slots. */
   const {
     model: modelOption,
     primary: primaryConfigOption,
     children: childConfigOptions,
-  } = useMemo(() => splitConfigOptions(configOptions), [configOptions]);
+  } = useMemo(
+    () => splitConfigOptions(configOptions, { hasNativeModes: showsNativeModes }),
+    [configOptions, showsNativeModes],
+  );
 
   /**
    * Drop the engine out of "plan" mode — run on plan approval so the follow-up
@@ -347,16 +429,29 @@ export function App() {
     }
   }, [activeDir, chats, setChatsByProject]);
 
-  const exitPlanMode = useCallback(() => {
-    if (!primaryConfigOption) return;
-    if (configValues[primaryConfigOption.id] !== "plan") return;
-    const values = flattenConfigValues(primaryConfigOption);
-    const target =
-      values.find((v) => v.value === "acceptEdits") ??
-      values.find((v) => v.value === "default") ??
-      values.find((v) => v.value !== "plan");
-    if (target) setConfig(primaryConfigOption.id, target.value);
-  }, [primaryConfigOption, configValues, setConfig]);
+  const exitPlanMode = useCallback(
+    (intent: PlanExitIntent = "accept-edits") => {
+      // Native modes first: with them advertised the config pill is hidden, and
+      // for agy `session/set_mode` is what writes through to its `--mode`.
+      if (hasSelectableModes(modes)) {
+        if (modes.currentModeId !== "plan") return;
+        const target = planExitTarget(
+          modes.availableModes.map((mode) => mode.id),
+          intent,
+        );
+        if (target) setMode(target);
+        return;
+      }
+      if (!primaryConfigOption) return;
+      if (configValues[primaryConfigOption.id] !== "plan") return;
+      const target = planExitTarget(
+        flattenConfigValues(primaryConfigOption).map((value) => value.value),
+        intent,
+      );
+      if (target) setConfig(primaryConfigOption.id, target);
+    },
+    [modes, setMode, primaryConfigOption, configValues, setConfig],
+  );
 
   useEffect(() => {
     const want = pendingAgentModel.current;
@@ -384,7 +479,6 @@ export function App() {
     { previewUrl: string; name?: string } | null
   >(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { resetHeight: resetComposerHeight } = useTextareaAutosize({
     textareaRef,
@@ -479,8 +573,17 @@ export function App() {
     setAtBottom(bottom);
   }, []);
 
+  // `scrollIntoView` walks every scrollable ancestor to bring the target into
+  // view — including `<main>`, which is `overflow-hidden` and therefore still
+  // a valid (if invisible) scroll container. If its content is ever even a
+  // fraction taller than its box, that walk scrolls `<main>` itself, shifting
+  // the whole transcript+composer column up and exposing blank space below
+  // the composer. Scrolling the known transcript container directly avoids
+  // that ancestor walk entirely.
   const jumpToLatest = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, []);
 
   const [installingEngineId, setInstallingEngineId] = useState<string | null>(null);
@@ -523,9 +626,12 @@ export function App() {
 
   useEffect(() => {
     // Only follow the stream if the user is already at the live edge —
-    // otherwise scrolling up to read is fought by every new chunk.
+    // otherwise scrolling up to read is fought by every new chunk. Scrolls
+    // the transcript container directly for the same reason as
+    // `jumpToLatest` above — `scrollIntoView` would also drag `<main>`.
     if (atBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      const el = scrollRef.current;
+      el?.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
   }, [turns]);
 
@@ -767,12 +873,18 @@ export function App() {
         : `[Planning Mode]\nPlease inspect the current status and propose a step-by-step execution plan inside a <plan> block with numbered steps before modifying any files or running commands.`;
     }
 
+    const withdrawnDraft = draft;
+    const withdrawnImages = imageAttachments;
     send(textToSend, {
       persona: [persona, plugins].filter(Boolean).join("\n\n") || undefined,
       mentions: mentioned.map((a) => a.name),
       personas,
       images: imageAttachments,
       plugins: activePlugins.activeRefs,
+      onWithdrawn: () => {
+        setDraft((current) => mergeDraftText(current, withdrawnDraft));
+        setImageAttachments((current) => mergeDraftImages(current, withdrawnImages));
+      },
     });
     setImageAttachments([]);
     setDraft("");
@@ -901,6 +1013,11 @@ export function App() {
               engines={enrichedEngines}
               onRefreshEngines={refreshEngines}
               onBack={closeSettings}
+              behaviorSettings={<AutoCompactSetting />}
+              onSignInWithEngine={(id) => {
+                closeSettings();
+                handleSelectEngine(id);
+              }}
             />
           </div>
         ) : (
@@ -936,13 +1053,10 @@ export function App() {
                 setEditingProject(entry);
                 setCreateOpen(true);
               }}
-              onRemoveProject={(dir) => {
-                forget(dir);
-                if (dir === activeDir) {
-                  const next = projects.find((p) => p.dir !== dir);
-                  if (next) void startWith(next.dir, next.engineId);
-                }
-              }}
+              onArchiveProject={setArchivingProject}
+              onNewChatInProject={newChatInProject}
+              homeProjectDirs={homeProjectDirs}
+              onToggleProjectHome={toggleProjectHome}
               chats={chats}
               chatsByProject={chatsByProject}
               activeSessionId={activeSessionId}
@@ -969,7 +1083,7 @@ export function App() {
             card, which boxed Home's canvas and the Agents grid inside a second
             surface — the sidebar is the only chrome that should read as one. */}
         <main
-          className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
+          className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           onDragOver={(e) => {
             if (view !== "chat" || !e.dataTransfer.types.includes("Files")) return;
             e.preventDefault();
@@ -1008,23 +1122,8 @@ export function App() {
                       ? authOperation
                       : null
                   }
-                  onStart={async (methodId, secret) => {
-                    const eng = authRequired.engineId;
-                    if (eng === "antigravity" || eng === "gemini") {
-                      try {
-                        await setupHarness({ id: "antigravity", label: "Antigravity", subtitle: "" }, methodId);
-                        clearAuth();
-                        switchEngine("antigravity");
-                        refreshEngines();
-
-                      } catch (err) {
-                        console.error("Auth failed via setupHarness", err);
-                      }
-                    } else {
-                      startAuth(eng, methodId, secret);
-                    }
-                  }}
-
+                  onStart={(methodId, secret) => startAuth(authRequired.engineId, methodId, secret)}
+                  onSubmitInput={submitAuthInput}
                   onCancel={cancelAuth}
                   onDismiss={clearAuth}
                 />
@@ -1055,7 +1154,13 @@ export function App() {
             );
           })()}
         {view === "agents" ? (
-          <AgentsView onChat={handleChatWithAgent} engines={enrichedEngines} />
+          <AgentsView
+            onChat={(agent, message) => {
+              handleChatWithAgent(agent);
+              if (message) setDraft(message);
+            }}
+            engines={enrichedEngines}
+          />
         ) : view === "plugins" ? (
           <PluginsView
             catalog={pluginCatalog}
@@ -1083,20 +1188,31 @@ export function App() {
               setCreateOpen(true);
             }}
             onStartChat={startNewChat}
+            onOpenProject={openProject}
           />
         ) : (
         <div
           ref={scrollRef}
           onScroll={onTranscriptScroll}
-          className="mx-auto flex w-full max-w-4xl min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] pt-6 pb-24"
+          className={cn(
+            TRANSCRIPT_WIDTH,
+            "flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] pt-6 pb-24",
+          )}
         >
-          {turns.length === 0 && ready && (
+          {isOpeningChat && <ChatSkeleton />}
+          {!isOpeningChat && turns.length === 0 && ready && (
             <p className="mt-16 text-center text-sm text-muted-foreground">
               Send a message to start this chat.
             </p>
           )}
-          {turns.map((turn) =>
-            turn.role === "user" ? (
+          {!isOpeningChat && turns.map((turn) =>
+            turn.role === "notice" ? (
+              turn.compaction ? (
+                <CompactionNoticeRow key={turn.id} notice={turn.compaction} />
+              ) : turn.historyGap ? (
+                <HistoryGapRow key={turn.id} count={turn.historyGap} />
+              ) : null
+            ) : turn.role === "user" ? (
               <UserMessage
                 key={turn.id}
                 text={turn.text}
@@ -1163,6 +1279,7 @@ export function App() {
                       onSend={send}
                       onUpdatePlan={updateTurnPlan}
                       onExitPlanMode={exitPlanMode}
+                      isLatestTurn={turn === turns.at(-1)}
                       depth={depth}
                       otherEngines={enrichedEngines
                         .filter((e) => e.installed && e.id !== engineId)
@@ -1181,6 +1298,23 @@ export function App() {
               </MessageContent>
             </Message>
             ),
+          )}
+
+          {engineSetup && (
+            <EngineSetupPanel
+              setup={engineSetup}
+              onStart={startEngineSetup}
+              onCancel={cancelEngineSetup}
+              onKey={sendSetupKey}
+              onSubmitConsent={submitSetupConsent}
+            />
+          )}
+
+          {permissionRequest && (
+            <PermissionCard
+              request={permissionRequest}
+              onAnswer={answerPermission}
+            />
           )}
 
           {busy && turns.at(-1)?.role === "user" && (
@@ -1202,18 +1336,20 @@ export function App() {
               </MessageContent>
             </Message>
           )}
-
-          <div ref={bottomRef} />
         </div>
         )}
 
         <div
           className={cn(
-            "relative z-10 mt-auto w-full shrink-0 pb-6",
+            // pt-4 is the gap to the transcript: the scroll area ends at this
+            // element's edge, so without it the last visible line sits flush
+            // against the input. Padding, not margin — mt-auto anchors this to
+            // the bottom and a second margin utility would replace it.
+            "relative z-10 mt-auto w-full shrink-0 pt-4 pb-6",
             view === "home"
               ? "ml-auto max-w-md px-[var(--spacing-app-panel-gutter-inline)]"
-              // Same cap as the transcript so the composer lines up with the cards.
-              : "mx-auto max-w-4xl px-[var(--spacing-app-panel-gutter-inline)]",
+              // Narrower than the transcript on purpose, and centred under it.
+              : cn(COMPOSER_WIDTH, "px-[var(--spacing-app-panel-gutter-inline)]"),
           )}
         >
           {view === "chat" && !atBottom && turns.length > 0 && (
@@ -1606,6 +1742,12 @@ export function App() {
                   onRequestManageProviders={openSettings}
                 />
 
+                <ModePicker
+                  modes={modes}
+                  onSelect={setMode}
+                  disabled={!ready || busy || isCompacting}
+                />
+
                 <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
                   <PopoverTrigger asChild>
                     <ComposerActionButton
@@ -1693,13 +1835,24 @@ export function App() {
                     childOptions={childConfigOptions}
                     childValues={configValues}
                     onSelect={setConfig}
-                    disabled={!ready || busy}
+                    disabled={!ready || busy || isCompacting}
                   />
                 )}
               </div>
               {/* One action cluster: attach sits immediately left of send, and
                   keeps its place when send becomes stop. */}
               <div className="flex shrink-0 items-center gap-2">
+                {ready && engineId && (
+                  <ContextUsageButton
+                    usage={contextUsage}
+                    engineLabel={engineLabel ?? engineId}
+                    reportsContextUsage={tokenReportingFor(engineId).contextWindow}
+                    isCompactSupported={isCompactSupported}
+                    canCompact={ready && !busy && !isCompacting && turns.length > 0}
+                    isCompacting={isCompacting}
+                    onCompact={compact}
+                  />
+                )}
                 <ComposerActionButton
                   type="button"
                   size="icon-sm"
@@ -1710,7 +1863,7 @@ export function App() {
                 >
                   <ImagePlusIcon />
                 </ComposerActionButton>
-                {busy ? (
+                {busy || isCompacting ? (
                   <ComposerSendButton state="stop" onClick={cancel} />
                 ) : (
                   <ComposerSendButton
@@ -1834,7 +1987,22 @@ export function App() {
         onPreviewTint={setPreviewTint}
         onCreate={({ dir, ...meta }) => {
           remember(dir, editingProject?.engineId, meta);
+          unarchive(dir);
           if (!editingProject && dir !== activeDir) void startWith(dir);
+        }}
+      />
+      <ConfirmDialog
+        open={archivingProject !== null}
+        onOpenChange={(open) => {
+          if (!open) setArchivingProject(null);
+        }}
+        title={`Archive ${archivingProject?.name || (archivingProject ? basename(archivingProject.dir) : "project")}?`}
+        description="It will be hidden from the sidebar. Its chats and files stay untouched, and opening the same folder again brings it back."
+        cancelLabel="Cancel"
+        confirmLabel="Archive"
+        onConfirm={() => {
+          if (archivingProject) confirmArchiveProject(archivingProject);
+          setArchivingProject(null);
         }}
       />
 
@@ -1847,6 +2015,11 @@ export function App() {
         onOpenChange={(open) => {
           if (!open) setLightboxImage(null);
         }}
+      />
+      <StartupSplash
+        isVisible={startupSplash.isVisible}
+        message={startupSplash.message}
+        progress={startupSplash.progress}
       />
     </div>
   );

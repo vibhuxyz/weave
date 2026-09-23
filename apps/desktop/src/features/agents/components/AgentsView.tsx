@@ -1,33 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import {
-  CopyIcon,
-  HomeIcon,
-  MoreHorizontalIcon,
-  PencilIcon,
-  PlusIcon,
-  RotateCcwIcon,
-  Trash2Icon,
-} from "lucide-react";
-import { cn } from "@/shared/lib";
-import { AgentTileButton, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui";
+import { PlusIcon } from "lucide-react";
 import { useHomeWidgetStore } from "@/home/canvas/stores";
-import { useAgents, type Agent, type AgentDraft } from '@/features/agents/hooks';
-import { AgentAvatar } from '@/features/agents/components';
-import { AgentDialog } from '@/features/agents/components/AgentDialog';
+import { useAgents, type Agent, type AgentDraft } from "@/features/agents/hooks";
+import { AgentCard } from "./AgentCard";
+import { AgentDetailView } from "./AgentDetailView";
+import { AgentDialog } from "./AgentDialog";
 
 export function AgentsView({
   onChat,
   engines,
 }: {
-  /** Start a chat as this agent. */
-  onChat: (agent: Agent) => void;
+  /** Start a chat as this agent, optionally pre-filling the composer. */
+  onChat: (agent: Agent, message?: string) => void;
   engines: { id: string; label: string; installed: boolean }[];
 }) {
   const { agents, create, update, remove, duplicate, resetBuiltin, isBuiltinModified } =
     useAgents();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Agent | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const viewing = viewingId ? agents.find((agent) => agent.id === viewingId) ?? null : null;
 
   // "Add to home" pins the agent as a widget on the Home canvas. The canvas
   // store is normally initialised by HomeView; do it here too so the action
@@ -78,6 +71,42 @@ export function AgentsView({
     else create(draft);
   };
 
+  const dialog = (
+    <AgentDialog
+      open={dialogOpen}
+      onOpenChange={setDialogOpen}
+      editing={editing}
+      onSubmit={handleSubmit}
+      engines={engines}
+    />
+  );
+
+  if (viewing) {
+    return (
+      <>
+        <AgentDetailView
+          agent={viewing}
+          isPinned={pinById.has(viewing.id)}
+          onBack={() => setViewingId(null)}
+          onChat={(message) => onChat(viewing, message)}
+          onEdit={() => openEdit(viewing)}
+          onTogglePin={() => toggleHome(viewing.id)}
+          onDuplicate={() => duplicate(viewing.id)}
+          onDelete={() => {
+            remove(viewing.id);
+            setViewingId(null);
+          }}
+          onReset={
+            viewing.builtin && isBuiltinModified(viewing.id)
+              ? () => resetBuiltin(viewing.id)
+              : undefined
+          }
+        />
+        {dialog}
+      </>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-5xl flex-1 overflow-y-auto p-8">
       <h1 className="mb-8 font-medium text-lg text-foreground">Agents</h1>
@@ -105,7 +134,7 @@ export function AgentsView({
           >
             <AgentCard
               agent={agent}
-              onView={() => openEdit(agent)}
+              onView={() => setViewingId(agent.id)}
               onChat={() => onChat(agent)}
               onEdit={() => openEdit(agent)}
               onDuplicate={() => duplicate(agent.id)}
@@ -122,117 +151,7 @@ export function AgentsView({
         ))}
       </div>
 
-      <AgentDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        editing={editing}
-        onSubmit={handleSubmit}
-        engines={engines}
-      />
-    </div>
-  );
-}
-
-function AgentCard({
-  agent,
-  onView,
-  onChat,
-  onEdit,
-  onDuplicate,
-  onDelete,
-  onReset,
-  onHome,
-  onToggleHome,
-}: {
-  agent: Agent;
-  onView: () => void;
-  onChat: () => void;
-  onEdit: () => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
-  /** Only for a built-in the user has changed — puts it back as it ships. */
-  onReset?: () => void;
-  /** Whether this agent is currently pinned on the Home canvas. */
-  onHome: boolean;
-  onToggleHome: () => void;
-}) {
-  return (
-    <div className="group relative flex w-full flex-col gap-3 rounded-xl p-2">
-      <div className="relative aspect-square w-full overflow-hidden rounded-lg">
-        <AgentAvatar
-          name={agent.name}
-          seed={agent.id}
-          tint={agent.tint}
-          icon={agent.icon}
-          character={agent.character}
-          size="lg"
-          className="transition-transform duration-200 group-hover:scale-[1.02]"
-        />
-        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center gap-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100 focus-within:opacity-100">
-          <AgentTileButton
-            size="sm"
-            className="pointer-events-auto"
-            onClick={onView}
-          >
-            View
-          </AgentTileButton>
-          <AgentTileButton
-            size="sm"
-            className="pointer-events-auto"
-            onClick={onChat}
-          >
-            Chat
-          </AgentTileButton>
-        </div>
-      </div>
-
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate font-medium text-sm text-foreground">
-            {agent.name}
-          </p>
-          <p className="mt-1 line-clamp-3 max-w-[28ch] text-muted-foreground text-xs leading-relaxed">
-            {agent.description || agent.instructions}
-          </p>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <AgentTileButton
-              size="icon-xs"
-              className={cn(
-                "shrink-0 opacity-0 transition-opacity group-hover:opacity-100",
-                "focus-visible:opacity-100 data-[state=open]:opacity-100",
-              )}
-            >
-              <MoreHorizontalIcon className="size-3.5" />
-            </AgentTileButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onEdit}>
-              <PencilIcon className="size-3.5" />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onDuplicate}>
-              <CopyIcon className="size-3.5" />
-              Duplicate
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onToggleHome}>
-              <HomeIcon className="size-3.5" />
-              {onHome ? "Remove from home" : "Add to home"}
-            </DropdownMenuItem>
-            {onReset && (
-              <DropdownMenuItem onClick={onReset}>
-                <RotateCcwIcon className="size-3.5" />
-                Reset to default
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem variant="destructive" onClick={onDelete}>
-              <Trash2Icon className="size-3.5" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      {dialog}
     </div>
   );
 }

@@ -8,10 +8,14 @@ import {
   type EngineDescriptor,
 } from "../engines/index.ts";
 import { buildMacOsSandboxProfile } from "./sandbox-profile.ts";
+import { resolveNodeBinary } from "./node-binary.ts";
 import { killGroup } from "./process-group.ts";
-import type { SpawnAgentOptions, SpawnedAgent } from "./types.ts";
+import type { EngineExit, SpawnAgentOptions, SpawnedAgent } from "./types.ts";
 
 const STDERR_NOISE = [/^\[agy-acp\] WARN: failed to decode gen_metadata /];
+
+/** Enough of a crash to name the cause, small enough to put in an error. */
+const MAX_STDERR_TAIL_CHARS = 4_000;
 
 export function augmentPathWithUserDirs(basePath?: string): string {
   const home = process.env.HOME ?? "";
@@ -46,46 +50,56 @@ function resolveSpawnCommand(
   engineArgs: string[],
   sandboxed?: boolean,
 ): { spawnBin: string; spawnArgs: string[] } {
+  const node = resolveNodeBinary();
   if (sandboxed && process.platform === "darwin") {
     const profile = buildMacOsSandboxProfile(cwd);
     return {
       spawnBin: "/usr/bin/sandbox-exec",
-      spawnArgs: ["-p", profile, process.execPath, entry, ...engineArgs],
+      spawnArgs: ["-p", profile, node, entry, ...engineArgs],
     };
   }
   return {
-    spawnBin: process.execPath,
+    spawnBin: node,
     spawnArgs: [entry, ...engineArgs],
   };
 }
 
-function attachStderrDrain(child: ChildProcess): void {
+function attachStderrDrain(child: ChildProcess): () => string {
   let stderrTail = "";
+  let retained = "";
+  const retain = (line: string) => {
+    retained = (retained + line + "\n").slice(-MAX_STDERR_TAIL_CHARS);
+  };
+
   child.stderr?.setEncoding("utf8");
   child.stderr?.on("data", (chunk: string) => {
     const lines = (stderrTail + chunk).split("\n");
     stderrTail = lines.pop() ?? "";
     for (const line of lines) {
       if (!STDERR_NOISE.some((re) => re.test(line))) {
+        retain(line);
         process.stderr.write(line + "\n");
       }
     }
   });
   child.stderr?.on("end", () => {
     if (stderrTail && !STDERR_NOISE.some((re) => re.test(stderrTail))) {
+      retain(stderrTail);
       process.stderr.write(stderrTail + "\n");
     }
   });
+
+  return () => retained.trim();
 }
 
-function attachPipeGuards(child: ChildProcess): void {
+function attachPipeGuards(child: ChildProcess): () => string {
   const ignoreEpipe = (label: string) => (error: NodeJS.ErrnoException) => {
     if (error.code !== "EPIPE") console.error(`[agent ${label}]`, error);
   };
   child.stdin?.on("error", ignoreEpipe("stdin"));
   child.stdout?.on("error", ignoreEpipe("stdout"));
   child.stderr?.on("error", ignoreEpipe("stderr"));
-  attachStderrDrain(child);
+  return attachStderrDrain(child);
 }
 
 export function spawnAgent(
@@ -120,12 +134,19 @@ export function spawnAgent(
     },
   });
 
-  attachPipeGuards(child);
+  const stderrTail = attachPipeGuards(child);
+
+  let exit: EngineExit = { exited: false, code: null, signal: null };
+  child.once("exit", (code, signal) => {
+    exit = { exited: true, code, signal };
+  });
 
   return {
     child,
     engine,
     entry,
+    exitInfo: () => exit,
+    stderrTail,
     stop(graceMs = 2000) {
       child.stdin?.end();
       const killTimer = setTimeout(() => killGroup(child.pid), graceMs);

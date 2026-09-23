@@ -33,6 +33,7 @@ export async function handleNewChat({
       engineId: sessionMgr.currentEngineId,
       engineLabel: getEngine(sessionMgr.currentEngineId).label,
       configOptions: sessionMgr.supervisor.current.configOptions,
+      modes: sessionMgr.supervisor.current.modes,
       resumed: false,
     });
     await sendChats();
@@ -65,7 +66,10 @@ export async function handleOpenChat({
 
   try {
     send({ type: "reset" });
-    const ok = await sessionMgr.supervisor.current.resumeSession(target);
+    await sessionMgr.prepareReplay(target);
+    const ok = await sessionMgr.supervisor.current
+      .resumeSession(target)
+      .finally(() => sessionMgr.finishReplay());
     if (!ok) {
       send({ type: "error", message: "Could not open that chat." });
       await sendChats();
@@ -80,6 +84,7 @@ export async function handleOpenChat({
       engineId: sessionMgr.currentEngineId,
       engineLabel: getEngine(sessionMgr.currentEngineId).label,
       configOptions: sessionMgr.supervisor.current.configOptions,
+      modes: sessionMgr.supervisor.current.modes,
       resumed: true,
     });
     await sendChats();
