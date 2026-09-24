@@ -1,7 +1,7 @@
 import type { ChatTurn, ToolEntry } from "@/features/chat/hooks";
 import { Prose } from "../Prose";
 import { segmentsOf } from "./segments";
-import { ToolGroup } from "./ToolGroup";
+import { ToolGroup } from "./tools";
 
 export function TurnSegments({ turn, onOpenDiff }: { readonly turn: ChatTurn; readonly onOpenDiff?: (path?: string) => void }) {
   const toolsById = new Map(turn.tools.map((tool) => [tool.id, tool]));

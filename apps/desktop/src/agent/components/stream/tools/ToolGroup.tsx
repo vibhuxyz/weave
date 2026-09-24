@@ -4,7 +4,7 @@ import { toolRunState } from "@/features/chat/components";
 import { Shimmer } from "@/shared/ui/ai-elements";
 import { MAX_ROWS_PER_GROUP } from "./constants";
 import { DiffStat } from "./DiffStat";
-import { DisclosureHeader } from "./DisclosureHeader";
+import { DisclosureHeader } from "../DisclosureHeader";
 import { diffTotalsOf } from "./tool-diff";
 import { groupLabel, rowSubject, rowVerb } from "./tool-label";
 import { ToolRow } from "./ToolRow";

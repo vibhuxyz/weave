@@ -4,7 +4,7 @@ import { cleanOutput, toolRunState } from "@/features/chat/components";
 import { Shimmer } from "@/shared/ui/ai-elements";
 import { MAX_OUTPUT_CHARS } from "./constants";
 import { DiffStat } from "./DiffStat";
-import { DisclosureHeader } from "./DisclosureHeader";
+import { DisclosureHeader } from "../DisclosureHeader";
 import { diffTotalsOf } from "./tool-diff";
 import { actionOf, commandOf, rowSubject, rowVerb } from "./tool-label";
 
