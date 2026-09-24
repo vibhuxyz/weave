@@ -11,9 +11,9 @@ export interface CheckpointSummaryPayload {
 export function summarizeCheckpoint(checkpoint: Checkpoint): CheckpointSummaryPayload {
   const { state } = checkpoint;
   const filesModified =
-    state.files.modified.length +
-    state.files.created.length +
-    state.files.deleted.length;
+    state.changedFiles.modified.length +
+    state.changedFiles.created.length +
+    state.changedFiles.deleted.length;
 
   const testsPassed = state.verification.filter((v) => v.status === "passed").length;
   const testsFailed = state.verification.filter((v) => v.status === "failed").length;

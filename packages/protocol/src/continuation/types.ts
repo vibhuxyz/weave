@@ -75,7 +75,76 @@ export interface GitState {
   dirty: string[];
 }
 
+export type TaskStateStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
+
+export interface Discovery {
+  text: string;
+  source: "tool" | "worker";
+  atSeq: number;
+}
+
+export type FailureKind = "error" | "command" | "verification" | "tool" | "engine";
+
+export interface Failure {
+  kind: FailureKind;
+  message: string;
+  where: string;
+  atSeq: number;
+}
+
+export interface OpenQuestion {
+  text: string;
+  atSeq: number;
+}
+
+export interface TaskDependencyRef {
+  task: string;
+  requiredOutputs: string[];
+}
+
+export interface ChangedFiles {
+  modified: string[];
+  created: string[];
+  deleted: string[];
+}
+
+export interface EngineState {
+  engineId: string | null;
+  sessionId: string | null;
+  attempts: number;
+  turns: number;
+  lastStopReason: string | null;
+  contextUsed: number | null;
+  contextSize: number | null;
+  costUsd: number | null;
+}
+
 export interface TaskState {
+  schemaVersion: 2;
+  taskId: string;
+  goal: string;
+  atSeq: number;
+  status: TaskStateStatus;
+  completed: string[];
+  currentStep: string | null;
+  nextStep: string | null;
+  remaining: string[];
+  decisions: Decision[];
+  discoveries: Discovery[];
+  changedFiles: ChangedFiles;
+  filesRead: string[];
+  failures: Failure[];
+  verification: VerificationResult[];
+  commands: CommandResult[];
+  openQuestions: OpenQuestion[];
+  dependencies: TaskDependencyRef[];
+  contextVersion: number | null;
+  gitState: GitState;
+  engineState: EngineState;
+  inFlight: ToolCallRef[];
+}
+
+export interface TaskStateV1 {
   schemaVersion: 1;
   taskId: string;
   goal: string;
@@ -83,12 +152,7 @@ export interface TaskState {
   completed: string[];
   inProgress: { description: string } | null;
   remaining: string[];
-  files: {
-    read: string[];
-    modified: string[];
-    created: string[];
-    deleted: string[];
-  };
+  files: { read: string[]; modified: string[]; created: string[]; deleted: string[] };
   commands: CommandResult[];
   verification: VerificationResult[];
   decisions: Decision[];
