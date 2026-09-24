@@ -1,6 +1,7 @@
 import type { PermissionPolicy } from "@weave/agent";
 import type { RunConfig, WeaveEvent } from "@weave/protocol";
 import type { Budgets, HistoryStats, OrchestrationDecision } from "../adaptive/index.ts";
+import type { Assignment, EmployeeRegistry } from "../employees/index.ts";
 import type { Contract } from "../contracts/index.ts";
 import type { Decision } from "../decide/index.ts";
 import type { VerifyWorkspace } from "../integrator/index.ts";
@@ -14,6 +15,11 @@ export interface AdaptiveOptions {
   readonly budgets?: Budgets;
   readonly stats?: HistoryStats;
   readonly msPerMicroUsd?: number;
+}
+
+export interface EmployeesOptions {
+  readonly registry?: EmployeeRegistry;
+  readonly userDir?: string | null;
 }
 
 export interface PlanAndRunOptions {
@@ -30,6 +36,7 @@ export interface PlanAndRunOptions {
   readonly maxWorkers?: number;
   readonly onEvent?: (event: WeaveEvent) => void;
   readonly adaptive?: AdaptiveOptions;
+  readonly employees?: EmployeesOptions;
 }
 
 export type PlanAndRunResult =
@@ -42,11 +49,13 @@ export type PlanAndRunResult =
       readonly tasks: readonly PlannedTask[];
       readonly report: RunPlanReport;
       readonly orchestration: OrchestrationDecision | null;
+      readonly assignments: readonly Assignment[];
     };
 
 export interface PlanningInput {
   readonly request: string;
   readonly projectContext?: string | null;
+  readonly employeeRoster?: string | null;
   readonly repoRoot: string;
   readonly weaveDir: string;
   readonly kind: ProjectKind;

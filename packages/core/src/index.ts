@@ -23,6 +23,8 @@ export { INTEGRATION_WORKTREE_ID, integrate, verifyWithLadder } from "./integrat
 export type { IntegrateOptions, IntegrationReport, MergeCandidate, MergeReport, MergeStatus, VerifyResult, VerifyWorkspace } from "./integrator/index.ts";
 export { BudgetManager, buildStats, foldRun, logDecision, parseBudgets, planOrchestration, readHistory, sizeUnitsOf, taskKindOf } from "./adaptive/index.ts";
 export type { BenefitBreakdown, Budgets, EngineCandidate, EngineRoute, HistoryStats, Limits, OrchestrationDecision, OrchestrationTask, Spend, TaskPlan } from "./adaptive/index.ts";
+export { assignEmployees, buildEmployeeRegistry, loadEmployeeRegistry, parseEmployee, parseYamlSubset, prepareEmployees, readMemory, renderRoster, resolveEmployee, verifyEmployeeWork } from "./employees/index.ts";
+export type { Assignment, Candidate, Employee, EmployeePermissions, EmployeeRegistry, MemoryEntry, Resolution } from "./employees/index.ts";
 export { Coordinator } from "./coordination/index.ts";
 export type { CoordinationChannel, CoordinationReport, EmployeeSubmission, InboxBatch, PublishResult } from "./coordination/index.ts";
 export { compressToolOutput } from "./compress/index.ts";
@@ -36,6 +38,6 @@ export type { WorkerContext, WorkerTask } from "./worker-context/index.ts";
 export { relayTask, engineAttemptRunner, lifecycleStage } from "./relay/index.ts";
 export type { RelayResult, LifecycleStage } from "./relay/index.ts";
 export type { ProjectAnswer, ProjectModel } from "./context/index.ts";
-export type { AdaptiveOptions, PlanAndRunOptions, PlanAndRunResult, TurnRunner } from "./orchestrate/index.ts";
+export type { AdaptiveOptions, EmployeesOptions, PlanAndRunOptions, PlanAndRunResult, TurnRunner } from "./orchestrate/index.ts";
 
 export { matchGlob, firstMatch } from "@weave/agent/browser";

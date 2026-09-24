@@ -7,6 +7,7 @@ import {
   extractCommand,
   inspectCommandBoundaries,
   toAcpResponse,
+  withPolicy,
 } from "./index.ts";
 import { getEngine, resolveEngineArgs } from "../engines/index.ts";
 import { buildMacOsSandboxProfile } from "../spawn/index.ts";
@@ -381,4 +382,26 @@ test("the exception does not open the rest of the engine's home", () => {
 
 test("reading a task log is a read-only command, so it needs no card", () => {
   assert.equal(classifyCommand(`cat ${AGY_TASK_LOG}`).kind, "read-only");
+});
+
+test("withPolicy enforces an employee's deployment, network and git permissions", async () => {
+  const commandRequest = (command: string): RequestPermissionRequest => ({
+    sessionId: "s1",
+    options: [{ optionId: "opt-1", name: "allow", kind: "allow_once" }],
+    toolCall: { toolCallId: "tc-1", kind: "execute", title: "Bash", rawInput: { command } },
+  });
+  const guarded = withPolicy({ deployment: { allowed: false }, network: { allowed: false }, git: { commit: false } }, async () => ({ decision: "allow", optionId: "opt-1", reason: "base" }));
+  const reasons = await Promise.all(["vercel deploy --prod", "curl https://example.com", "npm install left-pad", "git commit -m x", "npm test"].map(async (command) => {
+    const decision = await guarded(FAKE_TASK, commandRequest(command));
+    return decision.decision === "reject" ? decision.reason : "allowed";
+  }));
+  assert.deepEqual(reasons, [
+    "policy: deployment commands disabled for this task",
+    "policy: network commands disabled for this task",
+    "policy: network commands disabled for this task",
+    "policy: git commit disabled for this task",
+    "allowed",
+  ]);
+  const open = withPolicy({ network: { allowed: true } }, async () => ({ decision: "allow", optionId: "opt-1", reason: "base" }));
+  assert.equal((await open(FAKE_TASK, commandRequest("curl https://example.com"))).decision, "allow");
 });

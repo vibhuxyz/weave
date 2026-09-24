@@ -16,3 +16,4 @@ export const MAX_REPAIR_ISSUE_CHARS = 300;
 
 export const TASK_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/;
 export const COMPONENT_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+export const EMPLOYEE_REF_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;

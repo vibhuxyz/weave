@@ -12,6 +12,7 @@ import {
 } from "../shared/index.ts";
 import {
   COMPONENT_PATTERN,
+  EMPLOYEE_REF_PATTERN,
   MAX_DEPENDENCIES_PER_TASK,
   MAX_PATHS_PER_TASK,
   MAX_PATH_CHARS,
@@ -73,10 +74,14 @@ function readScope(ctx: FieldContext): Pick<PlannedTask, "allowedPaths" | "readO
   return { allowedPaths, readOnlyPaths: readGlobs(ctx, "readOnlyPaths") };
 }
 
-function readLinks(ctx: FieldContext): Pick<PlannedTask, "dependencies" | "contractSymbols" | "component"> {
+function readLinks(ctx: FieldContext): Pick<PlannedTask, "dependencies" | "contractSymbols" | "component" | "employee"> {
   const component = readOptionalString(ctx, "component", MAX_SYMBOL_CHARS);
   if (component !== null && !COMPONENT_PATTERN.test(component)) {
     ctx.issues.push(`${ctx.where}: "component" has an invalid format: ${JSON.stringify(component)}`);
+  }
+  const employee = readOptionalString(ctx, "employee", MAX_SYMBOL_CHARS);
+  if (employee !== null && !EMPLOYEE_REF_PATTERN.test(employee)) {
+    ctx.issues.push(`${ctx.where}: "employee" has an invalid format: ${JSON.stringify(employee)}`);
   }
   return {
     dependencies: readList(ctx, "dependencies", MAX_DEPENDENCIES_PER_TASK, parseDependency),
@@ -85,6 +90,7 @@ function readLinks(ctx: FieldContext): Pick<PlannedTask, "dependencies" | "contr
       maxChars: MAX_SYMBOL_CHARS,
     }),
     ...(component !== null ? { component } : {}),
+    ...(employee !== null && EMPLOYEE_REF_PATTERN.test(employee) ? { employee } : {}),
   };
 }
 

@@ -23,6 +23,7 @@ export interface PlannerPromptInput {
   blueprint: string | null;
   contract: string | null;
   projectContext?: string | null;
+  employees?: string | null;
 }
 
 export interface PlanRequest extends PlannerPromptInput {

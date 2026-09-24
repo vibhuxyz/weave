@@ -16,6 +16,7 @@ export interface TaskContract {
   readOnlyPaths?: string[];
   owns?: ResourceRef[];
   capabilities?: string[];
+  employee?: string;
   dependencies?: TaskDependency[];
   verify?: string;
   sandboxed?: boolean;

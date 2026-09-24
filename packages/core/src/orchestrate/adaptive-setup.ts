@@ -1,6 +1,6 @@
 import { ENGINES } from "@weave/agent";
 import type { RunConfig } from "@weave/protocol";
-import { BudgetManager, buildStats, logDecision, planOrchestration, readHistory, type EngineCandidate, type HistoryStats, type OrchestrationDecision } from "../adaptive/index.ts";
+import { BudgetManager, buildStats, logDecision, planOrchestration, type EngineCandidate, type HistoryRead, type HistoryStats, type OrchestrationDecision } from "../adaptive/index.ts";
 import { concurrencyFor, type Decision, type DecisionReason } from "../decide/index.ts";
 import type { PlannedTask } from "../planner/index.ts";
 import { enginesFor } from "../run-plan/index.ts";
@@ -17,6 +17,7 @@ export interface AdaptiveSetupInput {
   readonly tasks: readonly PlannedTask[];
   readonly baseline: Decision;
   readonly maxWorkers: number;
+  readonly history: () => Promise<HistoryRead>;
 }
 
 export interface AdaptiveSetup {
@@ -39,7 +40,7 @@ export function engineCandidates(config: RunConfig | undefined): readonly Engine
 
 async function statsFor(input: AdaptiveSetupInput): Promise<HistoryStats> {
   if (input.adaptive.stats) return input.adaptive.stats;
-  const history = await readHistory(input.weaveDir, { excludeRunIds: [input.ledger.runId] });
+  const history = await input.history();
   for (const skipped of history.skipped) input.ledger.append("error", { where: "adaptive.history", message: `${skipped.path}: ${skipped.reason}` });
   return buildStats(history.runs);
 }

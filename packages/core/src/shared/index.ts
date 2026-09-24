@@ -7,3 +7,4 @@ export * from "./structured-output.ts";
 export { mapBounded } from "./map-bounded.ts";
 export { formatMicroUsd, parseUsd, usdToMicro } from "./money.ts";
 export { medianBigInt, medianOf } from "./median.ts";
+export { once } from "./once.ts";

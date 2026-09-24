@@ -12,6 +12,7 @@ export interface EngineWorkerContext {
   readonly model: ProjectModel | null;
   readonly runAttempt?: AttemptRunner;
   readonly routes?: ReadonlyMap<string, readonly string[]>;
+  readonly briefings?: ReadonlyMap<string, string>;
 }
 
 interface RelayDeps {
@@ -49,7 +50,9 @@ async function followUpdates(deps: RelayDeps, input: WorkerInput, first: RelayRe
 export function engineWorker(config: RunConfig | undefined, policy: PermissionPolicy | undefined, context: EngineWorkerContext): RunWorker {
   const deps: RelayDeps = { engines: enginesFor(config), context, runAttempt: context.runAttempt ?? engineAttemptRunner(config, policy) };
   return async (input) => {
-    const first = await relayWith(deps, input, renderBriefing(input.coordination.drain()));
+    const employeeBrief = context.briefings?.get(input.task.id);
+    const briefing = [...(employeeBrief ? [employeeBrief] : []), renderBriefing(input.coordination.drain())].join("\n\n");
+    const first = await relayWith(deps, input, briefing);
     return toOutcome(await followUpdates(deps, input, first));
   };
 }

@@ -1,7 +1,7 @@
 import type { WeaveEvent } from "@weave/protocol";
 import { usdToMicro } from "../../shared/index.ts";
 import { kindOfPaths, sizeUnitsOf } from "../estimate/index.ts";
-import type { AttemptRecord, RunHistory, SettledRecord } from "./types.ts";
+import type { AttemptRecord, EmployeeTaskRecord, RunHistory, SettledRecord } from "./types.ts";
 
 interface OpenAttempt {
   readonly engineId: string;
@@ -21,6 +21,8 @@ interface FoldState {
   conflicts: number;
   pendingVerifyMs: number;
   readonly verifyMs: number[];
+  readonly employees: Map<string, string>;
+  readonly employeeTasks: EmployeeTaskRecord[];
 }
 
 function concurrencyOf(config: Record<string, unknown>): number {
@@ -80,9 +82,15 @@ function applyRun(state: FoldState, event: WeaveEvent): void {
     case "plan.created":
       for (const task of event.tasks) rememberFirst(state.kinds, task.id, kindOfPaths(task.allowedPaths));
       return;
-    case "pool.task.settled":
+    case "employee.assigned":
+      if (event.employeeId) state.employees.set(event.taskId, event.employeeId);
+      return;
+    case "pool.task.settled": {
+      const employeeId = state.employees.get(event.taskId);
+      if (employeeId) state.employeeTasks.push({ employeeId, taskId: event.taskId, status: event.status, wallMs: event.wallMs });
       state.settled.push({ taskId: event.taskId, concurrency: state.concurrency, overheadMs: Math.max(0, event.wallMs - event.agentMs) });
       return;
+    }
     case "merge.finished":
       state.merges += 1;
       if (event.status === "conflict") state.conflicts += 1;
@@ -103,11 +111,11 @@ function applyRun(state: FoldState, event: WeaveEvent): void {
 export function foldRun(events: readonly WeaveEvent[]): RunHistory {
   const state: FoldState = {
     runId: events[0]?.runId ?? "", concurrency: 1, kinds: new Map(), sizes: new Map(), open: new Map(), attempts: [], settled: [],
-    merges: 0, conflicts: 0, pendingVerifyMs: 0, verifyMs: [],
+    merges: 0, conflicts: 0, pendingVerifyMs: 0, verifyMs: [], employees: new Map(), employeeTasks: [],
   };
   for (const event of events) {
     if (!applyAttempt(state, event)) applyRun(state, event);
   }
-  const { runId, concurrency, attempts, settled, merges, conflicts, verifyMs } = state;
-  return { runId, concurrency, attempts, settled, merges, conflicts, verifyMs };
+  const { runId, concurrency, attempts, settled, merges, conflicts, verifyMs, employeeTasks } = state;
+  return { runId, concurrency, attempts, settled, merges, conflicts, verifyMs, employeeTasks };
 }

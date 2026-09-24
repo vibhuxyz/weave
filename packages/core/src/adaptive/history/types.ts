@@ -16,6 +16,13 @@ export interface SettledRecord {
   readonly overheadMs: number;
 }
 
+export interface EmployeeTaskRecord {
+  readonly employeeId: string;
+  readonly taskId: string;
+  readonly status: "ok" | "failed" | "cancelled";
+  readonly wallMs: number;
+}
+
 export interface RunHistory {
   readonly runId: string;
   readonly concurrency: number;
@@ -24,6 +31,7 @@ export interface RunHistory {
   readonly merges: number;
   readonly conflicts: number;
   readonly verifyMs: readonly number[];
+  readonly employeeTasks: readonly EmployeeTaskRecord[];
 }
 
 export interface OutcomeStats {

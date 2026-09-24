@@ -210,6 +210,9 @@ export type WeaveEvent =
       limit: string;
       spent: string;
       action: "stop-task" | "stop-run" | "skip-task";
-    });
+    })
+  | (BaseEvent & { type: "employee.assigned"; taskId: string; employeeId: string | null; score: number; reasons: string[] })
+  | (BaseEvent & { type: "employee.verified"; taskId: string; employeeId: string; ok: boolean; rungs: { rung: VerificationRung; ok: boolean; wallMs: number }[]; detail: string })
+  | (BaseEvent & { type: "employee.memory.recorded"; taskId: string; employeeId: string; entries: number });
 
 export type WeaveEventType = WeaveEvent["type"];

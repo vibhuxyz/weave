@@ -42,3 +42,16 @@ test("an update that arrives while an employee works becomes its next prompt tur
   assert.doesNotMatch(prompts[0] ?? "", /<weave-inbox>/);
   assert.match(prompts[1] ?? "", /<weave-inbox>[\s\S]*artifact\.updated\] from DB: schema v2[\s\S]*currency text/);
 });
+
+test("an assigned employee's brief leads the engine's first prompt", async () => {
+  const weaveDir = join(await mkdtemp(join(tmpdir(), "weave-engine-brief-")), ".weave");
+  const prompts: string[] = [];
+  const runAttempt: AttemptRunner = async ({ task }) => {
+    prompts.push(task.prompt);
+    return { status: "ok", stoppedBy: null, error: null, contextUsed: null, contextSize: null, finalMessage: "done" };
+  };
+  const briefings = new Map([["API", '<employee id="senior-backend-engineer" source="project">\nYou are Senior Backend Engineer\n</employee>']]);
+  const worker = engineWorker(undefined, undefined, { weaveDir, model: null, runAttempt, briefings });
+  await worker({ task: { id: "API", prompt: "build it", cwd: weaveDir }, ledger: new Ledger(weaveDir, "run1"), signal: new AbortController().signal, coordination: scriptedChannel([]) });
+  assert.match(prompts[0] ?? "", /build it\n\n<employee id="senior-backend-engineer"[\s\S]*<\/employee>\n\nYou work alongside other employees/);
+});
