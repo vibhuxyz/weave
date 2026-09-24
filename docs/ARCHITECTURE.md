@@ -179,8 +179,10 @@ React + Tauri. Built in three layers:
    - `@file` fuzzy search (`list-files` -> `files`).
 2. **React UI surfaces:**
    - `HomeView`: canvas view with project overview and widgets.
-   - `ChatView`: transcript rendering with `AgentMessage`, `ThinkingBlock`, `ToolSteps`,
-     and `UserMessage`. `<plan>` output is normalised to `PlanBlockEntry[]`
+   - `ChatView`: transcript rendering with `StreamedTurn` (`agent/components/stream/`)
+     and `UserMessage`. An assistant turn streams in arrival order: narration as
+     markdown, consecutive tool calls as one collapsible group, a files-changed card,
+     and a live status line. Running tasks open `TasksPanel` (`agent/components/tasks/`). `<plan>` output is normalised to `PlanBlockEntry[]`
      (`agent/normalize/messageToBlocks.ts`) and shown via `PlanBlockView`;
      `PlanApprovalModal` lets the user edit/reorder/re-prioritise steps, then
      the edited plan (or rejection feedback) is sent back as the next prompt —
@@ -337,8 +339,9 @@ only `close` is guaranteed by the spec.
 watcher. With it included, dev-server startup degrades with every package added.
 Currently ~240ms.
 
-**`useAcpChat` is one transcript.** MVP.3 makes it a map keyed by `taskId`. That
-is the single change that turns the chat window into a multi-worker view.
+**`useAcpChat` is one transcript.** MVP.3's lanes did not rewrite it: a separate
+run channel (`features/runs/`) folds the `planAndRun` ledger stream, projected by
+`server/parallel-run/`, into lanes keyed by `taskId`. `/parallel <request>` starts a run.
 
 ---
 

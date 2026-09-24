@@ -1,5 +1,26 @@
 # UI Architecture & Implementation Guide — Agent Response Cards
 
+> **Current design (2026-09-24) — supersedes the card layout below.** The boxed
+> response card (`AgentMessage`, `AgentHeader`, `WorkingRow`, the Overview/Activity
+> tabs, `ToolSteps`, `TurnDiffBar`) and the Brief/Normal/Deep depth control (§10)
+> were removed. The rest of this document is kept as history; the normalizer
+> (`messageToBlocks`) and the interactive blocks still apply.
+>
+> An assistant turn now renders as a Claude Code-style stream (`agent/components/stream/`):
+>
+> | Piece | What it shows | Code |
+> |---|---|---|
+> | Segments | Narration and tool calls in the order they streamed; the turn records `segments` (`acpChat/turn-segments.ts`). Turns saved before this show tools, then text. | `TurnSegments.tsx`, `segments.ts` |
+> | Tool group | One gray row per run of consecutive tool calls: "Ran 2 commands (1 failed), read MVP.md +12 -3 ›". Expands to a bordered list. | `tools/ToolGroup.tsx`, `tools/tool-label.ts` |
+> | Tool row | "Ran bun install ›"; expands to a colored `$ command` line and the output (capped at 8,000 chars). Edits link to the diff. | `tools/ToolRow.tsx`, `tools/CommandLine.tsx`, `tools/command-tokens.ts` |
+> | Thought | Collapsed "Thought ›" row. | `ThoughtRow.tsx` |
+> | Interactive blocks | Plan approval, checkpoint, safety ask, error, permission — unchanged components. | `InteractiveBlocks.tsx` |
+> | Files changed | "Edited 6 files +386 -0 ›" card, first 3 files, then "Show N more"; rows open the diff inspector. | `FilesChanged.tsx` |
+> | Status line | "✳ 19m 12s · 30.0k tokens · 1 running task · Running tools…" while the turn runs. | `StreamStatusLine.tsx` |
+> | Background tasks | Opened from "N running tasks": running first, then a collapsible "Finished N" list (last 100, clearable); each card shows the command, kind and state, and expands to its output. | `agent/components/tasks/` |
+>
+> Parallel runs (`/parallel <request>`) show their per-worker lanes in `features/runs/` — see [MVP.3](MVP.md).
+
 > Reference screenshots: `/Users/vibhu/Downloads/ui/` (2026-09-03)  
 > Last updated: 2026-09-03
 
@@ -491,7 +512,7 @@ type CheckpointBlock = BaseBlock & {
 
 ---
 
-## 10. Brief / Normal / Deep — Presentation Depth (Not Agent Config)
+## 10. Brief / Normal / Deep — Presentation Depth (Not Agent Config) — removed 2026-09-24
 
 **Rule:** Depth controls *presentation* only. It does not change what the agent does, does not trigger new LLM calls, and does not change token usage.
 
