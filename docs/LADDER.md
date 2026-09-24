@@ -37,9 +37,10 @@ desktop, that is a signal to think — not to create `packages/utils`.
 
 ## ← You are here: V2.1, V3.1 and employees built ahead of the MVP gate
 
-Phases map onto the tiers like this: **Phase 3** context intelligence = V1.2 + V2.2,
-**Phase 4** coordination and live collaboration = V2.1, **Phase 5** adaptive orchestration = V3.1,
-**Phase 6** AI employee runtime = [EMPLOYEES](EMPLOYEES.md).
+Phases map onto the tiers like this: **Phase 2** project intelligence = V2.2,
+**Phase 3** context intelligence = V1.2, **Phase 4** coordination and live collaboration = V2.1,
+**Phase 5** adaptive orchestration = V3.1, **Phase 6** AI employee runtime =
+[EMPLOYEES](EMPLOYEES.md). Everything built, phase by phase: [PHASES](PHASES.md).
 
 Phases 4–6 were built on 2026-09-24, in three commits on top of MVP.2. All three are tested with scripted or
 simulated workers, not with live engines. **The MVP three-arm experiment has still not been run**,

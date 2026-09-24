@@ -57,7 +57,8 @@ verification rung, unattended? End of MVP: does N-worker parallel match 1-worker
 sequential on pass rate? If not, **ship the sequential version** — see the
 three-arm experiment in [MVP](docs/MVP.md).
 
-Docs: [ROADMAP](docs/ROADMAP.md) — the verdict and the design changes ·
+Docs: [PHASES](docs/PHASES.md) — everything built, phase by phase ·
+[ROADMAP](docs/ROADMAP.md) — the verdict and the design changes ·
 [LADDER](docs/LADDER.md) — the status board ·
 [ARCHITECTURE](docs/ARCHITECTURE.md) · [FINDINGS](docs/FINDINGS.md)
 
