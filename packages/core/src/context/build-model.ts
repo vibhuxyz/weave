@@ -16,6 +16,7 @@ const RULE_DIRS = [".weave/rules", ".agents/rules"];
 export interface BuildModelOptions {
   readonly root: string;
   readonly weaveDir?: string;
+  readonly revision?: number;
 }
 
 export interface BuildStats {
@@ -48,12 +49,14 @@ export async function buildProjectModel(options: BuildModelOptions): Promise<{ r
   const paths = scan.files.map((file) => file.path);
   const manifests = await readManifests(root, paths);
   const workspaces = workspacesOf(manifests.manifests, new Set(paths), manifests.workspaceGlobs);
-  const files: readonly ProjectFile[] = scan.files.map((file) => ({ ...file, workspace: workspaceOfPath(file.path, workspaces) }));
-  const parsed = await parseSources(root, files, cache);
+  const located = scan.files.map((file) => ({ ...file, workspace: workspaceOfPath(file.path, workspaces), hash: null }));
+  const parsed = await parseSources(root, located, cache);
+  const files: readonly ProjectFile[] = located.map((file) => ({ ...file, hash: parsed.cache.get(file.path)?.hash ?? null }));
   const graph = buildDependencyGraph(parsed.modules, { files: new Set(paths), tsPaths: manifests.tsPaths, packagesByName: namedPackages(manifests.manifests) });
   if (cachePath) await saveModuleCache(cachePath, parsed.cache);
   const model: ProjectModel = {
-    version: 1,
+    version: 2,
+    revision: options.revision ?? 1,
     repository: git.repository,
     stack: stackOf(paths, manifests.manifests.flatMap((manifest) => manifest.dependencies), manifests.packageManager),
     applications: workspaces.filter((workspace) => workspace.kind === "application"),

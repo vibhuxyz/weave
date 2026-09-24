@@ -51,10 +51,20 @@ function callTarget(link: ModuleLinks, call: CallFact, links: ReadonlyMap<string
   const ownClass = call.caller?.split(".")[0];
   const local = head === "this" && ownClass ? `${link.module.path}#${ownClass}.${member ?? ""}` : `${link.module.path}#${call.callee}`;
   if (symbolIds.has(local)) return local;
+  const instance = member ? link.module.instances.find((entry) => entry.local === head) : undefined;
+  if (instance) return instanceMethod(link, instance.className, member ?? "", links, symbolIds);
   const binding = link.bindings.find((entry) => entry.local === head);
   if (!binding) return null;
   const name = binding.imported === "*" ? member : binding.imported;
   return name ? originOf(binding.file, name, links, symbolIds) : null;
+}
+
+function instanceMethod(link: ModuleLinks, className: string, member: string, links: ReadonlyMap<string, ModuleLinks>, symbolIds: ReadonlySet<string>): string | null {
+  const localClass = `${link.module.path}#${className}`;
+  const binding = link.bindings.find((entry) => entry.local === className);
+  const classId = symbolIds.has(localClass) ? localClass : binding ? originOf(binding.file, binding.imported, links, symbolIds) : null;
+  const method = classId ? `${classId}.${member}` : null;
+  return method && symbolIds.has(method) ? method : null;
 }
 
 export function buildDependencyGraph(modules: readonly ModuleFacts[], context: ResolveContext): DependencyGraph {

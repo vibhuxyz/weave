@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { isNotFound } from "../../shared/index.ts";
 import type { ModuleFacts } from "../types.ts";
 
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 5;
 
 export interface CachedModule {
   readonly hash: string;

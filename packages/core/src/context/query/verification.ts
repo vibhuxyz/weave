@@ -1,5 +1,5 @@
 import type { ProjectModel, Workspace } from "../types.ts";
-import { wordsOf } from "./terms.ts";
+import { wordsOf } from "../words/index.ts";
 import type { VerificationStep } from "./types.ts";
 
 const SCRIPT_ORDER = ["typecheck", "lint", "test", "build"];

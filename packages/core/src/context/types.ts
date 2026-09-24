@@ -5,6 +5,7 @@ export interface ProjectFile {
   readonly bytes: number;
   readonly kind: FileKind;
   readonly workspace: string | null;
+  readonly hash: string | null;
 }
 
 export interface Skipped {
@@ -38,6 +39,7 @@ export interface SymbolFact {
   readonly file: string;
   readonly line: number;
   readonly isExported: boolean;
+  readonly hash: string;
 }
 
 export interface ImportBinding {
@@ -54,6 +56,11 @@ export interface ImportFact {
 export interface CallFact {
   readonly callee: string;
   readonly caller: string | null;
+}
+
+export interface InstanceFact {
+  readonly local: string;
+  readonly className: string;
 }
 
 export type ApiSource = "route" | "contract";
@@ -79,6 +86,7 @@ export interface ModuleFacts {
   readonly symbols: readonly SymbolFact[];
   readonly imports: readonly ImportFact[];
   readonly calls: readonly CallFact[];
+  readonly instances: readonly InstanceFact[];
   readonly apis: readonly ApiFact[];
   readonly events: readonly EventFact[];
 }
@@ -122,7 +130,8 @@ export interface RepositoryInfo {
 }
 
 export interface ProjectModel {
-  readonly version: 1;
+  readonly version: 2;
+  readonly revision: number;
   readonly repository: RepositoryInfo;
   readonly stack: Stack;
   readonly applications: readonly Workspace[];

@@ -1,5 +1,13 @@
 export { buildProjectModel } from "./build-model.ts";
 export type { BuildModelOptions, BuildStats } from "./build-model.ts";
+export { generateProjectDocs, writeProjectDocs } from "./docs/index.ts";
+export type { ProjectDocs } from "./docs/index.ts";
+export { analyzeImpact } from "./impact/index.ts";
+export type { ImpactReport, ImpactTargets } from "./impact/index.ts";
 export { queryProject, renderProjectContext } from "./query/index.ts";
 export type { ProjectAnswer } from "./query/index.ts";
 export type { ProjectModel } from "./types.ts";
+export { updateProjectModel } from "./update/index.ts";
+export type { ModelDelta, ModelUpdate } from "./update/index.ts";
+export { searchVectors } from "./vectors/index.ts";
+export type { VectorHit } from "./vectors/index.ts";

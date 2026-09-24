@@ -10,9 +10,13 @@ export interface WalkResult {
   readonly objects: readonly { readonly node: ts.ObjectLiteralExpression; readonly owner: string | null }[];
 }
 
+function isTopLevel(declaration: ts.VariableDeclaration): boolean {
+  return ts.isSourceFile(declaration.parent.parent.parent);
+}
+
 function ownerName(node: ts.Node, current: string | null, className: string | null): string | null {
   if (ts.isFunctionDeclaration(node) && node.name) return node.name.text;
-  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && current === null) return node.name.text;
+  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && current === null && isTopLevel(node)) return node.name.text;
   if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && className) return `${className}.${node.name.text}`;
   if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name) && current !== null) return current;
   return current;

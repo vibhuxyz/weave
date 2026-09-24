@@ -7,7 +7,7 @@ import { kindOf } from "./classify-file.ts";
 import { listProjectPaths } from "./list-paths.ts";
 
 export interface ScanResult {
-  readonly files: readonly Omit<ProjectFile, "workspace">[];
+  readonly files: readonly Omit<ProjectFile, "workspace" | "hash">[];
   readonly skipped: readonly Skipped[];
   readonly source: "git" | "walk";
 }

@@ -1,6 +1,6 @@
 import { layerOf } from "../architecture/index.ts";
 import type { ApiFact, EventFact, Layer, ProjectModel, SymbolFact } from "../types.ts";
-import { wordsOf } from "./terms.ts";
+import { wordsOf } from "../words/index.ts";
 import type { Intent, RankedFile, RequestTerms } from "./types.ts";
 
 const PATH_WEIGHT = 3;

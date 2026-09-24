@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import ts from "typescript";
 import type { SymbolFact, SymbolKind } from "../types.ts";
 import { hasExportModifier, lineOf } from "./syntax.ts";
@@ -51,6 +52,12 @@ function namedExports(source: ts.SourceFile): ReadonlySet<string> {
   return new Set(names);
 }
 
+const SYMBOL_HASH_CHARS = 12;
+
+function hashOf(source: ts.SourceFile, node: ts.Node): string {
+  return createHash("sha1").update(source.text.slice(node.getStart(source), node.end)).digest("hex").slice(0, SYMBOL_HASH_CHARS);
+}
+
 export function collectSymbols(source: ts.SourceFile, path: string): readonly SymbolFact[] {
   const exported = namedExports(source);
   return source.statements.flatMap(declaredBy).map((declared) => ({
@@ -60,5 +67,6 @@ export function collectSymbols(source: ts.SourceFile, path: string): readonly Sy
     file: path,
     line: lineOf(source, declared.node),
     isExported: declared.isExported || exported.has(declared.name.split(".")[0] ?? declared.name),
+    hash: hashOf(source, declared.node),
   }));
 }

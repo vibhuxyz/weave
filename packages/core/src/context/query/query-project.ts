@@ -1,7 +1,9 @@
 import type { ProjectModel, Workspace } from "../types.ts";
+import { searchVectors } from "../vectors/index.ts";
 import { indexModel, rankFiles } from "./rank-files.ts";
 import { callNeighbours, changesTouching, fileNeighbours } from "./related.ts";
-import { requestTermsOf, wordsOf } from "./terms.ts";
+import { wordsOf } from "../words/index.ts";
+import { requestTermsOf } from "./terms.ts";
 import type { ProjectAnswer, RankedFile, RankedSymbol } from "./types.ts";
 import { relevantTests, verificationCommands } from "./verification.ts";
 
@@ -28,9 +30,19 @@ function matchingTerms(terms: readonly string[], text: string): readonly string[
   return terms.filter((term) => words.has(term));
 }
 
+function similarFiles(model: ProjectModel, request: string): readonly RankedFile[] {
+  const workspaceOf = new Map(model.files.map((file) => [file.path, file.workspace]));
+  const best = new Map<string, { readonly score: number; readonly reason: string }>();
+  for (const hit of searchVectors(model, request, MAX_FILES * 2)) {
+    if (!best.has(hit.file)) best.set(hit.file, { score: hit.score, reason: `similar ${hit.kind} ${hit.id}` });
+  }
+  return [...best].map(([path, entry]) => ({ path, workspace: workspaceOf.get(path) ?? null, score: entry.score, matchedTerms: [], reasons: [entry.reason] }));
+}
+
 export function queryProject(model: ProjectModel, request: string): ProjectAnswer {
   const parsed = requestTermsOf(request);
-  const ranked = rankFiles(model, indexModel(model), parsed);
+  const lexical = rankFiles(model, indexModel(model), parsed);
+  const ranked = lexical.length > 0 ? lexical : similarFiles(model, request);
   const floor = (ranked[0]?.score ?? 0) * RELATIVE_SCORE_FLOOR;
   const files = ranked.filter((file) => file.score >= floor).slice(0, MAX_FILES);
   const fileSet = new Set(files.map((file) => file.path));
