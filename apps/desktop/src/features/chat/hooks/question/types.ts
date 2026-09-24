@@ -22,3 +22,24 @@ export type QuestionAnswers = Readonly<Record<string, QuestionAnswerValue>>;
 export type QuestionFormValue = string | boolean | readonly string[];
 
 export type QuestionFormValues = Readonly<Record<string, QuestionFormValue>>;
+
+export interface QuestionStepOption {
+  readonly value: string;
+  readonly label: string;
+  readonly description: string | null;
+}
+
+export interface QuestionStep {
+  readonly key: string;
+  readonly heading: string;
+  readonly label: string | null;
+  readonly help: string | null;
+  readonly field: QuestionField;
+  readonly options: readonly QuestionStepOption[];
+  readonly otherKey: string | null;
+}
+
+export interface AnsweredQuestion {
+  readonly question: string;
+  readonly answer: string;
+}

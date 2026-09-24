@@ -1,3 +1,4 @@
+import type { AnsweredQuestion } from "../question";
 import type { TurnSegment } from "./types";
 
 export function appendTextSegment(segments: readonly TurnSegment[] | undefined, chunk: string): TurnSegment[] {
@@ -12,4 +13,12 @@ export function appendToolSegment(segments: readonly TurnSegment[] | undefined, 
   const last = current.at(-1);
   if (last?.kind === "tools") return [...current.slice(0, -1), { ...last, toolIds: [...last.toolIds, toolId] }];
   return [...current, { id: `s${current.length}`, kind: "tools", toolIds: [toolId] }];
+}
+
+export function appendAnswersSegment(
+  segments: readonly TurnSegment[] | undefined,
+  answers: readonly AnsweredQuestion[],
+): TurnSegment[] {
+  const current = segments ?? [];
+  return [...current, { id: `s${current.length}`, kind: "answers", answers }];
 }

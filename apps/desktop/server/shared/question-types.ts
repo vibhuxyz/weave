@@ -17,7 +17,7 @@ export type QuestionField =
       readonly options: readonly QuestionOption[];
       readonly allowsMultiple: boolean;
     })
-  | (QuestionFieldBase & { readonly kind: "text" })
+  | (QuestionFieldBase & { readonly kind: "text"; readonly customAnswerFor: string | null })
   | (QuestionFieldBase & { readonly kind: "toggle" })
   | (QuestionFieldBase & { readonly kind: "number"; readonly isInteger: boolean });
 

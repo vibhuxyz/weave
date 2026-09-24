@@ -2,6 +2,7 @@ import { XIcon } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { MAX_VISIBLE_LANES } from "../constants";
 import { selectRunHeader, useRunStore } from "../store";
+import { BudgetAlerts } from "./BudgetAlerts";
 import { LaneCard } from "./LaneCard";
 import { LiveCost } from "./LiveCost";
 import { outcomeText } from "./outcome-text";
@@ -33,6 +34,7 @@ export function RunPanel({ onCancel }: { readonly onCancel: () => void }) {
           )}
         </div>
       </header>
+      <BudgetAlerts />
       {visible.length > 0 && (
         <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {visible.map((taskId) => <LaneCard key={taskId} taskId={taskId} />)}

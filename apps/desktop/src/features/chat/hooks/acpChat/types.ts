@@ -2,6 +2,7 @@ import type { ToolCallStatus, ToolKind } from "@agentclientprotocol/sdk";
 import type { ArchivedChatMeta, ConversationMeta } from "../../../../../server/index.ts";
 import type { CheckpointReason } from "@weave/protocol";
 import type { CompactionNotice } from "@/features/chat/compaction";
+import type { AnsweredQuestion } from "../question";
 
 export type { ArchivedChatMeta, ConversationMeta };
 
@@ -117,7 +118,8 @@ export interface TurnCheckpoint {
 
 export type TurnSegment =
   | { readonly id: string; readonly kind: "text"; readonly text: string }
-  | { readonly id: string; readonly kind: "tools"; readonly toolIds: readonly string[] };
+  | { readonly id: string; readonly kind: "tools"; readonly toolIds: readonly string[] }
+  | { readonly id: string; readonly kind: "answers"; readonly answers: readonly AnsweredQuestion[] };
 
 export interface ChatTurn {
   id: string;

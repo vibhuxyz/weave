@@ -1,2 +1,3 @@
 export { collectTurnDiffs, relativePath, turnDiff } from "./turnDiff";
-export type { DiffLine, FileDiff, TurnDiff, TurnDiffEntry } from "./turnDiff";
+export { toolDiffLines } from "./turnDiff/tool-diff-lines";
+export type { DiffLine, DiffLineKind, FileDiff, TurnDiff, TurnDiffEntry } from "./turnDiff";

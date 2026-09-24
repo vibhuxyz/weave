@@ -50,7 +50,7 @@ export function createRunController(runPlanAndRun: PlanAndRun): RunController {
       if (update) send({ type: "run-update", runKey, update });
     };
     try {
-      const result = await runPlanAndRun({ request, repoRoot: input.projectDir, config: { engine: input.engineId, fallbackEngines: (input.fallbackEngineIds ?? []).filter((id) => id !== input.engineId) }, signal: abort.signal, onEvent });
+      const result = await runPlanAndRun({ request, repoRoot: input.projectDir, config: { engine: input.engineId, fallbackEngines: (input.fallbackEngineIds ?? []).filter((id) => id !== input.engineId) }, signal: abort.signal, onEvent, employees: {}, adaptive: {} });
       send({ type: "run-finished", runKey, outcome: outcomeOf(result) });
     } catch (error: unknown) {
       send({ type: "run-finished", runKey, outcome: { status: "error", reason: `Parallel run failed: ${errorMessage(error)}` } });

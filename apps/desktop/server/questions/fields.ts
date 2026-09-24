@@ -1,6 +1,7 @@
 import type { ElicitationPropertySchema, ElicitationSchema } from "@weave/protocol";
 import type { QuestionField, QuestionNotice } from "../shared/index.ts";
 import { MAX_QUESTION_FIELDS } from "./constants.ts";
+import { customAnswerTarget, linkCustomAnswers } from "./custom-answer.ts";
 import { collectOptions } from "./options.ts";
 import { isRecord, toDescription, toLabel } from "./text.ts";
 
@@ -30,7 +31,7 @@ function toChoiceField(base: FieldBase, entries: unknown, allowsMultiple: boolea
 function toStringField(base: FieldBase, property: ElicitationPropertySchema & { type: "string" }): FieldOutcome {
   if (property.oneOf) return toChoiceField(base, property.oneOf, false);
   if (property.enum) return toChoiceField(base, property.enum, false);
-  return { field: { ...base, kind: "text" }, notes: [] };
+  return { field: { ...base, kind: "text", customAnswerFor: customAnswerTarget(property) }, notes: [] };
 }
 
 function multiSelectEntries(items: unknown): unknown {
@@ -79,5 +80,5 @@ export function toQuestionFields(schema: ElicitationSchema): QuestionFields {
   if (entries.length > MAX_QUESTION_FIELDS) {
     notices.push({ key: "", message: `showing ${MAX_QUESTION_FIELDS} of ${entries.length} fields` });
   }
-  return { fields, notices };
+  return { fields: linkCustomAnswers(fields), notices };
 }

@@ -1,27 +1,32 @@
 import { cn } from "@/shared/lib";
 import { tokenizeCommand, type CommandTokenKind } from "./command-tokens";
+import { CODE_BLOCK_CLASS } from "./constants";
+import { CopyCodeButton } from "./CopyCodeButton";
 
 const MAX_COMMAND_CHARS = 4_000;
 
 const TOKEN_CLASS = {
-  command: "text-agent-info-fg",
-  flag: "text-agent-warn",
+  command: "text-agent-low-fg",
+  flag: "text-agent-high-fg",
   string: "text-agent-success",
-  operator: "text-agent-text-faint",
+  operator: "text-agent-text-muted",
   space: "",
-  word: "text-agent-text",
+  word: "text-agent-medium-fg/80",
 } as const satisfies Record<CommandTokenKind, string>;
 
 export function CommandLine({ command, className }: { readonly command: string; readonly className?: string }) {
   return (
-    <pre className={cn("overflow-auto whitespace-pre-wrap break-all rounded-lg bg-agent-code-bg px-3 py-2 font-mono text-xs", className)}>
-      <span className="text-agent-text-faint">$ </span>
-      {tokenizeCommand(command.slice(0, MAX_COMMAND_CHARS)).map((token, index) => (
-        <span key={`${index}:${token.text}`} className={TOKEN_CLASS[token.kind]}>
-          {token.text}
-        </span>
-      ))}
-      {command.length > MAX_COMMAND_CHARS && <span className="text-agent-text-faint"> …</span>}
-    </pre>
+    <div className="relative">
+      <pre className={cn(CODE_BLOCK_CLASS, className)}>
+        <span className="text-agent-text-muted">$ </span>
+        {tokenizeCommand(command.slice(0, MAX_COMMAND_CHARS)).map((token, index) => (
+          <span key={`${index}:${token.text}`} className={TOKEN_CLASS[token.kind]}>
+            {token.text}
+          </span>
+        ))}
+        {command.length > MAX_COMMAND_CHARS && <span className="text-agent-text-faint"> …</span>}
+      </pre>
+      <CopyCodeButton text={command} label="Copy command" />
+    </div>
   );
 }

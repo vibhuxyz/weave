@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { cn } from "@/shared/lib";
 import { useRunStore } from "../store";
+import { LaneWorkforce } from "./LaneWorkforce";
 import { LANE_STATUS_CLASS, LANE_STATUS_LABEL } from "./status-style";
 
 function LaneCardView({ taskId }: { readonly taskId: string }) {
@@ -18,6 +19,7 @@ function LaneCardView({ taskId }: { readonly taskId: string }) {
         </span>
       </div>
       {lane.dependsOn.length > 0 && <span className="text-[11px] text-agent-text-faint">after {lane.dependsOn.join(", ")}</span>}
+      <LaneWorkforce lane={lane} />
       {lane.tools.length > 0 && (
         <ul className="flex flex-col gap-0.5 font-mono text-[11px] text-agent-text-muted">
           {lane.tools.map((tool) => (

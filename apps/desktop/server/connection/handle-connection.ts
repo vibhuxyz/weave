@@ -21,9 +21,13 @@ import { ActiveSetup, announceSetupRequired } from "../setup/index.ts";
 import { createSkillSelector } from "../chat/index.ts";
 import { createRunController } from "../parallel-run/index.ts";
 import { handleClientMessage } from "./dispatch.ts";
+import { handleEmployeeMessage } from "../employees/index.ts";
+import { sendSkillListing } from "../skills/index.ts";
+import { createProjectModelCache } from "../project-model/index.ts";
 import { CompactionController } from "../compaction/index.ts";
 import { ReplayGate } from "../history/index.ts";
 import { EngineAuthStates, type ActiveAuthSession } from "../auth/index.ts";
+import { EMPLOYEE_CLIENT_MESSAGE_TYPES, PROJECT_CLIENT_MESSAGE_TYPES, SKILL_CLIENT_MESSAGE_TYPES, errorMessage } from "../shared/index.ts";
 import type { ClientMessage, ServerMessage, EngineEntry } from "../shared/index.ts";
 import type { ConnectionStorage } from "./types.ts";
 
@@ -80,6 +84,9 @@ const KNOWN_CLIENT_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   "start-run",
   "read-file",
   "cancel-run",
+  ...EMPLOYEE_CLIENT_MESSAGE_TYPES,
+  ...SKILL_CLIENT_MESSAGE_TYPES,
+  ...PROJECT_CLIENT_MESSAGE_TYPES,
 ]);
 
 function parseClientMessage(raw: unknown): ClientMessage | null {
@@ -135,6 +142,11 @@ export async function handleConnection(
     send({ type: "plugin-catalog", plugins: pluginCatalog });
   };
   await loadPlugins();
+  const listingContext = { projectDir, skillDirs: storage.skillDirs, send };
+  handleEmployeeMessage({ type: "list-employees" }, listingContext).catch((error: unknown) => {
+    send({ type: "employees-failed", message: `Cannot load employees for ${projectDir}: ${errorMessage(error)}` });
+  });
+  void sendSkillListing(listingContext);
 
   const tasksStore = new TasksStore(dataDir);
   const authMethodsByEngine = new Map<string, AuthMethod[]>();
@@ -181,7 +193,8 @@ export async function handleConnection(
     replayGate,
   });
 
-  const selectBuiltinSkills = createSkillSelector(projectDir, dataDir);
+  const projectModels = createProjectModelCache({ projectDir, dataDir });
+  const selectBuiltinSkills = createSkillSelector(projectModels);
   const [ruleCatalog, skillCatalog] = await Promise.all([
     discoverRules(storage.ruleDirs).then(formatRulesBlock),
     discoverSkills(storage.skillDirs).then(formatSkillCatalog),
@@ -251,6 +264,8 @@ export async function handleConnection(
         history,
         runs,
         projectDir,
+        skillDirs: storage.skillDirs,
+        projectModels,
         dataDir,
         chats,
         directory: storage.directory,

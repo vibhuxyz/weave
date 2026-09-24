@@ -18,9 +18,9 @@ export function Prose({
   return (
     <div
       className={cn(
-        size === "xs" ? "text-xs leading-6" : "text-sm leading-7",
-        "text-agent-text",
-        "[&_p]:my-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+        size === "xs" ? "text-xs leading-5" : "text-sm leading-relaxed",
+        "text-agent-text-bright",
+        "[&_p]:my-2.5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         "[&_strong]:text-agent-text-bright [&_strong]:font-semibold",
         "[&_em]:text-agent-text-strong",
         "[&_h1]:text-agent-text-bright [&_h2]:text-agent-text-bright [&_h3]:text-agent-text-bright [&_h4]:text-agent-text-bright [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h1]:mt-6 [&_h2]:mt-5 [&_h3]:mt-4 [&_h1]:mb-2 [&_h2]:mb-2 [&_h3]:mb-1.5",

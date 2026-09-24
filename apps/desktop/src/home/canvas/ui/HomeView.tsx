@@ -9,12 +9,12 @@ import { WidgetCanvas } from "./WidgetCanvas";
 const CLOCK_CENTER = { x: -140, y: 0 };
 
 const STARTER_AGENTS: { id: string; x: number; y: number }[] = [
-  { id: "builtin:generalist", x: -380, y: -180 },
-  { id: "builtin:reviewer", x: 60, y: -260 },
-  { id: "builtin:craftsman", x: 440, y: -110 },
-  { id: "builtin:builder", x: -400, y: 200 },
-  { id: "builtin:committer", x: 30, y: 260 },
-  { id: "builtin:debugger", x: 450, y: 180 },
+  { id: "frontend-engineer", x: -380, y: -180 },
+  { id: "backend-engineer", x: 60, y: -260 },
+  { id: "qa-engineer", x: 440, y: -110 },
+  { id: "database-engineer", x: -400, y: 200 },
+  { id: "devops-engineer", x: 30, y: 260 },
+  { id: "security-engineer", x: 450, y: 180 },
 ];
 
 function seedLayout(

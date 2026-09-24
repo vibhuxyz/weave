@@ -9,15 +9,20 @@ import {
   type SkillPlugin,
   type SkillPluginDraft,
 } from '@/features/plugins/hooks';
-import { SkillDialog } from "@/features/skills/components/SkillDialog";
+import { SkillDialog } from "./SkillDialog";
+import { SkillLibrary } from "./SkillLibrary";
 
 export function SkillsView({
   projectDir,
   projectLabel,
+  onOpenEmployee,
+  onRefreshSkills,
 }: {
   /** The active project, so plugins can be scoped to it. */
   projectDir: string | undefined;
   projectLabel: string | undefined;
+  onOpenEmployee: (employeeId: string) => void;
+  onRefreshSkills: () => void;
 }) {
   const { plugins, create, update, remove } = useSkillPlugins();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -37,14 +42,20 @@ export function SkillsView({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden p-8">
+    <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-8">
       <h1 className="mb-1 font-medium text-lg text-foreground">Skills</h1>
-      <p className="mb-8 text-muted-foreground text-sm">
+      <p className="mb-6 text-muted-foreground text-sm">
+        What Weave gives an agent for a task: built-in skills and this project's own, when each applies, and which employees use it.
+      </p>
+      <SkillLibrary hasProject={projectDir !== undefined} onOpenEmployee={onOpenEmployee} onRefresh={onRefreshSkills} />
+
+      <h2 className="mt-12 mb-1 font-medium text-base text-foreground">Plugin links</h2>
+      <p className="mb-6 text-muted-foreground text-sm">
         Plugins from a provider's official page — MCP servers, style guides,
         anything that gets better coding or UI out of the agent.
       </p>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+      <div className="space-y-2">
         {plugins.length === 0 && (
           <p className="rounded-xl border border-border/50 border-dashed p-6 text-center text-muted-foreground text-sm">
             No plugins yet. Add one below.

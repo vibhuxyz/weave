@@ -44,6 +44,21 @@ test("Claude's AskUserQuestion form becomes a choice plus an Other text field", 
   );
   assert.equal(other?.kind, "text");
   assert.equal(other?.title, "Other");
+  assert.equal(other?.kind === "text" ? other.customAnswerFor : null, "question_0");
+});
+
+test("a custom-answer marker pointing at no choice field is dropped", () => {
+  const { fields } = toQuestionFields({
+    type: "object",
+    properties: {
+      note: {
+        type: "string",
+        _meta: { _askUserQuestionCustomAnswer: { questionId: "missing", isCustomAnswer: true } },
+      },
+    },
+  } as FormElicitationRequest["requestedSchema"]);
+  const [note] = fields;
+  assert.equal(note?.kind === "text" ? note.customAnswerFor : "wrong", null);
 });
 
 test("an accepted answer round-trips into Claude's own tool answers", () => {

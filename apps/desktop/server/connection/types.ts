@@ -12,6 +12,7 @@ import type { AutoArchive } from "../archive/index.ts";
 import type { RunController } from "../parallel-run/index.ts";
 import type { ChatDirectory, ProjectChats, SkillSelector } from "../chat/index.ts";
 import type { AuthMethod } from "@weave/protocol";
+import type { ProjectModelCache } from "../project-model/index.ts";
 
 export interface ConnectionStorage {
   readonly dataDir: string;
@@ -28,6 +29,8 @@ export interface ConnectionStorage {
 export interface ClientMessageContext {
   readonly sessionMgr: DesktopSessionManager;
   readonly projectDir: string;
+  readonly skillDirs: readonly string[];
+  readonly projectModels: ProjectModelCache;
   readonly dataDir: string;
   readonly chats: ProjectChats;
   readonly directory: ChatDirectory;

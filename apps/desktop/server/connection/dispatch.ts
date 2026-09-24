@@ -10,6 +10,9 @@ import { handleChatAction, handleDeleteProject, parseAutoArchiveDays } from "../
 import type { ChatAction } from "../archive/index.ts";
 import { createCheckpointTask, runCancelCheckpoint } from "./checkpoint-task.ts";
 import { answerQuestion } from "../questions/index.ts";
+import { handleEmployeeMessage } from "../employees/index.ts";
+import { sendSkillListing } from "../skills/index.ts";
+import { handleProjectMessage } from "../project-model/index.ts";
 import { saveAnswer } from "../decisions/index.ts";
 import { forwardResult } from "./forward-result.ts";
 import type { ClientMessageContext } from "./types.ts";
@@ -29,6 +32,8 @@ export function handleClientMessage(
   const {
     sessionMgr,
     projectDir,
+    skillDirs,
+    projectModels,
     dataDir,
     chats,
     directory,
@@ -258,6 +263,24 @@ export function handleClientMessage(
 
     case "cancel-run":
       runs.cancel();
+      return;
+
+    case "list-employees":
+    case "read-employee":
+    case "save-employee":
+    case "delete-employee":
+      handleEmployeeMessage(msg, { projectDir, skillDirs, send }).catch((error: unknown) => {
+        send({ type: "error", message: `Employee request ${msg.type} failed: ${errorMessage(error)}` });
+      });
+      return;
+
+    case "read-project-overview":
+    case "query-project":
+      void handleProjectMessage(msg, { models: projectModels, send });
+      return;
+
+    case "list-skills":
+      void sendSkillListing({ projectDir, skillDirs, send });
       return;
 
     case "save-history":

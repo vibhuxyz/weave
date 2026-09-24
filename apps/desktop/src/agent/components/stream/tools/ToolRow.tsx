@@ -1,9 +1,11 @@
 import { memo, useState } from "react";
 import type { ChatTurn, ToolEntry } from "@/features/chat/hooks";
 import { cleanOutput, toolRunState } from "@/features/chat/components";
+import { cn } from "@/shared/lib";
 import { Shimmer } from "@/shared/ui/ai-elements";
 import { CommandLine } from "./CommandLine";
-import { MAX_OUTPUT_CHARS } from "./constants";
+import { CODE_BLOCK_CLASS, MAX_OUTPUT_CHARS } from "./constants";
+import { DiffPreview } from "./DiffPreview";
 import { DiffStat } from "./DiffStat";
 import { DisclosureHeader } from "../DisclosureHeader";
 import { diffTotalsOf } from "./tool-diff";
@@ -24,25 +26,26 @@ function ToolRowView({ tool, turn, onOpenDiff }: { readonly tool: ToolEntry; rea
   const diffPath = tool.diffs?.[0]?.path;
   const label = (
     <>
-      {rowVerb(tool, false)} <span className="text-agent-text">{rowSubject(tool)}</span>
+      {rowVerb(tool, false)} {rowSubject(tool)}
       {isFailed && <span className="text-agent-critical-fg"> (failed)</span>}
       <DiffStat additions={totals.additions} deletions={totals.deletions} />
     </>
   );
   return (
-    <li className="flex flex-col gap-2 px-4 py-3">
+    <li className="flex flex-col gap-2 px-3 py-2">
       <DisclosureHeader open={open} onToggle={() => setOpen((value) => !value)}>
         {isRunning ? <Shimmer>{runningLabel(tool)}</Shimmer> : label}
       </DisclosureHeader>
       {open && isShell && (
-        <CommandLine command={commandOf(tool)} className="max-h-24" />
+        <CommandLine command={commandOf(tool)} className="max-h-80" />
       )}
+      {open && tool.diffs?.map((diff, index) => <DiffPreview key={`${index}:${diff.path}`} diff={diff} />)}
       {open && output && (
-        <pre className="max-h-80 overflow-auto whitespace-pre-wrap font-mono text-agent-text-muted text-xs">{output}</pre>
+        <pre className={cn(CODE_BLOCK_CLASS, "max-h-80 text-agent-text-muted")}>{output}</pre>
       )}
       {open && tool.planChange && <p className="whitespace-pre-wrap text-agent-text-muted text-sm">{tool.title}</p>}
       {open && diffPath && onOpenDiff && (
-        <button type="button" onClick={() => onOpenDiff(diffPath)} className="self-start text-agent-accent text-xs hover:underline">
+        <button type="button" onClick={() => onOpenDiff(diffPath)} className="self-start text-agent-text-muted text-xs transition-colors hover:text-agent-text-bright">
           Open diff
         </button>
       )}

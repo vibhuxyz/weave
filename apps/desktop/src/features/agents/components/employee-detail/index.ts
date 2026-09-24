@@ -1,0 +1,1 @@
+export { EmployeeDetailView } from "./EmployeeDetailView";

@@ -22,7 +22,11 @@ export function DisclosureHeader({
       aria-expanded={open}
       disabled={isDisabled}
       onClick={onToggle}
-      className={cn("flex max-w-full items-center gap-1.5 text-left text-agent-text-faint text-sm transition-colors hover:text-agent-text-muted disabled:hover:text-agent-text-faint", className)}
+      className={cn(
+        "flex max-w-full items-center gap-1.5 text-left text-sm transition-colors",
+        open ? "text-agent-text-bright" : "text-agent-text-faint hover:text-agent-text-muted disabled:hover:text-agent-text-faint",
+        className,
+      )}
     >
       <span className="min-w-0 truncate">{children}</span>
       {!isDisabled && <Chevron className="size-3.5 shrink-0" />}

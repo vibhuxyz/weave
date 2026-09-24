@@ -1,12 +1,13 @@
 export { latestPlanEntries, useAcpChat } from "./useAcpChat";
-export { hasMissingRequired, toAnswerPayload } from "./question";
+export { MAX_OPTION_SHORTCUTS, selectedValues, textOf, useQuestionForm } from "./question";
 export type {
-  QuestionAnswers,
-  QuestionField,
-  QuestionFormValue,
+  AnsweredQuestion,
+  AnswerQuestion,
   QuestionFormValues,
   QuestionNotice,
   QuestionState,
+  QuestionStep,
+  QuestionStepOption,
 } from "./question";
 export type {
   EngineSetupPrompt,

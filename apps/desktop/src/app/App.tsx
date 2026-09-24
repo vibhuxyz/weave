@@ -39,26 +39,15 @@ const INSPECTOR_DEFAULT_WIDTH = 400;
 const INSPECTOR_MAX_WIDTH = 720;
 const CONTEXT_PANEL_WIDTH = 288;
 
-/**
- * The transcript widens with the window rather than sitting at one cap: a
- * full-screen display was leaving most of the row empty, while an unbounded
- * column would run prose past the width anyone reads comfortably.
- */
-const TRANSCRIPT_WIDTH = "mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl";
-
-/**
- * The composer stays at the narrower cap the transcript used to share. One line
- * of input stretched to the full width of a large display reads as a gap in the
- * page rather than a place to type.
- */
-const COMPOSER_WIDTH = "mx-auto w-full max-w-4xl";
+const CHAT_COLUMN_WIDTH = "mx-auto w-full max-w-3xl";
 import { collectTasks, PlanPanel, planProgressOf, planSignatureOf, TurnDiffPanel, StreamedTurn, StreamStatusLine, TasksPanel } from "@/agent/components";
 import type { BlockAction } from "@/agent/normalize";
 import { collectTurnDiffs } from "@/agent/diff";
 import { Sidebar } from "./Sidebar";
 import { CreateProjectDialog, toneColor } from '@/features/projects/components';
-import { AgentAvatar, AgentsView, ConversationStart } from '@/features/agents/components';
-import { SkillsView } from "@/features/skills/components";
+import { AgentAvatar, EmployeesView, ConversationStart } from '@/features/agents/components';
+import { SkillsView } from "@/features/skills";
+import { ProjectView } from "@/features/project-intelligence";
 import { formatSkillPluginsSystemPrompt, usePlugins, useSkillPlugins } from '@/features/plugins/hooks';
 import { PluginsView } from '@/features/plugins/components';
 import {
@@ -113,7 +102,7 @@ const NO_PROJECT_LABEL = "No project";
 const NEW_CHAT_TITLE = "New chat";
 
 export function App() {
-  const [previousView, setPreviousView] = useState<"home" | "chat" | "agents" | "plugins" | "skills">("home");
+  const [previousView, setPreviousView] = useState<"home" | "chat" | "agents" | "plugins" | "skills" | "project">("home");
   const { state: project, choose, startWith } = useProject();
   const server = project.status === "running" ? project.server : null;
   // Ported from Berd's onboarding gate: Home never requires a project — it's
@@ -178,6 +167,9 @@ export function App() {
     startRun,
     cancelRun,
     openFile,
+    employeeActions,
+    refreshSkills,
+    projectActions,
   } = useAcpChat(server, { onProjectDeleted: (dir) => forget(dir) });
 
   const { enrichedEngines } = useHarnesses({ engines, onRefreshEngines: refreshEngines });
@@ -220,12 +212,12 @@ export function App() {
       ? projects.find((p) => p.dir === project.dir)
       : undefined;
   const [view, setView] = usePersistedState<
-    "home" | "chat" | "agents" | "plugins" | "skills" | "settings"
+    "home" | "chat" | "agents" | "plugins" | "skills" | "project" | "settings"
   >(
     "berd:view",
     "home",
     (v, d) =>
-      v === "home" || v === "agents" || v === "plugins" || v === "skills" || v === "settings" ? v : d,
+      v === "home" || v === "agents" || v === "plugins" || v === "skills" || v === "project" || v === "settings" ? v : d,
   );
 
   const openSettings = useCallback(() => {
@@ -392,13 +384,15 @@ export function App() {
 
   const handleChatWithAgent = useCallback(
     (agent: Agent) => {
-      if (!chatWorkspaceDir) {
+      const isProjectEmployee = agent.origin.kind === "employee" && agent.origin.source !== "builtin";
+      const chatDir = isProjectEmployee && activeDir ? activeDir : chatWorkspaceDir;
+      if (!chatDir) {
         void choose();
         return;
       }
       pendingAgentModel.current = agent.model ?? null;
       const needsEngine = agent.engineId !== undefined && !isSameEngine(agent.engineId, activeEngineId);
-      newChatInProject(chatWorkspaceDir, {
+      newChatInProject(chatDir, {
         engineId: needsEngine ? agent.engineId : undefined,
         afterStart: () => {
           setSelectedAgentId(agent.id);
@@ -406,7 +400,7 @@ export function App() {
         },
       });
     },
-    [chatWorkspaceDir, choose, isSameEngine, activeEngineId, newChatInProject],
+    [activeDir, chatWorkspaceDir, choose, isSameEngine, activeEngineId, newChatInProject],
   );
 
   /**
@@ -510,6 +504,23 @@ export function App() {
   }, [modelOption, setConfig]);
 
   const [draft, setDraft] = useState("");
+  const [focusEmployeeId, setFocusEmployeeId] = useState<string | null>(null);
+  const openEmployee = useCallback(
+    (employeeId: string) => {
+      setFocusEmployeeId(employeeId);
+      setView("agents");
+    },
+    [setView],
+  );
+  const clearEmployeeFocus = useCallback(() => setFocusEmployeeId(null), []);
+  const handleChatWithEmployee = useCallback(
+    (agent: Agent, message?: string) => {
+      handleChatWithAgent(agent);
+      if (message) setDraft(message);
+    },
+    [handleChatWithAgent, setDraft],
+  );
+
   const [imageAttachments, setImageAttachments] = useState<ChatImageAttachmentDraft[]>([]);
   // Everything uploaded this session, so `/img` can re-attach an earlier image
   // without the user hunting for the file again.
@@ -1178,11 +1189,11 @@ export function App() {
           )}
         </div>
 
-        {/* Full-bleed on the shell's dot grid. The panel used to be a raised
-            card, which boxed Home's canvas and the Agents grid inside a second
-            surface — the sidebar is the only chrome that should read as one. */}
         <main
-          className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+          className={cn(
+            "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
+            view === "chat" && "rounded-[14px] border border-sidebar-shell-border bg-card",
+          )}
           onDragOver={(e) => {
             if (view !== "chat" || !e.dataTransfer.types.includes("Files")) return;
             e.preventDefault();
@@ -1253,12 +1264,12 @@ export function App() {
             );
           })()}
         {view === "agents" ? (
-          <AgentsView
-            onChat={(agent, message) => {
-              handleChatWithAgent(agent);
-              if (message) setDraft(message);
-            }}
-            engines={enrichedEngines}
+          <EmployeesView
+            actions={employeeActions}
+            hasProject={activeDir !== undefined}
+            onChat={handleChatWithEmployee}
+            focusEmployeeId={focusEmployeeId}
+            onFocusHandled={clearEmployeeFocus}
           />
         ) : view === "plugins" ? (
           <PluginsView
@@ -1272,10 +1283,17 @@ export function App() {
             engineLabel={engineLabel ?? undefined}
             hasProject={!!activeDir}
           />
+        ) : view === "project" ? (
+          <ProjectView
+            actions={projectActions}
+            projectLabel={activeDir && !isChatWorkspaceActive ? basename(activeDir) : undefined}
+          />
         ) : view === "skills" ? (
           <SkillsView
             projectDir={activeDir}
             projectLabel={activeDir ? basename(activeDir) : undefined}
+            onOpenEmployee={openEmployee}
+            onRefreshSkills={refreshSkills}
           />
         ) : (
         <>
@@ -1295,7 +1313,7 @@ export function App() {
           ref={scrollRef}
           onScroll={onTranscriptScroll}
           className={cn(
-            TRANSCRIPT_WIDTH,
+            CHAT_COLUMN_WIDTH,
             "flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] pt-6 pb-24",
           )}
         >
@@ -1391,8 +1409,7 @@ export function App() {
             "relative z-10 mt-auto w-full shrink-0 pt-4 pb-6",
             view === "home"
               ? "ml-auto max-w-md px-[var(--spacing-app-panel-gutter-inline)]"
-              // Narrower than the transcript on purpose, and centred under it.
-              : cn(COMPOSER_WIDTH, "px-[var(--spacing-app-panel-gutter-inline)]"),
+              : cn(CHAT_COLUMN_WIDTH, "px-[var(--spacing-app-panel-gutter-inline)]"),
           )}
         >
           {view === "chat" && !atBottom && turns.length > 0 && (

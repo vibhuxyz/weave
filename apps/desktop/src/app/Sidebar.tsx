@@ -1,5 +1,6 @@
 import {
   BookOpenIcon,
+  NetworkIcon,
   BotIcon,
   HomeIcon,
   PlusIcon,
@@ -14,7 +15,7 @@ import type { ProjectEntry } from "@/features/projects/hooks";
 import { ProjectChatList } from "./ProjectChatList";
 import { ProjectRow } from "./ProjectRow";
 
-export type SidebarView = "home" | "chat" | "agents" | "plugins" | "skills" | "settings";
+export type SidebarView = "home" | "chat" | "agents" | "plugins" | "skills" | "project" | "settings";
 
 export interface SidebarProps {
   projects: ProjectEntry[];
@@ -44,6 +45,7 @@ const NAV = [
   { id: "home", label: "Home", icon: HomeIcon, view: "home" as const },
   { id: "agents", label: "Agents", icon: BotIcon, view: "agents" as const },
   { id: "skills", label: "Skills", icon: BookOpenIcon, view: "skills" as const },
+  { id: "project", label: "Project", icon: NetworkIcon, view: "project" as const },
 ] as const;
 
 function SectionLabel({

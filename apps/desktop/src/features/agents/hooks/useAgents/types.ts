@@ -1,30 +1,38 @@
 import type { ProjectTone } from "@/features/projects/components";
 
+export type AgentOrigin =
+  | { readonly kind: "employee"; readonly source: "builtin" | "user" | "project" }
+  | { readonly kind: "persona" };
+
 export interface Agent {
   id: string;
   name: string;
   description: string;
   instructions: string;
-  /** Engine id from ENGINES (the "provider"). */
   engineId?: string;
-  /** A `model`-category config value applied after the session connects. */
   model?: string;
   tint?: ProjectTone;
-  /** Custom avatar as a data URI; overrides the character art. */
   icon?: string;
-  /** A bundled character the user picked, by key (see `characters.ts`). */
   character?: string;
   builtin?: boolean;
+  origin: AgentOrigin;
   createdAt: number;
   updatedAt: number;
 }
 
-export type AgentDraft = Omit<Agent, "id" | "createdAt" | "updatedAt" | "builtin">;
+type StoredAgent = Omit<Agent, "origin">;
 
-export function isAgent(v: unknown): v is Agent {
+export function isStoredAgent(value: unknown): value is StoredAgent {
   return (
-    !!v &&
-    typeof (v as Agent).id === "string" &&
-    typeof (v as Agent).name === "string"
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    typeof value.id === "string" &&
+    "name" in value &&
+    typeof value.name === "string"
   );
+}
+
+export function personaOf(stored: StoredAgent): Agent {
+  return { ...stored, builtin: false, origin: { kind: "persona" } };
 }

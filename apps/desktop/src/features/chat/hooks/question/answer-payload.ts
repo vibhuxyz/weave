@@ -6,17 +6,10 @@ import type {
   QuestionFormValues,
 } from "./types";
 
-function isBlank(value: QuestionFormValue | undefined): boolean {
+export function isBlank(value: QuestionFormValue | undefined): boolean {
   if (value === undefined) return true;
   if (typeof value === "string") return value.trim() === "";
   return typeof value !== "boolean" && value.length === 0;
-}
-
-export function hasMissingRequired(
-  fields: readonly QuestionField[],
-  values: QuestionFormValues,
-): boolean {
-  return fields.some((field) => field.isRequired && isBlank(values[field.key]));
 }
 
 function toNumber(value: QuestionFormValue): number | null {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appendTextSegment, appendToolSegment } from "./turn-segments";
+import { appendAnswersSegment, appendTextSegment, appendToolSegment } from "./turn-segments";
 
 test("text and tool calls keep the order they streamed in", () => {
   const afterText = appendTextSegment(appendTextSegment(undefined, "Checking "), "the repo.");
@@ -10,5 +10,14 @@ test("text and tool calls keep the order they streamed in", () => {
     { id: "s0", kind: "text", text: "Checking the repo." },
     { id: "s1", kind: "tools", toolIds: ["t1", "t2"] },
     { id: "s2", kind: "text", text: "Done." },
+  ]);
+});
+
+test("answered questions become their own segment after the text", () => {
+  const answers = [{ question: "Add Zod?", answer: "Yes" }];
+  const segments = appendAnswersSegment(appendTextSegment(undefined, "Asking."), answers);
+  assert.deepEqual(segments, [
+    { id: "s0", kind: "text", text: "Asking." },
+    { id: "s1", kind: "answers", answers },
   ]);
 });

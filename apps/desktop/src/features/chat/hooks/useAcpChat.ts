@@ -32,13 +32,16 @@ import {
   type CompactionCapabilities,
 } from "@/features/chat/compaction";
 import { buildHistoryArchive, restoreArchivedTurns } from "./acpChat/history-archive";
-import { appendTextSegment, appendToolSegment } from "./acpChat/turn-segments";
+import { appendAnswersSegment, appendTextSegment, appendToolSegment } from "./acpChat/turn-segments";
 import { latestPlanEntries, planChangeEntries, planChanges } from "./acpChat/plan-changes";
 import { useArchiveChannel } from "./acpChat/use-archive-channel";
 import type { ArchiveChannelOptions } from "./acpChat/use-archive-channel";
-import { useQuestionChannel } from "./question";
+import { useQuestionChannel, type AnsweredQuestion } from "./question";
 import { useRunChannel } from "@/features/runs";
 import { useFileChannel } from "@/features/files";
+import { useEmployeeChannel } from "@/features/employees";
+import { useSkillChannel } from "@/features/skills";
+import { useProjectChannel } from "@/features/project-intelligence";
 import {
   applyCompactionSettled,
   applyCompactionStarted,
@@ -160,9 +163,11 @@ export function useAcpChat(server: ChatServerEndpoint | null, options: ArchiveCh
   const token = server?.token ?? null;
   const socketRef = useRef<WebSocket | null>(null);
   const archive = useArchiveChannel(socketRef, options);
-  const questionChannel = useQuestionChannel(socketRef);
   const runChannel = useRunChannel(socketRef);
   const fileChannel = useFileChannel(socketRef);
+  const employeeChannel = useEmployeeChannel(socketRef);
+  const skillChannel = useSkillChannel(socketRef);
+  const projectChannel = useProjectChannel(socketRef);
   const [state, setState] = useState<ConnectionState>("idle");
   const [cwd, setCwd] = useState<string | null>(null);
   const [engineId, setEngineId] = useState<string | null>(null);
@@ -315,6 +320,13 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     },
     [],
   );
+
+  const appendAnswers = useCallback(
+    (answers: readonly AnsweredQuestion[]) =>
+      withAssistantTurn((turn) => ({ ...turn, segments: appendAnswersSegment(turn.segments, answers) })),
+    [withAssistantTurn],
+  );
+  const questionChannel = useQuestionChannel(socketRef, appendAnswers);
 
   /**
    * Attachments already fetched: data URI, or null when the file is gone.
@@ -550,6 +562,9 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     setChats([]);
     archive.reset();
     questionChannel.reset();
+    employeeChannel.reset();
+    skillChannel.reset();
+    projectChannel.reset();
     setPermissionRequest(null);
     setModes(null);
     setEngineSetup(null);
@@ -592,6 +607,8 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
         attempt = 0;
         next.send(JSON.stringify({ type: "refresh-engines" }));
         next.send(JSON.stringify({ type: "refresh-plugins" }));
+        employeeChannel.expectListing();
+        skillChannel.expectListing();
       };
 
       next.onmessage = (event) => {
@@ -600,6 +617,9 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
         if (questionChannel.handleMessage(message)) return;
         if (runChannel.handleMessage(message)) return;
         if (fileChannel.handleMessage(message)) return;
+        if (employeeChannel.handleMessage(message)) return;
+        if (skillChannel.handleMessage(message)) return;
+        if (projectChannel.handleMessage(message)) return;
         switch (message.type) {
           case "ready":
             setState("ready");
@@ -997,6 +1017,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       next.onclose = () => {
         if (disposed || socket !== next) return;
         setBusy(false);
+        employeeChannel.disconnect();
         const heldPromptId = compactingOperationRef.current ? compactingPromptRef.current : null;
         const restoreHeldPrompt = heldPromptId ? withdrawHandlersRef.current.get(heldPromptId) : undefined;
         compactingOperationRef.current = null;
@@ -1029,7 +1050,12 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       clearTimeout(retry);
       socket?.close();
     };
-  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset, runChannel.handleMessage, fileChannel.handleMessage]);
+  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset, runChannel.handleMessage, fileChannel.handleMessage, employeeChannel.handleMessage, employeeChannel.reset, employeeChannel.expectListing, employeeChannel.disconnect, skillChannel.handleMessage, skillChannel.expectListing, skillChannel.reset, projectChannel.handleMessage, projectChannel.reset]);
+
+  const { readEmployee, saveEmployee, deleteEmployee } = employeeChannel;
+  const { readOverview, queryProject } = projectChannel;
+  const projectActions = useMemo(() => ({ readOverview, queryProject }), [readOverview, queryProject]);
+  const employeeActions = useMemo(() => ({ readEmployee, saveEmployee, deleteEmployee }), [readEmployee, saveEmployee, deleteEmployee]);
 
   const latestUsage = latestContextUsage(turns);
   const contextUsed = latestUsage?.contextTokens;
@@ -1343,6 +1369,9 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     startRun: runChannel.startRun,
     cancelRun: runChannel.cancelRun,
     openFile: fileChannel.openFile,
+    employeeActions,
+    refreshSkills: skillChannel.refreshSkills,
+    projectActions,
     modes,
     setMode,
     engineSetup,

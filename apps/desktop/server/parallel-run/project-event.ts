@@ -1,6 +1,7 @@
 import type { WeaveEvent } from "@weave/protocol";
 import type { RunUpdate } from "../shared/index.ts";
 import { MAX_DETAIL_CHARS, MAX_TEXT_CHUNK_CHARS, MAX_TOOL_TITLE_CHARS } from "./constants.ts";
+import { workforceUpdate } from "./workforce-update.ts";
 
 type AgentMessageEvent = Extract<WeaveEvent, { type: "agent.message" }>;
 
@@ -64,6 +65,6 @@ export function projectRunEvent(event: WeaveEvent): RunUpdate | null {
     case "integration.finished":
       return { kind: "integration", status: event.status, branch: event.branch, brokenBy: event.brokenBy };
     default:
-      return event.taskId === undefined ? null : projectTaskEvent(event, event.taskId);
+      return workforceUpdate(event) ?? (event.taskId === undefined ? null : projectTaskEvent(event, event.taskId));
   }
 }

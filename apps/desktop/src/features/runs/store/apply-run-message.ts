@@ -1,4 +1,5 @@
-import type { RunUpdate } from "../../../../server/index.ts";
+import type { BudgetAlert, RunUpdate } from "../../../../server/index.ts";
+import { MAX_RUN_ALERTS } from "../constants";
 import type { Lane, RunMessage, RunState } from "../types";
 import { applyLaneUpdate, emptyLane } from "./lane";
 
@@ -6,7 +7,7 @@ type LaneUpdate = Extract<RunUpdate, { readonly taskId: string }>;
 type PlanUpdate = Extract<RunUpdate, { readonly kind: "plan" }>;
 
 function startedRun(runKey: string, request: string): RunState {
-  return { runKey, request, plan: null, lanes: {}, laneOrder: [], contractVersion: null, integration: null, outcome: null };
+  return { runKey, request, plan: null, lanes: {}, laneOrder: [], contractVersion: null, integration: null, orchestration: null, budgetAlerts: [], hiddenAlertCount: 0, outcome: null };
 }
 
 function withPlan(run: RunState, update: PlanUpdate): RunState {
@@ -25,6 +26,11 @@ function withLaneUpdate(run: RunState, update: LaneUpdate): RunState {
   return { ...run, lanes: { ...run.lanes, [update.taskId]: applyLaneUpdate(lane, update) }, laneOrder };
 }
 
+function withBudgetAlert(run: RunState, alert: BudgetAlert): RunState {
+  if (run.budgetAlerts.length >= MAX_RUN_ALERTS) return { ...run, hiddenAlertCount: run.hiddenAlertCount + 1 };
+  return { ...run, budgetAlerts: [...run.budgetAlerts, alert] };
+}
+
 function applyUpdate(run: RunState, update: RunUpdate): RunState {
   switch (update.kind) {
     case "plan":
@@ -33,6 +39,10 @@ function applyUpdate(run: RunState, update: RunUpdate): RunState {
       return { ...run, contractVersion: update.version };
     case "integration":
       return { ...run, integration: { status: update.status, branch: update.branch, brokenBy: update.brokenBy } };
+    case "orchestration":
+      return { ...run, orchestration: { workers: update.workers, reason: update.reason, estimatedCostMicroUsd: update.estimatedCostMicroUsd, timeSavedMs: update.timeSavedMs } };
+    case "budget-exceeded":
+      return withBudgetAlert(run, update.alert);
     default:
       return withLaneUpdate(run, update);
   }

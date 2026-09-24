@@ -1,6 +1,7 @@
 import type { RunPlanTask, RunUpdate } from "../../../../server/index.ts";
 import { MAX_LANE_FILES, MAX_LANE_TEXT_CHARS, MAX_LANE_TOOLS } from "../constants";
 import type { Lane } from "../types";
+import { applyWorkforceUpdate } from "./lane-workforce";
 
 type LaneUpdate = Extract<RunUpdate, { readonly taskId: string }>;
 
@@ -20,6 +21,12 @@ export function emptyLane(task: RunPlanTask): Lane {
     attemptCostUsd: 0,
     reason: null,
     merge: null,
+    employee: null,
+    verification: null,
+    claims: [],
+    blockedReason: null,
+    notes: [],
+    noteCount: 0,
   };
 }
 
@@ -43,6 +50,8 @@ function startedAttempt(lane: Lane): Lane {
     tools: [],
     reason: null,
     merge: null,
+    blockedReason: null,
+    verification: null,
     settledCostUsd: lane.settledCostUsd + lane.attemptCostUsd,
     attemptCostUsd: 0,
   };
@@ -61,9 +70,16 @@ export function applyLaneUpdate(lane: Lane, update: LaneUpdate): Lane {
     case "cost":
       return { ...lane, attemptCostUsd: update.costUsd };
     case "task-settled":
-      return { ...lane, status: update.status, reason: update.reason };
+      return { ...lane, status: update.status, reason: update.reason, blockedReason: null };
     case "merge":
       return { ...lane, merge: { status: update.status, detail: update.detail } };
+    case "employee-assigned":
+    case "employee-verified":
+    case "claimed":
+    case "blocked":
+    case "dependency-added":
+    case "note":
+      return applyWorkforceUpdate(lane, update);
     default: {
       const unreachable: never = update;
       return unreachable;

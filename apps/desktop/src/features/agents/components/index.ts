@@ -1,4 +1,4 @@
 export { AgentAvatar } from "./AgentAvatar";
-export { AgentsView } from "./AgentsView";
+export { EmployeesView } from "./employees";
 export { ProjectAgentsPicker } from "./ProjectAgentsPicker";
 export { ConversationStart } from "./ConversationStart";
