@@ -1,6 +1,7 @@
 import type { WeaveEvent } from "@weave/protocol";
 import type { RunUpdate } from "../shared/index.ts";
 import { MAX_DETAIL_CHARS, MAX_TEXT_CHUNK_CHARS, MAX_TOOL_TITLE_CHARS } from "./constants.ts";
+import { projectWorkforceEvent } from "./project-workforce-event.ts";
 
 type AgentMessageEvent = Extract<WeaveEvent, { type: "agent.message" }>;
 
@@ -51,6 +52,8 @@ function projectTaskEvent(event: WeaveEvent, taskId: string): RunUpdate | null {
 }
 
 export function projectRunEvent(event: WeaveEvent): RunUpdate | null {
+  const workforce = projectWorkforceEvent(event);
+  if (workforce) return workforce;
   switch (event.type) {
     case "plan.created":
       return {

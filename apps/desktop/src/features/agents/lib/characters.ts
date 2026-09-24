@@ -29,19 +29,19 @@ import pollies21 from "../assets/characters/pollies-21.png";
 
 /**
  * The built-in agents get their character assigned, not hashed. With 18
- * characters and six built-ins the DJB2 hash collides — `builtin:builder` and
- * `builtin:reviewer` both landed on gloopies-4 — which reads as a bug on any
+ * characters and six built-in employees the DJB2 hash collides, two built-ins
+ * landing on the same art, which reads as a bug on any
  * screen showing them side by side, most visibly the onboarding
  * recommendations. User-created agents still hash, where a collision between
  * two agents the user named themselves is unremarkable.
  */
 const CHARACTER_BY_SEED: Record<string, string> = {
-  "builtin:builder": gloopies1,
-  "builtin:debugger": gloopies10,
-  "builtin:reviewer": gloopies4,
-  "builtin:generalist": gloopies7,
-  "builtin:craftsman": gloopies13,
-  "builtin:committer": gloopies16,
+  "employee:backend-engineer": gloopies1,
+  "employee:qa-engineer": gloopies10,
+  "employee:security-engineer": gloopies4,
+  "employee:database-engineer": gloopies7,
+  "employee:frontend-engineer": gloopies13,
+  "employee:devops-engineer": gloopies16,
 };
 
 /**

@@ -1,5 +1,5 @@
 export { assignEmployees, compileTask, engineOrderFor, logAssignments, policyOf } from "./assignment/index.ts";
-export { discoverEmployees, parseEmployee, parseYamlSubset } from "./config/index.ts";
+export { deleteProjectEmployee, discoverEmployees, employeeToYaml, parseEmployee, parseYamlSubset, saveProjectEmployee } from "./config/index.ts";
 export { appendMemory, readMemory, recallMemories } from "./memory/index.ts";
 export { employeePerformance } from "./performance/index.ts";
 export { renderEmployeeBrief, renderRoster } from "./prompt/index.ts";

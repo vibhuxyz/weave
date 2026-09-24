@@ -80,6 +80,11 @@ const KNOWN_CLIENT_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   "start-run",
   "read-file",
   "cancel-run",
+  "list-employees",
+  "save-employee",
+  "delete-employee",
+  "list-skills",
+  "project-model",
 ]);
 
 function parseClientMessage(raw: unknown): ClientMessage | null {

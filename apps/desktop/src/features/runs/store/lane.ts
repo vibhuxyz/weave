@@ -1,5 +1,5 @@
 import type { RunPlanTask, RunUpdate } from "../../../../server/index.ts";
-import { MAX_LANE_FILES, MAX_LANE_TEXT_CHARS, MAX_LANE_TOOLS } from "../constants";
+import { MAX_LANE_EVENTS, MAX_LANE_FILES, MAX_LANE_TEXT_CHARS, MAX_LANE_TOOLS } from "../constants";
 import type { Lane } from "../types";
 
 type LaneUpdate = Extract<RunUpdate, { readonly taskId: string }>;
@@ -20,7 +20,17 @@ export function emptyLane(task: RunPlanTask): Lane {
     attemptCostUsd: 0,
     reason: null,
     merge: null,
+    employee: null,
+    verification: null,
+    blocked: null,
+    events: [],
+    eventCount: 0,
   };
+}
+
+export function withLaneEvent(lane: Lane, event: string, summary: string): Lane {
+  const entry = { id: lane.eventCount, event, summary };
+  return { ...lane, events: [...lane.events, entry].slice(-MAX_LANE_EVENTS), eventCount: lane.eventCount + 1 };
 }
 
 function withFile(lane: Lane, path: string): Lane {
@@ -51,7 +61,7 @@ function startedAttempt(lane: Lane): Lane {
 export function applyLaneUpdate(lane: Lane, update: LaneUpdate): Lane {
   switch (update.kind) {
     case "task-started":
-      return startedAttempt(lane);
+      return { ...startedAttempt(lane), blocked: null, verification: null };
     case "text":
       return { ...lane, text: (lane.text + update.text).slice(-MAX_LANE_TEXT_CHARS) };
     case "tool":
@@ -64,6 +74,12 @@ export function applyLaneUpdate(lane: Lane, update: LaneUpdate): Lane {
       return { ...lane, status: update.status, reason: update.reason };
     case "merge":
       return { ...lane, merge: { status: update.status, detail: update.detail } };
+    case "employee":
+      return { ...lane, employee: { id: update.employeeId, reason: update.reason } };
+    case "verification":
+      return { ...lane, verification: { ok: update.ok, detail: update.detail } };
+    case "blocked":
+      return { ...lane, blocked: update.reason };
     default: {
       const unreachable: never = update;
       return unreachable;

@@ -1,136 +1,55 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
+import { BUILTIN_EMPLOYEE_SUMMARIES, type EmployeeSummary } from "@weave/core/browser";
 import { usePersistedState } from "@/shared/hooks";
-import { BUILTINS } from "./useAgents/builtins";
-import { isAgent, type Agent, type AgentDraft } from "./useAgents/types";
+import { useWorkforceStore, type EmployeeView } from "@/features/workforce";
+import { isAgent, type Agent } from "./useAgents/types";
 
 export type { Agent, AgentDraft } from "./useAgents/types";
 export { activeAgents, formatPersonaSystemPrompt } from "./useAgents/personaPrompt";
 
-const now = () => Date.now();
+export const EMPLOYEE_AGENT_PREFIX = "employee:";
+
+export function employeeAgentId(employeeId: string): string {
+  return `${EMPLOYEE_AGENT_PREFIX}${employeeId}`;
+}
+
+function fromEmployee(employee: EmployeeView): Agent {
+  return {
+    id: employeeAgentId(employee.id),
+    name: employee.name,
+    description: employee.description || employee.responsibilities.slice(0, 3).join(", "),
+    instructions: employee.brief,
+    builtin: employee.source === "builtin",
+    createdAt: 0,
+    updatedAt: 0,
+  };
+}
+
+function fromSummary(summary: EmployeeSummary): Agent {
+  return {
+    id: employeeAgentId(summary.id),
+    name: summary.name,
+    description: summary.description,
+    instructions: `You are ${summary.name}. ${summary.description} You own: ${summary.responsibilities.join(", ")}.`,
+    builtin: true,
+    createdAt: 0,
+    updatedAt: 0,
+  };
+}
 
 /**
- * The user's agents (localStorage), with the built-in starters merged in.
- * Same pattern as `useProjects`.
+ * Chat agents are the employee registry: built-in, user and project employees
+ * from the server, or the built-in summaries until it answers. Personas saved
+ * by earlier versions stay listed after them so nothing a user made is lost.
  */
 export function useAgents() {
-  const [stored, setStored] = usePersistedState<Agent[]>(
-    "berd:agents",
-    [],
-    (value, defaults) =>
-      Array.isArray(value) ? value.filter(isAgent) : defaults,
+  const [stored] = usePersistedState<Agent[]>("berd:agents", [], (value, defaults) =>
+    Array.isArray(value) ? value.filter(isAgent) : defaults,
   );
-
-  // Built-ins the user deleted. They live in code, so the only way to keep one
-  // gone across reloads is to remember that it was.
-  const [removedBuiltins, setRemovedBuiltins] = usePersistedState<string[]>(
-    "berd:agents:removed",
-    [],
-    (value, defaults) =>
-      Array.isArray(value) ? value.filter((v) => typeof v === "string") : defaults,
-  );
-
+  const employees = useWorkforceStore((state) => state.employees);
   const agents = useMemo(() => {
-    // An edited built-in is stored like any other agent, under the same id;
-    // the stored copy then stands in for the one in code.
-    const overrides = new Map(
-      stored.filter((a) => a.builtin).map((a) => [a.id, a]),
-    );
-    const builtins = BUILTINS.filter((b) => !removedBuiltins.includes(b.id)).map(
-      (b) => overrides.get(b.id) ?? b,
-    );
-    // Built-ins first, then user agents (newest first — stored unshift order).
-    const custom = stored.filter((a) => !a.builtin);
-    return [...builtins, ...custom];
-  }, [stored, removedBuiltins]);
-
-  const create = useCallback(
-    (draft: AgentDraft): Agent => {
-      const agent: Agent = {
-        ...draft,
-        id: `agent:${crypto.randomUUID()}`,
-        builtin: false,
-        createdAt: now(),
-        updatedAt: now(),
-      };
-      setStored((cur) => [agent, ...cur]);
-      return agent;
-    },
-    [setStored],
-  );
-
-  const update = useCallback(
-    (id: string, patch: Partial<AgentDraft>) => {
-      setStored((cur) => {
-        if (cur.some((a) => a.id === id)) {
-          return cur.map((a) =>
-            a.id === id ? { ...a, ...patch, updatedAt: now() } : a,
-          );
-        }
-        // First edit of a built-in: store a full copy to override the one in
-        // code, keeping `builtin` so it still sorts and resets as a built-in.
-        const builtin = BUILTINS.find((b) => b.id === id);
-        if (!builtin) return cur;
-        return [...cur, { ...builtin, ...patch, updatedAt: now() }];
-      });
-    },
-    [setStored],
-  );
-
-  const remove = useCallback(
-    (id: string) => {
-      setStored((cur) => cur.filter((a) => a.id !== id));
-      if (BUILTINS.some((b) => b.id === id)) {
-        setRemovedBuiltins((cur) => (cur.includes(id) ? cur : [...cur, id]));
-      }
-    },
-    [setStored, setRemovedBuiltins],
-  );
-
-  /**
-   * Put a built-in back the way it ships — undoes both an edit and a delete.
-   * Without it a built-in overwritten by mistake is gone for good.
-   */
-  const resetBuiltin = useCallback(
-    (id: string) => {
-      setStored((cur) => cur.filter((a) => !(a.id === id && a.builtin)));
-      setRemovedBuiltins((cur) => cur.filter((v) => v !== id));
-    },
-    [setStored, setRemovedBuiltins],
-  );
-
-  /** True when this built-in has been edited or deleted by the user. */
-  const isBuiltinModified = useCallback(
-    (id: string) =>
-      removedBuiltins.includes(id) ||
-      stored.some((a) => a.id === id && a.builtin),
-    [removedBuiltins, stored],
-  );
-
-  const duplicate = useCallback(
-    (id: string): Agent | undefined => {
-      const src = agents.find((a) => a.id === id);
-      if (!src) return undefined;
-      return create({
-        name: `${src.name} copy`,
-        description: src.description,
-        instructions: src.instructions,
-        engineId: src.engineId,
-        model: src.model,
-        tint: src.tint,
-        icon: src.icon,
-        character: src.character,
-      });
-    },
-    [agents, create],
-  );
-
-  return {
-    agents,
-    create,
-    update,
-    remove,
-    duplicate,
-    resetBuiltin,
-    isBuiltinModified,
-  };
+    const staff = employees.status === "ready" ? employees.value.map(fromEmployee) : BUILTIN_EMPLOYEE_SUMMARIES.map(fromSummary);
+    return [...staff, ...stored.filter((agent) => !agent.builtin)];
+  }, [employees, stored]);
+  return { agents };
 }

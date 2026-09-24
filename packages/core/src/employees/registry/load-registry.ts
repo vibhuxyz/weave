@@ -1,10 +1,10 @@
 import { join } from "node:path";
 import { builtinEmployees } from "../builtin/index.ts";
-import { discoverEmployees, type EmployeeDir } from "../config/index.ts";
+import { EMPLOYEES_SUBDIR, discoverEmployees, type EmployeeDir } from "../config/index.ts";
 import { buildEmployeeRegistry } from "./build-registry.ts";
 import type { EmployeeRegistry } from "./types.ts";
 
-export const PROJECT_EMPLOYEES_DIR = join(".weave", "employees");
+export const PROJECT_EMPLOYEES_DIR = EMPLOYEES_SUBDIR;
 
 export interface LoadRegistryOptions {
   readonly projectRoot: string;

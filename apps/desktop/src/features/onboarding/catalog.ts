@@ -24,12 +24,8 @@ export const WORK_TYPES: readonly { id: WorkTypeId }[] = WORK_TYPE_IDS.map(
 );
 
 /**
- * Which built-in agents suit which work. Upstream Berd ships its own four
- * invented personas here; this app already has six built-ins in `useAgents`,
- * with names and descriptions written for it, so the recommendations point at
- * those instead of inventing a parallel set that would then need adopting.
- *
- * Ids match `BUILTINS` in `src/useAgents.ts`.
+ * Which built-in employees suit which work. Ids are the employee agent ids
+ * from `useAgents` (`employee:<id>`), so a recommendation is a real employee.
  */
 export interface RecommendedAgent {
   id: string;
@@ -37,12 +33,12 @@ export interface RecommendedAgent {
 }
 
 export const RECOMMENDED_AGENTS: readonly RecommendedAgent[] = [
-  { id: "builtin:builder", workTypeIds: ["engineering", "product", "marketing", "not-sure"] },
-  { id: "builtin:debugger", workTypeIds: ["engineering"] },
-  { id: "builtin:reviewer", workTypeIds: ["engineering", "legal", "product", "not-sure"] },
-  { id: "builtin:generalist", workTypeIds: ["legal", "marketing", "writing", "design", "not-sure"] },
-  { id: "builtin:craftsman", workTypeIds: ["design", "writing"] },
-  { id: "builtin:committer", workTypeIds: ["engineering"] },
+  { id: "employee:backend-engineer", workTypeIds: ["engineering", "product", "not-sure"] },
+  { id: "employee:frontend-engineer", workTypeIds: ["engineering", "design", "product", "not-sure"] },
+  { id: "employee:qa-engineer", workTypeIds: ["engineering", "product"] },
+  { id: "employee:security-engineer", workTypeIds: ["engineering", "legal"] },
+  { id: "employee:database-engineer", workTypeIds: ["engineering"] },
+  { id: "employee:devops-engineer", workTypeIds: ["engineering"] },
 ];
 
 const agentOrder = new Map(

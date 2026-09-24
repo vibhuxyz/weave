@@ -6,6 +6,17 @@ const BUILTIN_CONFIGS: readonly Readonly<Record<string, unknown>>[] = [
   BACKEND_ENGINEER, FRONTEND_ENGINEER, DEVOPS_ENGINEER, QA_ENGINEER, SECURITY_ENGINEER, DATABASE_ENGINEER,
 ];
 
+export interface EmployeeSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly responsibilities: readonly string[];
+}
+
+export const BUILTIN_EMPLOYEE_SUMMARIES: readonly EmployeeSummary[] = [
+  BACKEND_ENGINEER, FRONTEND_ENGINEER, DEVOPS_ENGINEER, QA_ENGINEER, SECURITY_ENGINEER, DATABASE_ENGINEER,
+].map(({ id, name, description, responsibilities }) => ({ id, name, description, responsibilities }));
+
 export function builtinEmployees(): readonly RawEmployee[] {
   return BUILTIN_CONFIGS.map((raw) => ({ raw: structuredClone(raw), source: "builtin", sourcePath: null }));
 }

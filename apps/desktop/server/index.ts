@@ -31,6 +31,12 @@ export type {
   RunPlanTask,
   RunTaskStatus,
   RunUpdate,
+  EmployeeDraft,
+  EmployeeView,
+  ProjectModelView,
+  ProjectQueryView,
+  RunOptions,
+  SkillView,
 } from "./shared/index.ts";
 export type { SessionModes, SessionModeInfo, TerminalKeyName, ConsentLink } from "@weave/agent";
 

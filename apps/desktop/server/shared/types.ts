@@ -16,6 +16,7 @@ import type {
 } from "@weave/protocol";
 import type { QuestionField, QuestionNotice } from "./question-types.ts";
 import type { RunOutcome, RunUpdate } from "./run-types.ts";
+import type { EmployeeDraft, EmployeeView, ProjectModelView, RunOptions, SkillView } from "./workforce-types.ts";
 
 export type { ConversationMeta, GitStatus, GitChange };
 
@@ -96,7 +97,12 @@ export type ClientMessage =
   | { readonly type: "restore-chat"; readonly sessionId: string; readonly projectDir: string }
   | { readonly type: "delete-project"; readonly projectDir: string }
   | { readonly type: "set-auto-archive"; readonly afterDays: number | null }
-  | { readonly type: "start-run"; readonly request: string }
+  | { readonly type: "start-run"; readonly request: string; readonly options?: RunOptions }
+  | { readonly type: "list-employees" }
+  | { readonly type: "save-employee"; readonly draft: EmployeeDraft }
+  | { readonly type: "delete-employee"; readonly employeeId: string }
+  | { readonly type: "list-skills" }
+  | { readonly type: "project-model"; readonly request: string | null }
   | { readonly type: "read-file"; readonly path: string }
   | { readonly type: "cancel-run" }
   | {
@@ -157,7 +163,13 @@ export type CompactionEvent =
 
 export type ServerMessage =
   | CompactionEvent
-  | { readonly type: "run-started"; readonly runKey: string; readonly request: string }
+  | { readonly type: "run-started"; readonly runKey: string; readonly request: string; readonly options?: RunOptions }
+  | { readonly type: "employees"; readonly employees: readonly EmployeeView[]; readonly skipped: readonly { readonly sourcePath: string; readonly reason: string }[] }
+  | { readonly type: "employee-saved"; readonly employeeId: string; readonly path: string }
+  | { readonly type: "employee-error"; readonly message: string }
+  | { readonly type: "skills"; readonly skills: readonly SkillView[] }
+  | { readonly type: "project-model"; readonly model: ProjectModelView }
+  | { readonly type: "project-model-error"; readonly message: string }
   | { readonly type: "file-content"; readonly path: string; readonly content: string; readonly truncated: boolean }
   | { readonly type: "file-error"; readonly path: string; readonly message: string }
   | { readonly type: "run-update"; readonly runKey: string; readonly update: RunUpdate }

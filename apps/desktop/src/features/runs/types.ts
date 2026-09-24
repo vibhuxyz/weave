@@ -1,4 +1,4 @@
-import type { RunOutcome, RunTaskStatus, RunUpdate, ServerMessage } from "../../../server/index.ts";
+import type { RunOptions, RunOutcome, RunTaskStatus, RunUpdate, ServerMessage } from "../../../server/index.ts";
 
 export type RunMessage = Extract<ServerMessage, { readonly type: "run-started" | "run-update" | "run-finished" }>;
 
@@ -9,6 +9,12 @@ export type MergeResult = Pick<Extract<RunUpdate, { readonly kind: "merge" }>, "
 export interface LaneTool {
   readonly id: number;
   readonly title: string;
+}
+
+export interface LaneEvent {
+  readonly id: number;
+  readonly event: string;
+  readonly summary: string;
 }
 
 export interface Lane {
@@ -26,6 +32,11 @@ export interface Lane {
   readonly attemptCostUsd: number;
   readonly reason: string | null;
   readonly merge: MergeResult | null;
+  readonly employee: { readonly id: string | null; readonly reason: string } | null;
+  readonly verification: { readonly ok: boolean; readonly detail: string } | null;
+  readonly blocked: string | null;
+  readonly events: readonly LaneEvent[];
+  readonly eventCount: number;
 }
 
 export interface RunPlanSummary {
@@ -34,6 +45,10 @@ export interface RunPlanSummary {
 }
 
 export type IntegrationResult = Omit<Extract<RunUpdate, { readonly kind: "integration" }>, "kind">;
+
+export type RunDecision = Omit<Extract<RunUpdate, { readonly kind: "decision" }>, "kind">;
+
+export type BudgetAlert = Omit<Extract<RunUpdate, { readonly kind: "budget" }>, "kind">;
 
 export interface RunState {
   readonly runKey: string;
@@ -44,4 +59,8 @@ export interface RunState {
   readonly contractVersion: number | null;
   readonly integration: IntegrationResult | null;
   readonly outcome: RunOutcome | null;
+  readonly options: RunOptions | null;
+  readonly decision: RunDecision | null;
+  readonly budgetAlerts: readonly BudgetAlert[];
+  readonly escalations: readonly LaneEvent[];
 }

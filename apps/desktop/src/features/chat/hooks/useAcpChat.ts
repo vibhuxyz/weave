@@ -39,6 +39,7 @@ import type { ArchiveChannelOptions } from "./acpChat/use-archive-channel";
 import { useQuestionChannel } from "./question";
 import { useRunChannel } from "@/features/runs";
 import { useFileChannel } from "@/features/files";
+import { useWorkforceChannel, useWorkforceStore } from "@/features/workforce";
 import {
   applyCompactionSettled,
   applyCompactionStarted,
@@ -163,6 +164,7 @@ export function useAcpChat(server: ChatServerEndpoint | null, options: ArchiveCh
   const questionChannel = useQuestionChannel(socketRef);
   const runChannel = useRunChannel(socketRef);
   const fileChannel = useFileChannel(socketRef);
+  const workforceChannel = useWorkforceChannel(socketRef);
   const [state, setState] = useState<ConnectionState>("idle");
   const [cwd, setCwd] = useState<string | null>(null);
   const [engineId, setEngineId] = useState<string | null>(null);
@@ -592,6 +594,8 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
         attempt = 0;
         next.send(JSON.stringify({ type: "refresh-engines" }));
         next.send(JSON.stringify({ type: "refresh-plugins" }));
+        useWorkforceStore.getState().refreshEmployees();
+        useWorkforceStore.getState().refreshSkills();
       };
 
       next.onmessage = (event) => {
@@ -600,6 +604,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
         if (questionChannel.handleMessage(message)) return;
         if (runChannel.handleMessage(message)) return;
         if (fileChannel.handleMessage(message)) return;
+        if (workforceChannel.handleMessage(message)) return;
         switch (message.type) {
           case "ready":
             setState("ready");
@@ -1029,7 +1034,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       clearTimeout(retry);
       socket?.close();
     };
-  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset, runChannel.handleMessage, fileChannel.handleMessage]);
+  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset, runChannel.handleMessage, fileChannel.handleMessage, workforceChannel.handleMessage]);
 
   const latestUsage = latestContextUsage(turns);
   const contextUsed = latestUsage?.contextTokens;

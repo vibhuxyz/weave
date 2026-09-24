@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { builtinEmployees } from "./builtin/index.ts";
-import { parseEmployee, parseYamlSubset, type RawEmployee } from "./config/index.ts";
+import { deleteProjectEmployee, employeeToYaml, parseEmployee, parseYamlSubset, saveProjectEmployee, type RawEmployee } from "./config/index.ts";
 import { PROJECT_EMPLOYEES_DIR, buildEmployeeRegistry, loadEmployeeRegistry } from "./registry/index.ts";
 
 const SENIOR_BACKEND_YAML = `id: senior-backend-engineer
@@ -116,4 +116,25 @@ test("project employee files load from .weave/employees; escapes and unreadable 
   assert.equal(skipped.length, 2);
   assert.match(skipped[0] ?? "", /Cannot parse employee file: line 2: unexpected indentation/);
   assert.match(skipped[1] ?? "", /resolves outside/);
+});
+
+test("every employee serialises to YAML that parses back to the same employee, and saves or deletes as a project file", async () => {
+  const registry = buildEmployeeRegistry(builtinEmployees());
+  for (const employee of registry.employees) {
+    const yaml = parseYamlSubset(employeeToYaml(employee));
+    assert.ok(yaml.ok, employee.id);
+    const parsed = parseEmployee(yaml.ok ? yaml.value : null, { source: employee.source, sourcePath: employee.sourcePath });
+    assert.deepEqual(parsed.ok ? parsed.employee : parsed, employee);
+  }
+  const root = await mkdtemp(join(tmpdir(), "weave-employee-save-"));
+  const backend = registry.byId.get("backend-engineer");
+  assert.ok(backend);
+  const saved = await saveProjectEmployee(root, { ...backend, name: "API Owner", permissions: { ...backend.permissions, filesystem: { read: ["**/*"], write: ["apps/api/**"] } } });
+  assert.ok(saved.ok);
+  const loaded = await loadEmployeeRegistry({ projectRoot: root });
+  assert.deepEqual([loaded.byId.get("backend-engineer")?.name, loaded.byId.get("backend-engineer")?.source], ["API Owner", "project"]);
+  assert.ok((await deleteProjectEmployee(root, "backend-engineer")).ok);
+  assert.equal((await loadEmployeeRegistry({ projectRoot: root })).byId.get("backend-engineer")?.source, "builtin");
+  const refused = await deleteProjectEmployee(root, "qa-engineer");
+  assert.match(refused.ok ? "" : refused.reason, /built-ins cannot be deleted/);
 });

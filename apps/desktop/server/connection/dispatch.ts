@@ -11,6 +11,7 @@ import type { ChatAction } from "../archive/index.ts";
 import { createCheckpointTask, runCancelCheckpoint } from "./checkpoint-task.ts";
 import { answerQuestion } from "../questions/index.ts";
 import { saveAnswer } from "../decisions/index.ts";
+import { handleWorkforceMessage } from "../workforce/index.ts";
 import { forwardResult } from "./forward-result.ts";
 import type { ClientMessageContext } from "./types.ts";
 import type { ClientMessage } from "../shared/index.ts";
@@ -253,11 +254,19 @@ export function handleClientMessage(
     }
 
     case "start-run":
-      void runs.start({ request: msg.request, projectDir, engineId: sessionMgr.currentEngineId, fallbackEngineIds: installedEngines().map((engine) => engine.id), runKey: uuidV7(Date.now()), send });
+      void runs.start({ request: msg.request, options: msg.options, projectDir, weaveHome, engineId: sessionMgr.currentEngineId, fallbackEngineIds: installedEngines().map((engine) => engine.id), runKey: uuidV7(Date.now()), send });
       return;
 
     case "cancel-run":
       runs.cancel();
+      return;
+
+    case "list-employees":
+    case "save-employee":
+    case "delete-employee":
+    case "list-skills":
+    case "project-model":
+      queueTask(() => handleWorkforceMessage(msg, { projectDir, weaveHome, send }));
       return;
 
     case "save-history":

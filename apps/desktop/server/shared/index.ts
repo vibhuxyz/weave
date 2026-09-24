@@ -5,3 +5,4 @@ export type { SetupConsent, PermissionOption, PromptImageData, ClientMessage, Co
 export type { QuestionAnswerValue, QuestionField, QuestionOption, QuestionNotice } from "./question-types.ts";
 export type { RunOutcome, RunPlanTask, RunTaskStatus, RunUpdate, MergeStatus } from "./run-types.ts";
 export { uuidV7 } from "./uuid-v7.ts";
+export type { EmployeeDraft, EmployeeMemoryView, EmployeeView, ProjectModelView, ProjectQueryView, RunOptions, SkillView } from "./workforce-types.ts";
