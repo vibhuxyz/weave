@@ -15,6 +15,7 @@ import type {
   Usage,
 } from "@weave/protocol";
 import type { QuestionField, QuestionNotice } from "./question-types.ts";
+import type { RunOutcome, RunUpdate } from "./run-types.ts";
 
 export type { ConversationMeta, GitStatus, GitChange };
 
@@ -95,6 +96,8 @@ export type ClientMessage =
   | { readonly type: "restore-chat"; readonly sessionId: string; readonly projectDir: string }
   | { readonly type: "delete-project"; readonly projectDir: string }
   | { readonly type: "set-auto-archive"; readonly afterDays: number | null }
+  | { readonly type: "start-run"; readonly request: string }
+  | { readonly type: "cancel-run" }
   | {
       readonly type: "save-history";
       readonly sessionId: string;
@@ -153,6 +156,9 @@ export type CompactionEvent =
 
 export type ServerMessage =
   | CompactionEvent
+  | { readonly type: "run-started"; readonly runKey: string; readonly request: string }
+  | { readonly type: "run-update"; readonly runKey: string; readonly update: RunUpdate }
+  | { readonly type: "run-finished"; readonly runKey: string; readonly outcome: RunOutcome }
   | { readonly type: "prompt-withdrawn"; readonly promptId: string }
   | {
       readonly type: "history-archive";

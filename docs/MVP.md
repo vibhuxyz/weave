@@ -7,7 +7,7 @@ projects.
 **Shippable as:** the actual pitch. Everything after this makes it smarter, not
 newly possible.
 
-**Status:** MVP.1 built and its acceptance passed live (see below). MVP.2 and MVP.3 in progress. The three-arm experiment is still blocked on [V1](V1.md)'s exit criteria — without the
+**Status:** MVP.1 and MVP.2 built, acceptance passed live (see below). MVP.3 built and unit-tested, not yet run live. The three-arm experiment is still blocked on [V1](V1.md)'s exit criteria — without the
 baseline table, the three-arm experiment at the end of this tier has nothing to
 compare against.
 
@@ -127,12 +127,13 @@ merge cleanly, with the ledger showing which task touched what.
 > Entry point: `planAndRun()` in `packages/core/src/orchestrate/`. The planner runs in a
 > throwaway worktree with every write rejected.
 >
-> **Still open (observed, not hypothetical):** in the greenfield run the API worker hand-copied
-> the contract into `src/contract.js` ("keep in sync") because the contract is always emitted as
-> TypeScript and the stack was plain Node.js with no build step. That is the drift-without-an-edit
-> this section predicts. Needed: a contract in the project's language, the
-> `CONTRACT_CHANGE_REQUEST` loop wired into the run, and a check that flags local re-declarations
-> of contract symbols.
+> **Resolved:** in the first greenfield run the API worker hand-copied the TypeScript contract
+> into `src/contract.js` because the stack was plain Node.js. Now fixed three ways:
+> the contract is emitted in the stack's language (`contracts/render/`, JSDoc for plain JS);
+> `contracts/drift/` fails a task that re-declares a contract symbol outside `packages/contracts/`;
+> and workers emit a `contractChangeRequest` block that `orchestrate/contract-revision.ts` applies
+> (version bump, `contract.changed` in the ledger, re-run of the tasks that read the symbol,
+> capped at 2 revisions per run).
 
 ```
 packages/core/src/planner.ts      prompt + project facts → TaskContract[]
@@ -233,6 +234,13 @@ event already carries `taskId`.
 
 Add: a lane per worker, a plan view, live cost. Nothing else from the full
 dashboard yet — that is [V2.3](V2.md).
+
+> **Built.** `/parallel <request>` in the composer starts `planAndRun()` on the server
+> (`apps/desktop/server/parallel-run/`). Its ledger events are projected into small lane updates
+> keyed by `taskId` and streamed to `src/features/runs/`, which folds them into one lane per
+> worker (status, attempts, tools, files, cost), a plan summary (mode, contract version,
+> integration) and a live total cost, with cancel. Implemented as a separate run channel rather
+> than by rewriting `useAcpChat`'s single transcript. Not yet run live against a real engine.
 
 ---
 

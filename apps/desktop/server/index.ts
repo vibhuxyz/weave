@@ -27,6 +27,10 @@ export type {
   QuestionOption,
   SetupConsent,
   QuestionNotice,
+  RunOutcome,
+  RunPlanTask,
+  RunTaskStatus,
+  RunUpdate,
 } from "./shared/index.ts";
 export type { SessionModes, SessionModeInfo, TerminalKeyName, ConsentLink } from "@weave/agent";
 

@@ -31,6 +31,7 @@ import { ENGINES, DEFAULT_ENGINE_ID, tokenReportingFor } from "@weave/agent/brow
 import { EnginePicker } from '@/features/engines/components';
 import { SettingsView } from '@/features/settings';
 import { ChatSkeleton, ContextPanel, EngineSetupPanel, hasSelectableModes, ModePicker, PermissionCard, QuestionCard, UserMessage, type ContextPanelTab } from '@/features/chat/components';
+import { parseRunCommand, RunPanel } from '@/features/runs';
 
 /** Inspector width: the spec's 400px to start, dragged from its left edge. */
 const INSPECTOR_DEFAULT_WIDTH = 400;
@@ -170,6 +171,8 @@ export function App() {
     newChat,
     openChat,
     updateTurnPlan,
+    startRun,
+    cancelRun,
   } = useAcpChat(server, { onProjectDeleted: (dir) => forget(dir) });
 
   const { enrichedEngines } = useHarnesses({ engines, onRefreshEngines: refreshEngines });
@@ -868,6 +871,13 @@ export function App() {
     // duplicate bubble and queues a second prompt behind a stuck one.
     if (busy || !ready) return;
     if (!draft.trim() && imageAttachments.length === 0) return;
+    const runRequest = parseRunCommand(draft);
+    if (runRequest !== null) {
+      startRun(runRequest);
+      setDraft("");
+      resetComposerHeight();
+      return;
+    }
     // Standing agents (`always` + manually toggled) plus this message's
     // @-mentions ride every prompt, so the persona can't drift over a chat.
     // The server merges this with the skills catalog into one <system> block.
@@ -1370,6 +1380,8 @@ export function App() {
               onAnswer={answerQuestion}
             />
           )}
+
+          <RunPanel onCancel={cancelRun} />
 
           {busy && turns.at(-1)?.role === "user" && (
             <Message from="assistant">

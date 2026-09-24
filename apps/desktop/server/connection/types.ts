@@ -9,6 +9,7 @@ import type { DecisionLog } from "../decisions/index.ts";
 import type { ServerMessage } from "../shared/index.ts";
 import type { Ledger, TasksStore, NormalizedPlugin } from "@weave/core";
 import type { AutoArchive } from "../archive/index.ts";
+import type { RunController } from "../parallel-run/index.ts";
 import type { ChatDirectory, ProjectChats } from "../chat/index.ts";
 import type { AuthMethod } from "@weave/protocol";
 
@@ -46,6 +47,7 @@ export interface ClientMessageContext {
   readonly activeSetup: ActiveSetup;
   readonly compaction: CompactionController;
   readonly history: HistoryStore;
+  readonly runs: RunController;
   readonly send: (msg: ServerMessage) => void;
   readonly sendChats: () => Promise<void>;
   readonly sendEngineList: () => void;

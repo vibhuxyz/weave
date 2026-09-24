@@ -3,7 +3,7 @@ import { readAttachment, searchProjectFiles } from "../project/index.ts";
 import { handleStartAuth, toAuthInputLine } from "../auth/index.ts";
 import { handleStartSetup } from "../dispatch/index.ts";
 import { handleCompact, handleSaveHistory, handlePrompt, handleNewChat, handleOpenChat, handleSwitchEngine, handleSetConfig, handleSetMode } from "../dispatch/index.ts";
-import { errorMessage } from "../shared/index.ts";
+import { errorMessage, uuidV7 } from "../shared/index.ts";
 import { parseProjectDirs } from "../chat/index.ts";
 import { handleChatAction, handleDeleteProject, parseAutoArchiveDays } from "../archive/index.ts";
 import type { ChatAction } from "../archive/index.ts";
@@ -47,6 +47,7 @@ export function handleClientMessage(
     activeSetup,
     compaction,
     history,
+    runs,
     send,
     sendChats,
     sendEngineList,
@@ -231,6 +232,14 @@ export function handleClientMessage(
       send({ type: "archive-settings", autoArchiveAfterDays: days });
       return;
     }
+
+    case "start-run":
+      void runs.start({ request: msg.request, projectDir, engineId: sessionMgr.currentEngineId, runKey: uuidV7(Date.now()), send });
+      return;
+
+    case "cancel-run":
+      runs.cancel();
+      return;
 
     case "save-history":
       queueTask(async () => handleSaveHistory({ raw: msg, history, send }));

@@ -49,7 +49,7 @@ export async function planAndRun(options: PlanAndRunOptions): Promise<PlanAndRun
   const clean = await checkCleanBase(repoRoot);
   if (!clean.ok) return { status: "refused", reason: clean.reason };
   const weaveDir = weaveDirFor(repoRoot, options.config);
-  const ledger = new Ledger(weaveDir, newRunId());
+  const ledger = new Ledger(weaveDir, newRunId(), options.onEvent);
   const [kind, detected] = await Promise.all([options.kind ?? detectProjectKind(repoRoot), intake(repoRoot)]);
   const rungs = availableRungs(detected);
 

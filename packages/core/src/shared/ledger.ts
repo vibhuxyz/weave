@@ -8,9 +8,11 @@ export class Ledger {
   readonly dir: string;
   readonly file: string;
   private _seq = 0;
+  private readonly onAppend: ((event: WeaveEvent) => void) | undefined;
 
-  constructor(weaveDir: string, runId: string) {
+  constructor(weaveDir: string, runId: string, onAppend?: (event: WeaveEvent) => void) {
     this.runId = runId;
+    this.onAppend = onAppend;
     this.dir = join(weaveDir, "runs", runId);
     this.file = join(this.dir, "events.ndjson");
     mkdirSync(this.dir, { recursive: true });
@@ -33,6 +35,7 @@ export class Ledger {
       ...fields,
     } as unknown as WeaveEvent;
     appendFileSync(this.file, JSON.stringify(event) + "\n");
+    this.onAppend?.(event);
     return event;
   }
 

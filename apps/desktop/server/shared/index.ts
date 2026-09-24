@@ -3,4 +3,5 @@ export { errorMessage } from "./error-message.ts";
 export type { ArchivedChatMeta, ConversationMeta, GitStatus, GitChange } from "./types.ts";
 export type { SetupConsent, PermissionOption, PromptImageData, ClientMessage, CompactionEvent, CompactionTrigger, ContextSnapshot, CheckpointStats, EngineAuthState, EngineEntry, ServerMessage, AcpServerHandle } from "./types.ts";
 export type { QuestionAnswerValue, QuestionField, QuestionOption, QuestionNotice } from "./question-types.ts";
+export type { RunOutcome, RunPlanTask, RunTaskStatus, RunUpdate, MergeStatus } from "./run-types.ts";
 export { uuidV7 } from "./uuid-v7.ts";

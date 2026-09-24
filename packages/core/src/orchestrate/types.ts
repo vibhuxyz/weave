@@ -1,5 +1,5 @@
 import type { PermissionPolicy } from "@weave/agent";
-import type { RunConfig } from "@weave/protocol";
+import type { RunConfig, WeaveEvent } from "@weave/protocol";
 import type { Contract } from "../contracts/index.ts";
 import type { Decision } from "../decide/index.ts";
 import type { VerifyWorkspace } from "../integrator/index.ts";
@@ -21,6 +21,7 @@ export interface PlanAndRunOptions {
   readonly signal?: AbortSignal;
   readonly shouldInstall?: boolean;
   readonly maxWorkers?: number;
+  readonly onEvent?: (event: WeaveEvent) => void;
 }
 
 export type PlanAndRunResult =
