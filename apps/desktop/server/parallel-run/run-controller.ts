@@ -1,6 +1,7 @@
 import type { planAndRun } from "@weave/core";
 import type { WeaveEvent } from "@weave/protocol";
 import type { RunOutcome, ServerMessage } from "../shared/index.ts";
+import { loadBudgets, type BudgetLoad } from "../budgets/index.ts";
 import { errorMessage } from "../shared/index.ts";
 import { MAX_REQUEST_CHARS } from "./constants.ts";
 import { projectRunEvent } from "./project-event.ts";
@@ -33,7 +34,7 @@ function requestProblem(request: string): string | null {
   return null;
 }
 
-export function createRunController(runPlanAndRun: PlanAndRun): RunController {
+export function createRunController(runPlanAndRun: PlanAndRun, readBudgets: (projectDir: string) => Promise<BudgetLoad> = loadBudgets): RunController {
   const active: { abort: AbortController | null } = { abort: null };
 
   const start = async (input: StartRunInput): Promise<void> => {
@@ -45,12 +46,17 @@ export function createRunController(runPlanAndRun: PlanAndRun): RunController {
     active.abort = abort;
     const { runKey, send } = input;
     send({ type: "run-started", runKey, request });
+    const budgets = await readBudgets(input.projectDir);
+    if (!budgets.ok) {
+      active.abort = null;
+      return send({ type: "run-finished", runKey, outcome: { status: "error", reason: `Cannot start a parallel run: ${budgets.message}` } });
+    }
     const onEvent = (event: WeaveEvent) => {
       const update = projectRunEvent(event);
       if (update) send({ type: "run-update", runKey, update });
     };
     try {
-      const result = await runPlanAndRun({ request, repoRoot: input.projectDir, config: { engine: input.engineId, fallbackEngines: (input.fallbackEngineIds ?? []).filter((id) => id !== input.engineId) }, signal: abort.signal, onEvent, employees: {}, adaptive: {} });
+      const result = await runPlanAndRun({ request, repoRoot: input.projectDir, config: { engine: input.engineId, fallbackEngines: (input.fallbackEngineIds ?? []).filter((id) => id !== input.engineId) }, signal: abort.signal, onEvent, employees: {}, adaptive: { budgets: budgets.budgets } });
       send({ type: "run-finished", runKey, outcome: outcomeOf(result) });
     } catch (error: unknown) {
       send({ type: "run-finished", runKey, outcome: { status: "error", reason: `Parallel run failed: ${errorMessage(error)}` } });

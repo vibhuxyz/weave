@@ -27,7 +27,7 @@ import { createProjectModelCache } from "../project-model/index.ts";
 import { CompactionController } from "../compaction/index.ts";
 import { ReplayGate } from "../history/index.ts";
 import { EngineAuthStates, type ActiveAuthSession } from "../auth/index.ts";
-import { EMPLOYEE_CLIENT_MESSAGE_TYPES, PROJECT_CLIENT_MESSAGE_TYPES, SKILL_CLIENT_MESSAGE_TYPES, errorMessage } from "../shared/index.ts";
+import { BUDGET_CLIENT_MESSAGE_TYPES, EMPLOYEE_CLIENT_MESSAGE_TYPES, PROJECT_CLIENT_MESSAGE_TYPES, SKILL_CLIENT_MESSAGE_TYPES, errorMessage } from "../shared/index.ts";
 import type { ClientMessage, ServerMessage, EngineEntry } from "../shared/index.ts";
 import type { ConnectionStorage } from "./types.ts";
 
@@ -87,6 +87,7 @@ const KNOWN_CLIENT_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   ...EMPLOYEE_CLIENT_MESSAGE_TYPES,
   ...SKILL_CLIENT_MESSAGE_TYPES,
   ...PROJECT_CLIENT_MESSAGE_TYPES,
+  ...BUDGET_CLIENT_MESSAGE_TYPES,
 ]);
 
 function parseClientMessage(raw: unknown): ClientMessage | null {

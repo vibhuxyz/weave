@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { BudgetSection, type BudgetActions } from "@/features/budgets";
 import { useOverviewState, useQueryState } from "../hooks";
 import type { ProjectActions } from "../types";
 import { OverviewPanel } from "./OverviewPanel";
@@ -7,10 +8,11 @@ import { QueryResults } from "./QueryResults";
 
 interface ProjectViewProps {
   readonly actions: ProjectActions;
+  readonly budgetActions: BudgetActions;
   readonly projectLabel: string | undefined;
 }
 
-export function ProjectView({ actions, projectLabel }: ProjectViewProps) {
+export function ProjectView({ actions, budgetActions, projectLabel }: ProjectViewProps) {
   const overview = useOverviewState();
   const query = useQueryState();
   const { readOverview } = actions;
@@ -32,6 +34,9 @@ export function ProjectView({ actions, projectLabel }: ProjectViewProps) {
         <QueryForm isDisabled={!isReady} isSearching={query.status === "loading"} onSearch={actions.queryProject} />
         <QueryResults state={query} />
       </section>
+      <div className="mt-12">
+        <BudgetSection actions={budgetActions} />
+      </div>
     </div>
   );
 }

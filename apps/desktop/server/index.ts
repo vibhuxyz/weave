@@ -41,6 +41,9 @@ export type {
   CappedList,
   ProjectOverview,
   ProjectQueryResult,
+  BudgetSettings,
+  LimitSettings,
+  SpendView,
 } from "./shared/index.ts";
 export type { SessionModes, SessionModeInfo, TerminalKeyName, ConsentLink } from "@weave/agent";
 

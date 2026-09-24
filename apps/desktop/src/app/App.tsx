@@ -170,6 +170,7 @@ export function App() {
     employeeActions,
     refreshSkills,
     projectActions,
+    budgetActions,
   } = useAcpChat(server, { onProjectDeleted: (dir) => forget(dir) });
 
   const { enrichedEngines } = useHarnesses({ engines, onRefreshEngines: refreshEngines });
@@ -1286,6 +1287,7 @@ export function App() {
         ) : view === "project" ? (
           <ProjectView
             actions={projectActions}
+            budgetActions={budgetActions}
             projectLabel={activeDir && !isChatWorkspaceActive ? basename(activeDir) : undefined}
           />
         ) : view === "skills" ? (

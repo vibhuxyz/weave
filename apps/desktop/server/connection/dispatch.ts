@@ -13,6 +13,7 @@ import { answerQuestion } from "../questions/index.ts";
 import { handleEmployeeMessage } from "../employees/index.ts";
 import { sendSkillListing } from "../skills/index.ts";
 import { handleProjectMessage } from "../project-model/index.ts";
+import { handleBudgetMessage } from "../budgets/index.ts";
 import { saveAnswer } from "../decisions/index.ts";
 import { forwardResult } from "./forward-result.ts";
 import type { ClientMessageContext } from "./types.ts";
@@ -277,6 +278,11 @@ export function handleClientMessage(
     case "read-project-overview":
     case "query-project":
       void handleProjectMessage(msg, { models: projectModels, send });
+      return;
+
+    case "read-budgets":
+    case "save-budgets":
+      void handleBudgetMessage(msg, { projectDir, send });
       return;
 
     case "list-skills":

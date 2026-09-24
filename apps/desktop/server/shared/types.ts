@@ -16,6 +16,7 @@ import type {
 } from "@weave/protocol";
 import type { EmployeeClientMessage, EmployeeServerMessage } from "./employee-types.ts";
 import type { QuestionField, QuestionNotice } from "./question-types.ts";
+import type { BudgetClientMessage, BudgetServerMessage } from "./budget-types.ts";
 import type { ProjectClientMessage, ProjectServerMessage } from "./project-types.ts";
 import type { SkillClientMessage, SkillServerMessage } from "./skill-types.ts";
 import type { RunOutcome, RunUpdate } from "./run-types.ts";
@@ -51,6 +52,7 @@ export type ClientMessage =
   | EmployeeClientMessage
   | SkillClientMessage
   | ProjectClientMessage
+  | BudgetClientMessage
   | {
       readonly type: "prompt";
       readonly text: string;
@@ -166,6 +168,7 @@ export type ServerMessage =
   | EmployeeServerMessage
   | SkillServerMessage
   | ProjectServerMessage
+  | BudgetServerMessage
   | { readonly type: "run-started"; readonly runKey: string; readonly request: string }
   | { readonly type: "file-content"; readonly path: string; readonly content: string; readonly truncated: boolean }
   | { readonly type: "file-error"; readonly path: string; readonly message: string }

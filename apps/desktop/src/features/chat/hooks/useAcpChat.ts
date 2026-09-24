@@ -42,6 +42,7 @@ import { useFileChannel } from "@/features/files";
 import { useEmployeeChannel } from "@/features/employees";
 import { useSkillChannel } from "@/features/skills";
 import { useProjectChannel } from "@/features/project-intelligence";
+import { useBudgetChannel } from "@/features/budgets";
 import {
   applyCompactionSettled,
   applyCompactionStarted,
@@ -168,6 +169,7 @@ export function useAcpChat(server: ChatServerEndpoint | null, options: ArchiveCh
   const employeeChannel = useEmployeeChannel(socketRef);
   const skillChannel = useSkillChannel(socketRef);
   const projectChannel = useProjectChannel(socketRef);
+  const budgetChannel = useBudgetChannel(socketRef);
   const [state, setState] = useState<ConnectionState>("idle");
   const [cwd, setCwd] = useState<string | null>(null);
   const [engineId, setEngineId] = useState<string | null>(null);
@@ -565,6 +567,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     employeeChannel.reset();
     skillChannel.reset();
     projectChannel.reset();
+    budgetChannel.reset();
     setPermissionRequest(null);
     setModes(null);
     setEngineSetup(null);
@@ -620,6 +623,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
         if (employeeChannel.handleMessage(message)) return;
         if (skillChannel.handleMessage(message)) return;
         if (projectChannel.handleMessage(message)) return;
+        if (budgetChannel.handleMessage(message)) return;
         switch (message.type) {
           case "ready":
             setState("ready");
@@ -1018,6 +1022,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
         if (disposed || socket !== next) return;
         setBusy(false);
         employeeChannel.disconnect();
+        budgetChannel.disconnect();
         const heldPromptId = compactingOperationRef.current ? compactingPromptRef.current : null;
         const restoreHeldPrompt = heldPromptId ? withdrawHandlersRef.current.get(heldPromptId) : undefined;
         compactingOperationRef.current = null;
@@ -1050,11 +1055,13 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       clearTimeout(retry);
       socket?.close();
     };
-  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset, runChannel.handleMessage, fileChannel.handleMessage, employeeChannel.handleMessage, employeeChannel.reset, employeeChannel.expectListing, employeeChannel.disconnect, skillChannel.handleMessage, skillChannel.expectListing, skillChannel.reset, projectChannel.handleMessage, projectChannel.reset]);
+  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset, runChannel.handleMessage, fileChannel.handleMessage, employeeChannel.handleMessage, employeeChannel.reset, employeeChannel.expectListing, employeeChannel.disconnect, skillChannel.handleMessage, skillChannel.expectListing, skillChannel.reset, projectChannel.handleMessage, projectChannel.reset, budgetChannel.handleMessage, budgetChannel.reset, budgetChannel.disconnect]);
 
   const { readEmployee, saveEmployee, deleteEmployee } = employeeChannel;
   const { readOverview, queryProject } = projectChannel;
   const projectActions = useMemo(() => ({ readOverview, queryProject }), [readOverview, queryProject]);
+  const { readBudgets, saveBudgets } = budgetChannel;
+  const budgetActions = useMemo(() => ({ readBudgets, saveBudgets }), [readBudgets, saveBudgets]);
   const employeeActions = useMemo(() => ({ readEmployee, saveEmployee, deleteEmployee }), [readEmployee, saveEmployee, deleteEmployee]);
 
   const latestUsage = latestContextUsage(turns);
@@ -1372,6 +1379,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     employeeActions,
     refreshSkills: skillChannel.refreshSkills,
     projectActions,
+    budgetActions,
     modes,
     setMode,
     engineSetup,
