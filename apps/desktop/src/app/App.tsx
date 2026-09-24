@@ -31,9 +31,13 @@ import { EnginePicker } from '@/features/engines/components';
 import { SettingsView } from '@/features/settings';
 import { ChatSkeleton, ContextPanel, EngineSetupPanel, hasSelectableModes, ModePicker, PermissionCard, QuestionCard, UserMessage, type ContextPanelTab } from '@/features/chat/components';
 import { parseRunCommand, RunPanel } from '@/features/runs';
+import { FileViewer, useFileStore } from '@/features/files';
+import { LocalPathOpenerContext } from '@/shared/ui/ai-elements';
 
 /** Inspector width: the spec's 400px to start, dragged from its left edge. */
 const INSPECTOR_DEFAULT_WIDTH = 400;
+const INSPECTOR_MAX_WIDTH = 720;
+const CONTEXT_PANEL_WIDTH = 288;
 
 /**
  * The transcript widens with the window rather than sitting at one cap: a
@@ -173,6 +177,7 @@ export function App() {
     updateTurnPlan,
     startRun,
     cancelRun,
+    openFile,
   } = useAcpChat(server, { onProjectDeleted: (dir) => forget(dir) });
 
   const { enrichedEngines } = useHarnesses({ engines, onRefreshEngines: refreshEngines });
@@ -559,7 +564,10 @@ export function App() {
     view === "chat" &&
     diffTurnId !== null &&
     turnDiffEntries.some((entry) => entry.turnId === diffTurnId);
-  const sidePanelOpen = view === "chat" && (contextOpen || diffPanelOpen);
+  const openFilePath = useFileStore((state) => state.openPath);
+  const isFileExpanded = useFileStore((state) => state.isExpanded);
+  const filePanelOpen = view === "chat" && openFilePath !== null;
+  const sidePanelOpen = view === "chat" && (contextOpen || diffPanelOpen || filePanelOpen);
 
   // A different chat has its own turns — drop the diff the panel was reading.
   useEffect(() => {
@@ -591,9 +599,12 @@ export function App() {
     storageKey: "berd:inspector:width",
     defaultWidth: INSPECTOR_DEFAULT_WIDTH,
     minWidth: 320,
-    maxWidth: 720,
+    maxWidth: INSPECTOR_MAX_WIDTH,
     edge: "left",
   });
+
+  const fileWidth = isFileExpanded ? INSPECTOR_MAX_WIDTH : inspectorResize.width;
+  const inspectorWidth = filePanelOpen ? fileWidth : diffPanelOpen ? inspectorResize.width : CONTEXT_PANEL_WIDTH;
 
   const onTranscriptScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -1041,6 +1052,10 @@ export function App() {
             onClick={() => {
               // While a diff is up, the toggle puts the panel back on context
               // rather than leaving the reader stuck open.
+              if (filePanelOpen) {
+                useFileStore.getState().close();
+                return;
+              }
               if (diffPanelOpen) {
                 setDiffTurnId(null);
                 setContextOpen(true);
@@ -1263,6 +1278,7 @@ export function App() {
             onOpenProject={openProject}
           />
         ) : (
+        <LocalPathOpenerContext.Provider value={openFile}>
         <div
           ref={scrollRef}
           onScroll={onTranscriptScroll}
@@ -1349,6 +1365,7 @@ export function App() {
 
           {busy && turns.at(-1)?.role === "user" && <StreamStatusLine turn={null} onOpenTasks={openTasks} />}
         </div>
+        </LocalPathOpenerContext.Provider>
         )}
 
         <div
@@ -1952,11 +1969,11 @@ export function App() {
           )}
           style={
             sidePanelOpen
-              ? { width: diffPanelOpen ? inspectorResize.width : 288 }
+              ? { width: inspectorWidth }
               : undefined
           }
         >
-          {sidePanelOpen && diffPanelOpen && (
+          {sidePanelOpen && (diffPanelOpen || filePanelOpen) && (
             <div
               onMouseDown={inspectorResize.onResizeStart}
               onDoubleClick={inspectorResize.onResizeDoubleClick}
@@ -1968,10 +1985,12 @@ export function App() {
             </div>
           )}
           <div
-            className="h-fit max-h-full"
-            style={{ width: diffPanelOpen ? inspectorResize.width : 288 }}
+            className={filePanelOpen ? "h-full" : "h-fit max-h-full"}
+            style={{ width: inspectorWidth }}
           >
-            {diffPanelOpen ? (
+            {filePanelOpen ? (
+            <FileViewer key={openFilePath} />
+            ) : diffPanelOpen ? (
             <TurnDiffPanel
               entries={turnDiffEntries}
               turnId={diffTurnId!}

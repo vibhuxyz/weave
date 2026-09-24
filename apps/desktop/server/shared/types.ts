@@ -97,6 +97,7 @@ export type ClientMessage =
   | { readonly type: "delete-project"; readonly projectDir: string }
   | { readonly type: "set-auto-archive"; readonly afterDays: number | null }
   | { readonly type: "start-run"; readonly request: string }
+  | { readonly type: "read-file"; readonly path: string }
   | { readonly type: "cancel-run" }
   | {
       readonly type: "save-history";
@@ -157,6 +158,8 @@ export type CompactionEvent =
 export type ServerMessage =
   | CompactionEvent
   | { readonly type: "run-started"; readonly runKey: string; readonly request: string }
+  | { readonly type: "file-content"; readonly path: string; readonly content: string; readonly truncated: boolean }
+  | { readonly type: "file-error"; readonly path: string; readonly message: string }
   | { readonly type: "run-update"; readonly runKey: string; readonly update: RunUpdate }
   | { readonly type: "run-finished"; readonly runKey: string; readonly outcome: RunOutcome }
   | { readonly type: "prompt-withdrawn"; readonly promptId: string }

@@ -37,6 +37,7 @@ import { useArchiveChannel } from "./acpChat/use-archive-channel";
 import type { ArchiveChannelOptions } from "./acpChat/use-archive-channel";
 import { useQuestionChannel } from "./question";
 import { useRunChannel } from "@/features/runs";
+import { useFileChannel } from "@/features/files";
 import {
   applyCompactionSettled,
   applyCompactionStarted,
@@ -158,6 +159,7 @@ export function useAcpChat(server: ChatServerEndpoint | null, options: ArchiveCh
   const archive = useArchiveChannel(socketRef, options);
   const questionChannel = useQuestionChannel(socketRef);
   const runChannel = useRunChannel(socketRef);
+  const fileChannel = useFileChannel(socketRef);
   const [state, setState] = useState<ConnectionState>("idle");
   const [cwd, setCwd] = useState<string | null>(null);
   const [engineId, setEngineId] = useState<string | null>(null);
@@ -589,6 +591,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
         if (archive.handleMessage(message)) return;
         if (questionChannel.handleMessage(message)) return;
         if (runChannel.handleMessage(message)) return;
+        if (fileChannel.handleMessage(message)) return;
         switch (message.type) {
           case "ready":
             setState("ready");
@@ -1018,7 +1021,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       clearTimeout(retry);
       socket?.close();
     };
-  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset, runChannel.handleMessage]);
+  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset, runChannel.handleMessage, fileChannel.handleMessage]);
 
   const latestUsage = latestContextUsage(turns);
   const contextUsed = latestUsage?.contextTokens;
@@ -1331,6 +1334,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     answerQuestion: questionChannel.answer,
     startRun: runChannel.startRun,
     cancelRun: runChannel.cancelRun,
+    openFile: fileChannel.openFile,
     modes,
     setMode,
     engineSetup,

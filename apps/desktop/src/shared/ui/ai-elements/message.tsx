@@ -37,6 +37,7 @@ import {
   Streamdown,
 } from "streamdown";
 import { useTranslation } from "react-i18next";
+import { LocalPathButton, MarkdownInlineCode, useLocalPathTarget } from "./local-path-link";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -402,6 +403,7 @@ const MarkdownLink = memo(
     ...rest
   }: ComponentProps<"a"> & { node?: unknown }) => {
     const openModal = useContext(LinkSafetyContext);
+    const localPath = useLocalPathTarget(href);
 
     if (isExternalHref(href)) {
       return (
@@ -450,6 +452,10 @@ const MarkdownLink = memo(
           {children}
         </a>
       );
+    }
+
+    if (localPath) {
+      return <LocalPathButton path={localPath}>{children}</LocalPathButton>;
     }
 
     if (isReservedBerdSessionLinkPrefix(href)) {
@@ -581,6 +587,7 @@ function buildStreamdownComponents(
     ...markdownHeadingComponents,
     a: MarkdownLink,
     img: VoiceAwareImage,
+    inlineCode: MarkdownInlineCode,
   };
 }
 

@@ -79,6 +79,7 @@ const KNOWN_CLIENT_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   "delete-project",
   "set-auto-archive",
   "start-run",
+  "read-file",
   "cancel-run",
 ]);
 

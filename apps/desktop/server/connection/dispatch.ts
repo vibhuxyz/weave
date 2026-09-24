@@ -1,5 +1,5 @@
 import { readGitStatus } from "@weave/core";
-import { readAttachment, searchProjectFiles } from "../project/index.ts";
+import { readAttachment, readTextFile, searchProjectFiles } from "../project/index.ts";
 import { handleStartAuth, toAuthInputLine } from "../auth/index.ts";
 import { handleStartSetup } from "../dispatch/index.ts";
 import { handleCompact, handleSaveHistory, handlePrompt, handleNewChat, handleOpenChat, handleSwitchEngine, handleSetConfig, handleSetMode } from "../dispatch/index.ts";
@@ -158,6 +158,24 @@ export function handleClientMessage(
         `Cannot read attachment ${msg.path}`,
       );
       return;
+
+    case "read-file": {
+      const path: unknown = msg.path;
+      if (typeof path !== "string" || path.length === 0) {
+        send({ type: "error", message: "Cannot read a file: the request has no path." });
+        return;
+      }
+      forwardResult(
+        readTextFile(projectDir, path),
+        send,
+        (result) =>
+          result.ok
+            ? { type: "file-content", path, content: result.content, truncated: result.truncated }
+            : { type: "file-error", path, message: result.reason },
+        `Cannot read ${path}`,
+      );
+      return;
+    }
 
     case "list-files":
       forwardResult(

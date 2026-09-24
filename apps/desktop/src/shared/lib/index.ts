@@ -5,6 +5,7 @@ export { changedFilesQueryKey, gitStateQueryKey } from "./gitStateQueryKey";
 export { isHomeRelativePath } from "./homePath";
 export { isExternalHref } from "./isExternalHref";
 export { linkifyText } from "./linkify";
+export { localFilePathOf } from "./local-path";
 export { getPlatform } from "./platform";
 export {
   isRunnableShellLanguage,

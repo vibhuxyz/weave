@@ -646,6 +646,7 @@
   --agent-code-border: #232833;
   --agent-inline-code-fg: #e8837b;
   --agent-inline-code-bg: #1d1f24;
+  --agent-link-fg: #7ea8f8;
   --agent-border: rgba(255, 255, 255, 0.08);
   --agent-border-strong: rgba(255, 255, 255, 0.14);
   --agent-border-subtle: rgba(255, 255, 255, 0.05);
@@ -1104,6 +1105,7 @@
   --agent-code-border: #232833;
   --agent-inline-code-fg: #e8837b;
   --agent-inline-code-bg: #1d1f24;
+  --agent-link-fg: #7ea8f8;
   --agent-border: rgba(255, 255, 255, 0.08);
   --agent-border-strong: rgba(255, 255, 255, 0.14);
   --agent-border-subtle: rgba(255, 255, 255, 0.05);
@@ -1334,6 +1336,7 @@
   --color-agent-code-border: var(--agent-code-border);
   --color-agent-inline-code-fg: var(--agent-inline-code-fg);
   --color-agent-inline-code-bg: var(--agent-inline-code-bg);
+  --color-agent-link-fg: var(--agent-link-fg);
   --color-agent-border: var(--agent-border);
   --color-agent-border-strong: var(--agent-border-strong);
   --color-agent-border-subtle: var(--agent-border-subtle);
