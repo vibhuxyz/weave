@@ -124,6 +124,26 @@ Built:
   defers to: isolate into a worktree, or run in place. Kept out of `runner.ts`
   itself to keep that file's diff small for this change.
 
+Built since MVP, one folder per feature (detail in the linked docs):
+
+- `coordination/` — the live task graph ([V2.1](V2.md)). `Coordinator` versions artifacts and
+  contracts, routes structured employee events to the inboxes of dependent tasks, holds
+  ownership claims (file, directory, module, symbol, api, event, schema, resource) and adds
+  dependencies mid-run. Engine employees publish by writing a ` ```weave-event ` block, which
+  Weave parses from the ledger stream. There is no free-form agent chat.
+- `adaptive/` — adaptive orchestration ([V3.1](V3.md)). `history/` folds run ledgers into
+  statistics per engine and per task kind, `routing/` orders each task's engine fallback chain,
+  `workers/` picks the worker count from the expected benefit, `estimate/` holds the
+  critical-path schedule, and `budget/` enforces cost (bigint micro-USD), token and time ceilings
+  live. `policy/` combines them into one logged decision.
+- `employees/` — the AI employee runtime ([EMPLOYEES](EMPLOYEES.md)). Config parsing (a strict
+  YAML subset plus JSON), the registry with `extends`, resolver, assignment, prompt brief,
+  verification policy, memory and performance. The `agents/` profiles above now feed the
+  built-in employees' instructions.
+
+`planAndRun` turns the last two on with `adaptive` and `employees` options; coordination is
+always on inside the pool.
+
 Planned, by tier — each tier file has the detail:
 
 | Tier | Files |
@@ -132,9 +152,9 @@ Planned, by tier — each tier file has the detail:
 | [V1.2](CONTINUATION.md) | `state.ts` · `checkpoint.ts` · `handoff.ts` · `tasks-store.ts` |
 | [MVP.1](MVP.md) | `worktree.ts` · `pool.ts` · `scheduler.ts` · `integrator.ts` · `compress.ts` |
 | [MVP.2](MVP.md) | `planner.ts` · `blueprint.ts` · `contracts.ts` · `decide.ts` |
-| [V2.1](V2.md) | `ownership.ts` · `bus.ts` · `state.ts` |
+| [V2.1](V2.md) | built as `coordination/` |
 | [V2.2](V2.md) | `context/` — `scan · model · graph · docs · index · update · retrieve · impact` |
-| [V3.1](V3.md) | `routing.ts` · `budget.ts` · `scale.ts` · `critpath.ts` |
+| [V3.1](V3.md) | built as `adaptive/` |
 | [V3.2](V3.md) | `supervisor.ts` · `policy.ts` · `replay.ts` |
 
 `contracts.ts` generates a contract package **inside the target repo**. It is
@@ -234,8 +254,17 @@ usage · cell.finished · error
 intake.detected · verification.rung · verification.finished
 plugin.activated
 attempt.started · attempt.ended · checkpoint.created
-worktree.created · worktree.removed
+worktree.created · worktree.removed · worktree.installed · worktree.harvested
+plan.created · task.skipped · pool.task.settled · merge.finished · integration.finished
+contract.changed · contract.change.rejected
+coordination.event · coordination.rejected · dependency.added · consumer.invalidated
+ownership.claimed · ownership.blocked · ownership.released
+orchestration.decided · budget.exceeded
+employee.assigned · employee.verified · employee.memory.recorded
 ```
+
+The event bus at V2.1 is exactly this reader: `Ledger.subscribe()` feeds the coordinator,
+budget manager and employee-event parser. It adds no broker and no second log.
 
 Every event carries `runId`, `seq`, `at`, and where applicable `taskId` — so a
 multi-agent log can be split per task after the fact. That is what makes MVP.1's
@@ -316,6 +345,14 @@ PLANNED ──► READY ──► RUNNING ──► VERIFYING ──► DONE
                 │         └──► NO_CHANGE_NEEDED  (terminal, successful)
                 └──► CANCELLED
 ```
+
+What is real today: `BLOCKED` is a pending task whose ownership claim overlaps a running task
+(`ownership.blocked`); it starts when the owner settles. `WAITING` ends early when the producer
+publishes every `requiredOutputs` entry, not only when it finishes. A consumer whose producer
+failed, or whose artifact was replaced after it finished, becomes `failed`
+(`consumer.invalidated`). A budget stop is `cancelled` with the budget as the reason, and a task
+whose employee fails its verification policy is `failed` before merge. `VERIFYING`,
+`RECOVERABLE` and `NO_CHANGE_NEEDED` per task are still not separate states.
 
 `NO_CHANGE_NEEDED` is terminal **and successful** — "the described bug does not
 exist" is a valid result, and scoring it as a failure is how a system learns to

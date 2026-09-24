@@ -24,17 +24,36 @@ desktop, that is a signal to think — not to create `packages/utils`.
 | ✅ | **MVP.1** worktrees · pool · scheduler · integrator | Built; acceptance passed live (3 Claude Code workers, 2026-09-24) — not committed | `core/{worktree,pool,scheduler,integrator,compress,run-plan}/` |
 | ✅ | **MVP.2** planner · blueprint · contracts · decide | Acceptance passed live on greenfield + existing (2026-09-24); per-stack contract, drift check and contract-change loop built and tested | `core/{planner,blueprint,contracts,decide,orchestrate}/` |
 | 🟨 | **MVP.3** lanes in the UI | Built and unit-tested (`/parallel <request>`); not yet run live against a real engine | `apps/desktop/{server/parallel-run,src/features/runs}/` |
-| ⬜ | **V2.1** ownership · event bus · dynamic deps | Not started | `core/{ownership,bus,state,scheduler}.ts` |
-| 🟨 | **V2.2** project intelligence | Deterministic model + query built and tested; embeddings, generated docs and diff-driven updates not started | `core/context/` |
+| ✅ | **V2.1** ownership · event bus · dynamic deps | Built and tested with scripted workers: dependents start on published outputs, ownership claims, mid-run dependencies, live updates as prompt turns. Not run live | `core/coordination/`, `core/scheduler/`, `core/pool/` |
+| ✅ | **V2.2** project intelligence | Deterministic model, query, impact, incremental update, generated docs and local TF-IDF vectors built and tested; neural embeddings not started | `core/context/` |
 | ⬜ | **V2.3** the full dashboard | Not started | `apps/desktop` |
-| ⬜ | **V3.1** routing · budgets · adaptive scale | Not started | `core/{routing,budget,scale,critpath}.ts` |
+| ✅ | **V3.1** routing · budgets · adaptive scale | Built; opt-in `planAndRun({ adaptive })`. Beats the MVP heuristic on held-out scenarios with **simulated** engines (wall −10 to −13%, cost −41 to −51%, no scenario lost); not yet measured on real engines | `core/adaptive/`, `eval/src/orchestration/` |
 | ⬜ | **V3.2** supervisor · policy · replay CLI | Not started | `core/{supervisor,policy,replay}.ts` — `checkpoint.ts` pulled forward to [V1.2](CONTINUATION.md) |
 | ⬜ | **V3.3** sandboxing · extended ladder | Not started | `core/policy.ts`, `core/verify.ts` |
 | ⬜ | **V4** distributed | Not started, gated | — |
+| ✅ | **Employees** AI employee runtime | Built and tested end to end with scripted workers; opt-in `planAndRun({ employees: {} })`. See [EMPLOYEES](EMPLOYEES.md) | `core/employees/`, `agent/permissions/policy.ts` |
 
 ---
 
-## ← You are here: V1.1 shipped, standing at the MVP gate
+## ← You are here: V2.1, V3.1 and employees built ahead of the MVP gate
+
+Built on 2026-09-24, in three commits on top of MVP.2. All three are tested with scripted or
+simulated workers, not with live engines. **The MVP three-arm experiment has still not been run**,
+so none of this has cleared the gate that was meant to justify it.
+
+| Commit | What | Detail |
+|---|---|---|
+| `5fcb93f` | **Live task graph** (V2.1): employees publish structured events (`artifact.ready`, `contract.changed`, `dependency.blocked`, …), versioned artifacts, inbox routing, ownership claims, dependencies added mid-run. A dependent starts as soon as its producer publishes the outputs it needs. | [V2 §V2.1](V2.md) |
+| `3eb5528` | **Adaptive orchestration** (V3.1): learns engine success, speed, cost and overhead from run ledgers; orders each task's engine fallback chain; picks the worker count from the expected benefit over a critical-path schedule; enforces project, run, task, employee and engine budgets. Includes a benchmark against the MVP heuristic. | [V3 §V3.1](V3.md) |
+| `95580cf` | **AI employee runtime**: employees as YAML/JSON config (built-in, user, project), registry with `extends`, resolver and assignment, permissions compiled into task policy and enforced by the runner, verification policy run before merge, per-employee memory and performance. | [EMPLOYEES](EMPLOYEES.md) |
+
+What is still open across the three: live-engine measurement of routing, read permissions are
+not enforced, the worker count is fixed per run, an engine budget stops a task instead of
+falling back, and there is no UI for employees, budgets or the event stream.
+
+---
+
+## Earlier: V1.1 shipped, standing at the MVP gate
 
 **Shipped** (`f31b854` + since): repeats ≥3 · fresh copy per cell ·
 `maxTurns` + `timeoutMs` caps · `noop-trap` category · cost and context capture
