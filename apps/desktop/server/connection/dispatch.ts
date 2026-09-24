@@ -1,3 +1,4 @@
+import { installedEngines } from "@weave/agent";
 import { readGitStatus } from "@weave/core";
 import { readAttachment, readTextFile, searchProjectFiles } from "../project/index.ts";
 import { handleStartAuth, toAuthInputLine } from "../auth/index.ts";
@@ -37,7 +38,7 @@ export function handleClientMessage(
     ledger,
     continuationTaskId,
     ruleCatalog,
-    builtinSkillCatalog,
+    selectBuiltinSkills,
     skillCatalog,
     pluginsById,
     authMethodsByEngine,
@@ -252,7 +253,7 @@ export function handleClientMessage(
     }
 
     case "start-run":
-      void runs.start({ request: msg.request, projectDir, engineId: sessionMgr.currentEngineId, runKey: uuidV7(Date.now()), send });
+      void runs.start({ request: msg.request, projectDir, engineId: sessionMgr.currentEngineId, fallbackEngineIds: installedEngines().map((engine) => engine.id), runKey: uuidV7(Date.now()), send });
       return;
 
     case "cancel-run":
@@ -276,7 +277,7 @@ export function handleClientMessage(
           chats,
           continuationTaskId,
           ruleCatalog,
-          builtinSkillCatalog,
+          selectBuiltinSkills,
           skillCatalog,
           decisions,
           send,

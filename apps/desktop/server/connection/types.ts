@@ -10,7 +10,7 @@ import type { ServerMessage } from "../shared/index.ts";
 import type { Ledger, TasksStore, NormalizedPlugin } from "@weave/core";
 import type { AutoArchive } from "../archive/index.ts";
 import type { RunController } from "../parallel-run/index.ts";
-import type { ChatDirectory, ProjectChats } from "../chat/index.ts";
+import type { ChatDirectory, ProjectChats, SkillSelector } from "../chat/index.ts";
 import type { AuthMethod } from "@weave/protocol";
 
 export interface ConnectionStorage {
@@ -37,7 +37,7 @@ export interface ClientMessageContext {
   readonly ledger: Ledger;
   readonly continuationTaskId: string;
   readonly ruleCatalog: string;
-  readonly builtinSkillCatalog: string;
+  readonly selectBuiltinSkills: SkillSelector;
   readonly skillCatalog: string;
   readonly pluginsById: ReadonlyMap<string, NormalizedPlugin>;
   readonly authMethodsByEngine: Map<string, AuthMethod[]>;

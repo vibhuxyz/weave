@@ -7,7 +7,7 @@ import { summaryReaderFor } from "../history/index.ts";
 import type { DesktopSessionManager } from "../session/index.ts";
 import type { ClientMessage, ServerMessage } from "../shared/index.ts";
 import type { Ledger, TasksStore, NormalizedPlugin } from "@weave/core";
-import type { ProjectChats } from "../chat/index.ts";
+import type { ProjectChats, SkillSelector } from "../chat/index.ts";
 import type { DecisionLog } from "../decisions/index.ts";
 
 export interface PromptOptions {
@@ -21,7 +21,7 @@ export interface PromptOptions {
   readonly chats: ProjectChats;
   readonly continuationTaskId: string;
   readonly ruleCatalog: string;
-  readonly builtinSkillCatalog: string;
+  readonly selectBuiltinSkills: SkillSelector;
   readonly skillCatalog: string;
   readonly decisions: DecisionLog;
   readonly send: (msg: ServerMessage) => void;
@@ -39,7 +39,7 @@ export async function handlePrompt({
   chats,
   continuationTaskId,
   ruleCatalog,
-  builtinSkillCatalog,
+  selectBuiltinSkills,
   skillCatalog,
   decisions,
   send,
@@ -111,7 +111,7 @@ export async function handlePrompt({
     pluginBlock,
     ruleCatalog,
     decisionsBlock: decisions.formatBlock(),
-    builtinSkillCatalog,
+    builtinSkillCatalog: await selectBuiltinSkills(text),
     skillCatalog,
   });
   sessionMgr.pendingPreamble = null;

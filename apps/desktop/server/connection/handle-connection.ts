@@ -9,8 +9,6 @@ import {
   formatSkillCatalog,
   discoverRules,
   formatRulesBlock,
-  BUILTIN_SKILLS,
-  formatBuiltinSkillsBlock,
   resolveCatalog,
   planAndRun,
   type NormalizedPlugin,
@@ -20,6 +18,7 @@ import { DesktopSessionManager, killStaleSupervisors, registerLiveSupervisor, un
 import { PendingPermissions } from "../permissions/index.ts";
 import { PendingQuestions } from "../questions/index.ts";
 import { ActiveSetup, announceSetupRequired } from "../setup/index.ts";
+import { createSkillSelector } from "../chat/index.ts";
 import { createRunController } from "../parallel-run/index.ts";
 import { handleClientMessage } from "./dispatch.ts";
 import { CompactionController } from "../compaction/index.ts";
@@ -182,9 +181,9 @@ export async function handleConnection(
     replayGate,
   });
 
-  const [ruleCatalog, builtinSkillCatalog, skillCatalog] = await Promise.all([
+  const selectBuiltinSkills = createSkillSelector(projectDir, dataDir);
+  const [ruleCatalog, skillCatalog] = await Promise.all([
     discoverRules(storage.ruleDirs).then(formatRulesBlock),
-    Promise.resolve(formatBuiltinSkillsBlock(BUILTIN_SKILLS)),
     discoverSkills(storage.skillDirs).then(formatSkillCatalog),
   ]);
 
@@ -261,7 +260,7 @@ export async function handleConnection(
         ledger,
         continuationTaskId,
         ruleCatalog,
-        builtinSkillCatalog,
+        selectBuiltinSkills,
         skillCatalog,
         pluginsById,
         authMethodsByEngine,
