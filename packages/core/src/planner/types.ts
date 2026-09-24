@@ -22,6 +22,7 @@ export interface PlannerPromptInput {
   rungs: readonly VerificationRung[];
   blueprint: string | null;
   contract: string | null;
+  projectContext?: string | null;
 }
 
 export interface PlanRequest extends PlannerPromptInput {

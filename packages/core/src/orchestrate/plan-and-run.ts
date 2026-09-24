@@ -6,6 +6,7 @@ import type { PlannedTask, ProjectKind } from "../planner/index.ts";
 import { engineWorker, runPlan } from "../run-plan/index.ts";
 import { weaveDirFor } from "../runner/index.ts";
 import { Ledger, newRunId } from "../shared/index.ts";
+import { buildProjectModel, queryProject, renderProjectContext } from "../context/index.ts";
 import { checkCleanBase } from "../worktree/index.ts";
 import { contractReviser } from "./contract-revision.ts";
 import { contractDriftInspector } from "./drift-inspector.ts";
@@ -35,11 +36,18 @@ function logPlan(ledger: Ledger, kind: ProjectKind, decision: Decision, concurre
   });
 }
 
+async function projectContextFor(request: string, repoRoot: string, weaveDir: string, kind: ProjectKind): Promise<string | null> {
+  if (kind !== "existing") return null;
+  const { model } = await buildProjectModel({ root: repoRoot, weaveDir });
+  return renderProjectContext(queryProject(model, request));
+}
+
 async function plan(
   options: PlanAndRunOptions,
   context: { readonly repoRoot: string; readonly weaveDir: string; readonly ledger: Ledger; readonly kind: ProjectKind; readonly rungs: readonly VerificationRung[] },
 ): Promise<PlanningOutcome> {
-  const withTurn = (runTurn: TurnRunner) => planTasks({ ...context, request: options.request, runTurn, signal: options.signal });
+  const projectContext = await projectContextFor(options.request, context.repoRoot, context.weaveDir, context.kind);
+  const withTurn = (runTurn: TurnRunner) => planTasks({ ...context, request: options.request, projectContext, runTurn, signal: options.signal });
   if (options.runTurn) return withTurn(options.runTurn);
   return withPlannerWorkspace({ ...context, engineId: options.config?.engine }, withTurn);
 }

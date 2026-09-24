@@ -37,6 +37,7 @@ export type PlanAndRunResult =
 
 export interface PlanningInput {
   readonly request: string;
+  readonly projectContext?: string | null;
   readonly repoRoot: string;
   readonly weaveDir: string;
   readonly kind: ProjectKind;
