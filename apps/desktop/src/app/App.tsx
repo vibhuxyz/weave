@@ -52,7 +52,7 @@ const TRANSCRIPT_WIDTH = "mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl";
  * page rather than a place to type.
  */
 const COMPOSER_WIDTH = "mx-auto w-full max-w-4xl";
-import { collectTasks, TurnDiffPanel, StreamedTurn, StreamStatusLine, TasksPanel } from "@/agent/components";
+import { collectTasks, PlanPanel, planProgressOf, planSignatureOf, TurnDiffPanel, StreamedTurn, StreamStatusLine, TasksPanel } from "@/agent/components";
 import type { BlockAction } from "@/agent/normalize";
 import { collectTurnDiffs } from "@/agent/diff";
 import { Sidebar } from "./Sidebar";
@@ -70,7 +70,7 @@ import {
 import { EngineAuthPanel } from "@/features/auth";
 import { HomeView } from "@/home/canvas/ui";
 import { basename } from '@/features/projects/lib';
-import { useAcpChat, type ChatImageAttachment } from '@/features/chat/hooks';
+import { latestPlanEntries, useAcpChat, type ChatImageAttachment } from '@/features/chat/hooks';
 import {
   AutoCompactSetting,
   CompactionNoticeRow,
@@ -567,7 +567,14 @@ export function App() {
   const openFilePath = useFileStore((state) => state.openPath);
   const isFileExpanded = useFileStore((state) => state.isExpanded);
   const filePanelOpen = view === "chat" && openFilePath !== null;
-  const sidePanelOpen = view === "chat" && (contextOpen || diffPanelOpen || filePanelOpen);
+  const planEntries = useMemo(() => latestPlanEntries(turns), [turns]);
+  const planSignature = planSignatureOf(planEntries);
+  const planProgress = planProgressOf(planEntries);
+  const [closedPlanSignature, setClosedPlanSignature] = useState<string | null>(null);
+  const [isPlanExpanded, setIsPlanExpanded] = useState(false);
+  const planPanelOpen = view === "chat" && !filePanelOpen && planEntries.length > 0 && closedPlanSignature !== planSignature;
+  const openPlan = useCallback(() => setClosedPlanSignature(null), []);
+  const sidePanelOpen = view === "chat" && (contextOpen || diffPanelOpen || filePanelOpen || planPanelOpen);
 
   // A different chat has its own turns — drop the diff the panel was reading.
   useEffect(() => {
@@ -604,7 +611,8 @@ export function App() {
   });
 
   const fileWidth = isFileExpanded ? INSPECTOR_MAX_WIDTH : inspectorResize.width;
-  const inspectorWidth = filePanelOpen ? fileWidth : diffPanelOpen ? inspectorResize.width : CONTEXT_PANEL_WIDTH;
+  const planWidth = isPlanExpanded ? INSPECTOR_MAX_WIDTH : inspectorResize.width;
+  const inspectorWidth = filePanelOpen ? fileWidth : planPanelOpen ? planWidth : diffPanelOpen ? inspectorResize.width : CONTEXT_PANEL_WIDTH;
 
   const onTranscriptScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -1056,6 +1064,10 @@ export function App() {
                 useFileStore.getState().close();
                 return;
               }
+              if (planPanelOpen) {
+                setClosedPlanSignature(planSignature);
+                return;
+              }
               if (diffPanelOpen) {
                 setDiffTurnId(null);
                 setContextOpen(true);
@@ -1327,6 +1339,8 @@ export function App() {
               onUpdatePlan={updateTurnPlan}
               onExitPlanMode={exitPlanMode}
               onOpenTasks={openTasks}
+              planProgress={planProgress}
+              onOpenPlan={openPlan}
               onOpenDiff={(path) => {
                 setDiffFocusPath(path);
                 setDiffTurnId((cur) => (cur === turn.id && !path ? null : turn.id));
@@ -1363,7 +1377,7 @@ export function App() {
           <RunPanel onCancel={cancelRun} />
           {tasks && <TasksPanel tasks={tasks} onClose={() => setIsTasksOpen(false)} />}
 
-          {busy && turns.at(-1)?.role === "user" && <StreamStatusLine turn={null} onOpenTasks={openTasks} />}
+          {busy && turns.at(-1)?.role === "user" && <StreamStatusLine turn={null} onOpenTasks={openTasks} planProgress={planProgress} onOpenPlan={openPlan} />}
         </div>
         </LocalPathOpenerContext.Provider>
         )}
@@ -1973,7 +1987,7 @@ export function App() {
               : undefined
           }
         >
-          {sidePanelOpen && (diffPanelOpen || filePanelOpen) && (
+          {sidePanelOpen && (diffPanelOpen || filePanelOpen || planPanelOpen) && (
             <div
               onMouseDown={inspectorResize.onResizeStart}
               onDoubleClick={inspectorResize.onResizeDoubleClick}
@@ -1985,11 +1999,18 @@ export function App() {
             </div>
           )}
           <div
-            className={filePanelOpen ? "h-full" : "h-fit max-h-full"}
+            className={filePanelOpen || planPanelOpen ? "h-full" : "h-fit max-h-full"}
             style={{ width: inspectorWidth }}
           >
             {filePanelOpen ? (
             <FileViewer key={openFilePath} />
+            ) : planPanelOpen ? (
+            <PlanPanel
+              entries={planEntries}
+              isExpanded={isPlanExpanded}
+              onToggleExpanded={() => setIsPlanExpanded((value) => !value)}
+              onClose={() => setClosedPlanSignature(planSignature)}
+            />
             ) : diffPanelOpen ? (
             <TurnDiffPanel
               entries={turnDiffEntries}

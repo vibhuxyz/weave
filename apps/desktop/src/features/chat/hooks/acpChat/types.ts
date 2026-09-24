@@ -18,8 +18,12 @@ export interface ToolDiff {
   startLine?: number;
 }
 
+export type PlanChangeKind = "added" | "started" | "completed";
+
 export interface ToolEntry {
   id: string;
+  /** Set on entries Weave derives from an ACP plan update, not a real tool call. */
+  planChange?: PlanChangeKind;
   title: string;
   status: ToolCallStatus;
   /** read | edit | delete | move | search | execute | think | fetch | … */

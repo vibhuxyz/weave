@@ -33,6 +33,7 @@ import {
 } from "@/features/chat/compaction";
 import { buildHistoryArchive, restoreArchivedTurns } from "./acpChat/history-archive";
 import { appendTextSegment, appendToolSegment } from "./acpChat/turn-segments";
+import { latestPlanEntries, planChangeEntries, planChanges } from "./acpChat/plan-changes";
 import { useArchiveChannel } from "./acpChat/use-archive-channel";
 import type { ArchiveChannelOptions } from "./acpChat/use-archive-channel";
 import { useQuestionChannel } from "./question";
@@ -75,8 +76,10 @@ export type {
   TurnPlan,
   TurnSegment,
   TurnUsage,
+  PlanChangeKind,
 } from "./acpChat/types";
 export { splitAttachments } from "./acpChat/messageParsing";
+export { latestPlanEntries } from "./acpChat/plan-changes";
 export type { SessionModes, SessionModeInfo, TerminalKeyName, SetupConsent, ConsentLink } from "../../../../server/index.ts";
 
 const OPEN_CHAT_TIMEOUT_MS = 20_000;
@@ -293,11 +296,11 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
   }, [openingSessionId]);
 
   const withAssistantTurn = useCallback(
-    (mutate: (turn: ChatTurn) => ChatTurn) => {
+    (mutate: (turn: ChatTurn, history: readonly ChatTurn[]) => ChatTurn) => {
       setTurns((current) => {
         const last = current.at(-1);
         if (last?.role === "assistant") {
-          return [...current.slice(0, -1), mutate(last)];
+          return [...current.slice(0, -1), mutate(last, current.slice(0, -1))];
         }
         const fresh: ChatTurn = {
           id: crypto.randomUUID(),
@@ -307,7 +310,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           tools: [],
           personas: personasRef.current,
         };
-        return [...current, mutate(fresh)];
+        return [...current, mutate(fresh, current)];
       });
     },
     [],
@@ -490,15 +493,20 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           return;
         }
         case "plan": {
-          withAssistantTurn((turn) => {
+          const at = replay ? undefined : Date.now();
+          withAssistantTurn((turn, history) => {
             const nextEntries: PlanItem[] = (update.entries ?? []).map((entry, idx) => ({
               id: `plan-step-${idx + 1}`,
               content: entry.content,
               priority: entry.priority,
               status: entry.status,
             }));
+            const changes = planChanges(latestPlanEntries([...history, turn]), nextEntries);
+            const entries = planChangeEntries(turn.id, turn.tools.length, changes, at);
             return {
               ...turn,
+              tools: [...turn.tools, ...entries],
+              segments: entries.reduce((segments, entry) => appendToolSegment(segments, entry.id), turn.segments ?? []),
               plan: {
                 entries: nextEntries,
                 approved: turn.plan?.approved ?? false,

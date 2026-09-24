@@ -1,4 +1,4 @@
-export { useAcpChat } from "./useAcpChat";
+export { latestPlanEntries, useAcpChat } from "./useAcpChat";
 export { hasMissingRequired, toAnswerPayload } from "./question";
 export type {
   QuestionAnswers,
@@ -28,4 +28,6 @@ export type {
   TurnPlan,
   TurnSegment,
   TurnUsage,
+  PlanChangeKind,
+  PlanItem,
 } from "./useAcpChat";

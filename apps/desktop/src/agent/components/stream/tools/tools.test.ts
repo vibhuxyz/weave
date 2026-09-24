@@ -40,3 +40,11 @@ test("a command line is split into command, flags, strings and operators", () =>
   ]);
   assert.equal(tokenizeCommand("echo 'unterminated").map((token) => token.text).join(""), "echo 'unterminated");
 });
+
+test("task list changes read like 'Used a tool, added 3 tasks'", () => {
+  const added = (id: string) => tool({ id, kind: "other", title: `Task ${id}`, planChange: "added" });
+  assert.equal(groupLabel([tool({ id: "t", kind: "other" }), added("1"), added("2"), added("3")]), "Used a tool, added 3 tasks");
+  const row = added("4");
+  assert.equal(`${rowVerb(row, false)} ${rowSubject(row)}`, "Added task Task 4");
+  assert.equal(groupLabel([tool({ id: "5", kind: "other", title: "x", planChange: "completed" })]), "Completed a task");
+});

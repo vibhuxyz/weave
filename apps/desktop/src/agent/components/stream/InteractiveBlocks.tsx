@@ -12,6 +12,7 @@ export interface InteractiveHandlers {
   readonly engineLabel: string;
   readonly isLatestTurn: boolean;
   readonly isChanged: boolean;
+  readonly hasTaskList: boolean;
   readonly onAction?: (action: BlockAction) => void;
   readonly onSend?: (text: string) => void;
   readonly onUpdatePlan?: (turnId: string, plan: TurnPlan) => void;
@@ -22,6 +23,7 @@ export interface InteractiveHandlers {
 function renderBlock(block: AgentBlock, handlers: InteractiveHandlers) {
   switch (block.type) {
     case "plan":
+      if (handlers.hasTaskList && !block.awaitingApproval) return null;
       return (
         <PlanBlockView
           block={block}

@@ -40,6 +40,7 @@ function ToolRowView({ tool, turn, onOpenDiff }: { readonly tool: ToolEntry; rea
       {open && output && (
         <pre className="max-h-80 overflow-auto whitespace-pre-wrap font-mono text-agent-text-muted text-xs">{output}</pre>
       )}
+      {open && tool.planChange && <p className="whitespace-pre-wrap text-agent-text-muted text-sm">{tool.title}</p>}
       {open && diffPath && onOpenDiff && (
         <button type="button" onClick={() => onOpenDiff(diffPath)} className="self-start text-agent-accent text-xs hover:underline">
           Open diff

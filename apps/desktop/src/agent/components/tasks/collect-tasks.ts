@@ -25,7 +25,7 @@ export function taskStateOf(tool: ToolEntry): TaskState {
 }
 
 export function collectTasks(turns: readonly Pick<ChatTurn, "tools">[]): TaskList {
-  const newestFirst = turns.flatMap((turn) => turn.tools).reverse();
+  const newestFirst = turns.flatMap((turn) => turn.tools.filter((tool) => !tool.planChange)).reverse();
   return {
     running: newestFirst.filter((tool) => taskStateOf(tool) === "running"),
     finished: newestFirst.filter((tool) => taskStateOf(tool) !== "running"),
