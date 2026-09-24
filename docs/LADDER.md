@@ -37,15 +37,19 @@ desktop, that is a signal to think — not to create `packages/utils`.
 
 ## ← You are here: V2.1, V3.1 and employees built ahead of the MVP gate
 
-Built on 2026-09-24, in three commits on top of MVP.2. All three are tested with scripted or
+Phases map onto the tiers like this: **Phase 3** context intelligence = V1.2 + V2.2,
+**Phase 4** coordination and live collaboration = V2.1, **Phase 5** adaptive orchestration = V3.1,
+**Phase 6** AI employee runtime = [EMPLOYEES](EMPLOYEES.md).
+
+Phases 4–6 were built on 2026-09-24, in three commits on top of MVP.2. All three are tested with scripted or
 simulated workers, not with live engines. **The MVP three-arm experiment has still not been run**,
 so none of this has cleared the gate that was meant to justify it.
 
-| Commit | What | Detail |
-|---|---|---|
-| `5fcb93f` | **Live task graph** (V2.1): employees publish structured events (`artifact.ready`, `contract.changed`, `dependency.blocked`, …), versioned artifacts, inbox routing, ownership claims, dependencies added mid-run. A dependent starts as soon as its producer publishes the outputs it needs. | [V2 §V2.1](V2.md) |
-| `3eb5528` | **Adaptive orchestration** (V3.1): learns engine success, speed, cost and overhead from run ledgers; orders each task's engine fallback chain; picks the worker count from the expected benefit over a critical-path schedule; enforces project, run, task, employee and engine budgets. Includes a benchmark against the MVP heuristic. | [V3 §V3.1](V3.md) |
-| `95580cf` | **AI employee runtime**: employees as YAML/JSON config (built-in, user, project), registry with `extends`, resolver and assignment, permissions compiled into task policy and enforced by the runner, verification policy run before merge, per-employee memory and performance. | [EMPLOYEES](EMPLOYEES.md) |
+| Phase | Commit | What | Detail |
+|---|---|---|---|
+| 4 | `5fcb93f` | **Live task graph** (V2.1): employees publish structured events (`artifact.ready`, `contract.changed`, `dependency.blocked`, …), versioned artifacts, inbox routing, ownership claims, dependencies added mid-run. A dependent starts as soon as its producer publishes the outputs it needs. | [V2 §V2.1](V2.md) |
+| 5 | `3eb5528` | **Adaptive orchestration** (V3.1): learns engine success, speed, cost and overhead from run ledgers; orders each task's engine fallback chain; picks the worker count from the expected benefit over a critical-path schedule; enforces project, run, task, employee and engine budgets. Includes a benchmark against the MVP heuristic. | [V3 §V3.1](V3.md) |
+| 6 | `95580cf` | **AI employee runtime**: employees as YAML/JSON config (built-in, user, project), registry with `extends`, resolver and assignment, permissions compiled into task policy and enforced by the runner, verification policy run before merge, per-employee memory and performance. | [EMPLOYEES](EMPLOYEES.md) |
 
 What is still open across the three: live-engine measurement of routing, read permissions are
 not enforced, the worker count is fixed per run, an engine budget stops a task instead of
