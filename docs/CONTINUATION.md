@@ -9,6 +9,34 @@ transcript dump.
 Tier context: [V1](V1.md) · [LADDER](LADDER.md) · [ARCHITECTURE](ARCHITECTURE.md)
 · next tier: [MVP](MVP.md)
 
+> **Built (2026-09-24), as part of Phase 3 — context intelligence.**
+>
+> - **TaskState v2** (`protocol/continuation`, `core/state/`): goal, status, completed, currentStep,
+>   nextStep, decisions, discoveries, changedFiles, failures, verification, openQuestions,
+>   dependencies, contextVersion, gitState, engineState — folded from the ledger, never from a
+>   provider transcript. Workers add decisions / discoveries / open questions through a
+>   `taskNotes` JSON block; searches become discoveries. Version 1 checkpoints are upgraded on read.
+> - **Skills** (`core/skills/`): a registry of built-in and project skills with triggers
+>   (language, framework, package, layer, keyword, path glob) and a resolver that picks the top
+>   matches for the task — a backend task gets TypeScript, Node, backend/API and Postgres, not every
+>   skill. The desktop chat now resolves skills per prompt instead of sending all of them.
+> - **Context builder** (`core/worker-context/`): project model answer (facts, symbols, deps, recent
+>   changes) → code excerpts of the relevant symbols → rules → resolved skills → TaskState → task,
+>   each under its own byte budget (24 KB total), with what was cut reported.
+> - **Lifecycle and relay** (`core/relay/`): a policy maps context use and stop reasons to
+>   normal → tool-output compression → history trimming → summary → fresh reconstruction →
+>   checkpoint → handoff. `relayTask()` runs one task across engines in the same worktree: every
+>   attempt is a fresh session whose prompt is rebuilt from the model + TaskState; provider limits and
+>   crashes move to the next engine, max turns and a full context window restart on the same one,
+>   and a checkpoint is written between attempts. Parallel runs pass the other installed engines as
+>   fallbacks. Gemini CLI (`gemini --acp`) and OpenCode (`opencode acp`, native binary) are registered
+>   engines. The Claude → Codex → Gemini → OpenCode test uses scripted engines; live engines were not
+>   available where this was built.
+>
+> What Weave cannot do: trim or summarise history inside an engine's own session. For ACP workers,
+> "history trimming" and "summary" apply to what Weave holds (relayed tool output, the desktop
+> chat's compaction); past that, the lever is ending the session and reconstructing fresh context.
+
 ---
 
 ## 1. The claim

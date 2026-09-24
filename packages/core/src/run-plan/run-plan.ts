@@ -57,7 +57,7 @@ export async function runPlan(options: RunPlanOptions): Promise<RunPlanResult> {
 
   const shouldInstall = options.shouldInstall ?? true;
   const tasks = options.tasks.map((task) => ({ ...task, cwd: repoRoot }));
-  const runWorker = options.runWorker ?? engineWorker(options.config, options.policy);
+  const runWorker = options.runWorker ?? engineWorker(options.config, options.policy, { weaveDir, model: null });
   const { pool, baseCommit } = await runWithRevisions({
     tasks,
     baseCommit: base.value,

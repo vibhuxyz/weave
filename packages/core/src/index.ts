@@ -25,7 +25,12 @@ export { compressToolOutput } from "./compress/index.ts";
 export { engineWorker, runPlan } from "./run-plan/index.ts";
 export type { RunPlanOptions, RunPlanReport, RunPlanResult } from "./run-plan/index.ts";
 export { detectProjectKind, planAndRun } from "./orchestrate/index.ts";
-export { buildProjectModel, queryProject, renderProjectContext } from "./context/index.ts";
+export { analyzeImpact, buildProjectModel, generateProjectDocs, queryProject, renderProjectContext, searchVectors, updateProjectModel, writeProjectDocs } from "./context/index.ts";
+export { buildSkillRegistry, renderSkills, resolveSkills } from "./skills/index.ts";
+export { buildWorkerContext, selectSkills } from "./worker-context/index.ts";
+export type { WorkerContext, WorkerTask } from "./worker-context/index.ts";
+export { relayTask, engineAttemptRunner, lifecycleStage } from "./relay/index.ts";
+export type { RelayResult, LifecycleStage } from "./relay/index.ts";
 export type { ProjectAnswer, ProjectModel } from "./context/index.ts";
 export type { PlanAndRunOptions, PlanAndRunResult, TurnRunner } from "./orchestrate/index.ts";
 

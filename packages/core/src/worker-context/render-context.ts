@@ -34,14 +34,22 @@ function wrapEntries(tag: string, entries: readonly string[], maxBytes: number):
   return { text: [`<${tag}>`, ...kept, ...(cut > 0 ? [`(${cut} more left out to stay under ${maxBytes} bytes)`] : []), `</${tag}>`].join("\n\n"), isCut: cut > 0 };
 }
 
-function chosenSkills(sources: ContextSources, answer: ProjectAnswer): readonly ResolvedSkill[] {
-  const { model, task } = sources;
-  const paths = [...answer.files.map((file) => file.path), ...(task.allowedPaths ?? [])];
+export interface SkillSelectionInput {
+  readonly model: ContextSources["model"];
+  readonly answer: ProjectAnswer;
+  readonly registry: ContextSources["skills"];
+  readonly text: string;
+  readonly allowedPaths?: readonly string[];
+}
+
+export function selectSkills(input: SkillSelectionInput): readonly ResolvedSkill[] {
+  const { model, answer } = input;
+  const paths = [...answer.files.map((file) => file.path), ...(input.allowedPaths ?? [])];
   const touched = new Set([answer.application?.name, ...answer.files.map((file) => file.workspace)]);
   const workspaces = [...model.applications, ...model.packages].filter((workspace) => touched.has(workspace.name));
   const packages = workspaces.length > 0 ? [...new Set(workspaces.flatMap((workspace) => workspace.dependencies))] : model.dependencies.external.map((entry) => entry.name);
-  return resolveSkills(sources.skills.skills, {
-    text: task.goal,
+  return resolveSkills(input.registry.skills, {
+    text: input.text,
     paths,
     languages: model.stack.languages,
     frameworks: workspaces.length > 0 ? frameworksOf(packages) : model.stack.frameworks,
@@ -67,7 +75,7 @@ function taskSection(sources: ContextSources): Rendered {
 
 export function renderWorkerContext(sources: ContextSources): WorkerContext {
   const { answer } = sources;
-  const skills = chosenSkills(sources, answer);
+  const skills = selectSkills({ model: sources.model, answer, registry: sources.skills, text: sources.task.goal, allowedPaths: sources.task.allowedPaths });
   const code = wrapEntries("code-excerpts", sources.snippets.map((snippet) => `### ${snippet.path}:${snippet.startLine} (${snippet.symbol})\n\`\`\`\n${snippet.text}\n\`\`\``), SECTION_BUDGETS.code);
   const rules = wrapEntries("project-rules", sources.rules.map((rule) => `## ${rule.name} (${rule.sourcePath})\n${rule.body}`), SECTION_BUDGETS.rules);
   const project = renderProjectContext(answer, SECTION_BUDGETS.project - 200);

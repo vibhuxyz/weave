@@ -6,7 +6,7 @@ import type { PlannedTask, ProjectKind } from "../planner/index.ts";
 import { engineWorker, runPlan } from "../run-plan/index.ts";
 import { weaveDirFor } from "../runner/index.ts";
 import { Ledger, newRunId } from "../shared/index.ts";
-import { buildProjectModel, queryProject, renderProjectContext } from "../context/index.ts";
+import { buildProjectModel, queryProject, renderProjectContext, type ProjectModel } from "../context/index.ts";
 import { checkCleanBase } from "../worktree/index.ts";
 import { contractReviser } from "./contract-revision.ts";
 import { contractDriftInspector } from "./drift-inspector.ts";
@@ -36,17 +36,18 @@ function logPlan(ledger: Ledger, kind: ProjectKind, decision: Decision, concurre
   });
 }
 
-async function projectContextFor(request: string, repoRoot: string, weaveDir: string, kind: ProjectKind): Promise<string | null> {
+async function projectModelFor(repoRoot: string, weaveDir: string, kind: ProjectKind): Promise<ProjectModel | null> {
   if (kind !== "existing") return null;
   const { model } = await buildProjectModel({ root: repoRoot, weaveDir });
-  return renderProjectContext(queryProject(model, request));
+  return model;
 }
 
 async function plan(
   options: PlanAndRunOptions,
   context: { readonly repoRoot: string; readonly weaveDir: string; readonly ledger: Ledger; readonly kind: ProjectKind; readonly rungs: readonly VerificationRung[] },
+  model: ProjectModel | null,
 ): Promise<PlanningOutcome> {
-  const projectContext = await projectContextFor(options.request, context.repoRoot, context.weaveDir, context.kind);
+  const projectContext = model ? renderProjectContext(queryProject(model, options.request)) : null;
   const withTurn = (runTurn: TurnRunner) => planTasks({ ...context, request: options.request, projectContext, runTurn, signal: options.signal });
   if (options.runTurn) return withTurn(options.runTurn);
   return withPlannerWorkspace({ ...context, engineId: options.config?.engine }, withTurn);
@@ -61,14 +62,15 @@ export async function planAndRun(options: PlanAndRunOptions): Promise<PlanAndRun
   const [kind, detected] = await Promise.all([options.kind ?? detectProjectKind(repoRoot), intake(repoRoot)]);
   const rungs = availableRungs(detected);
 
-  const planned = await plan(options, { repoRoot, weaveDir, ledger, kind, rungs });
+  const model = await projectModelFor(repoRoot, weaveDir, kind);
+  const planned = await plan(options, { repoRoot, weaveDir, ledger, kind, rungs }, model);
   if (planned.status !== "planned") return planned;
 
   const decision = decide({ kind, tasks: planned.tasks, hasContract: planned.contract !== null, rungs });
   const concurrency = concurrencyFor(decision, planned.tasks.length, options.maxWorkers ?? DEFAULT_MAX_WORKERS);
   logPlan(ledger, kind, decision, concurrency, planned.tasks);
 
-  const runWorker = options.runWorker ?? engineWorker(options.config, options.policy);
+  const runWorker = options.runWorker ?? engineWorker(options.config, options.policy, { weaveDir, model });
   const contract = planned.contract;
   const ran = await runPlan({
     tasks: planned.tasks,
