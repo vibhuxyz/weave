@@ -5,6 +5,7 @@ import { MAX_LANE_FILES, MAX_LANE_TOOLS } from "./constants";
 import { parseRunCommand } from "./run-command";
 import { applyRunMessages } from "./store/apply-run-message";
 import { laneCostUsd } from "./store/lane";
+import { selectRunHeader } from "./store/select-header";
 import type { RunMessage } from "./types";
 
 const started: RunMessage = { type: "run-started", runKey: "k1", request: "add helpers" };
@@ -84,4 +85,10 @@ test("only an exact /parallel command starts a run", () => {
   assert.equal(parseRunCommand("/parallel"), "");
   assert.equal(parseRunCommand("/parallelize it"), null);
   assert.equal(parseRunCommand("please /parallel this"), null);
+});
+
+test("with no run, the panel selector returns the same lane list every time, so React does not loop", () => {
+  const idle = { run: null };
+  assert.equal(selectRunHeader(idle).laneOrder, selectRunHeader(idle).laneOrder);
+  assert.deepEqual(selectRunHeader(idle), { request: null, outcome: null, laneOrder: [] });
 });
