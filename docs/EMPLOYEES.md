@@ -1,5 +1,7 @@
 # Employees
 
+Built as Phase 6 (commit `95580cf`).
+
 An employee is a **configuration**, not a class: identity, responsibilities, skills, rules, memory,
 permissions, capabilities, engine policy and verification policy. Weave assigns each planned task to
 the employee that fits it, runs the task inside that employee's permissions, checks the work against

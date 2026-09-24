@@ -46,9 +46,10 @@ a product someone could run, not a half-built version of the next.
 | Tier | What it adds | Status |
 |---|---|---|
 | **[V1](docs/V1.md)** | runner · ledger · permissions · intake · verification ladder · eval harness · multi-engine supervisor · in-band auth · command-boundary sandboxing · interactive plan approval · file-tree context panel | shipped |
-| **[MVP](docs/MVP.md)** | worktrees · pool · scheduler · integrator · planner · blueprint · contracts · lanes UI | not started |
-| **[V2](docs/V2.md)** | ownership · event bus · dynamic deps · context model · impact · dashboard | not started |
-| **[V3](docs/V3.md)** | routing · budgets · adaptive scale · supervisor · checkpoints · sandboxing | not started |
+| **[MVP](docs/MVP.md)** | worktrees · pool · scheduler · integrator · planner · blueprint · contracts · lanes UI | built; lanes UI not run live |
+| **[V2](docs/V2.md)** | ownership · event bus · dynamic deps · context model · impact · dashboard | built except the dashboard |
+| **[V3](docs/V3.md)** | routing · budgets · adaptive scale · supervisor · checkpoints · sandboxing | V3.1 built; rest not started |
+| **[Employees](docs/EMPLOYEES.md)** | configurable AI employees: registry · assignment · permissions · verification policy · memory | built, opt-in |
 | **[V4](docs/V4.md)** | remote workers · leases · fencing · Postgres · Redis · multi-user | gated |
 
 **Two gates can send the plan backwards.** End of V1: does the matrix report per
@@ -56,7 +57,8 @@ verification rung, unattended? End of MVP: does N-worker parallel match 1-worker
 sequential on pass rate? If not, **ship the sequential version** — see the
 three-arm experiment in [MVP](docs/MVP.md).
 
-Docs: [ROADMAP](docs/ROADMAP.md) — the verdict and the design changes ·
+Docs: [PHASES](docs/PHASES.md) — everything built, phase by phase ·
+[ROADMAP](docs/ROADMAP.md) — the verdict and the design changes ·
 [LADDER](docs/LADDER.md) — the status board ·
 [ARCHITECTURE](docs/ARCHITECTURE.md) · [FINDINGS](docs/FINDINGS.md)
 

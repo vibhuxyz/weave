@@ -1,16 +1,14 @@
 import { XIcon } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { MAX_VISIBLE_LANES } from "../constants";
-import { useRunStore } from "../store";
+import { selectRunHeader, useRunStore } from "../store";
 import { LaneCard } from "./LaneCard";
 import { LiveCost } from "./LiveCost";
 import { outcomeText } from "./outcome-text";
 import { PlanSummary } from "./PlanSummary";
 
 export function RunPanel({ onCancel }: { readonly onCancel: () => void }) {
-  const { request, outcome, laneOrder } = useRunStore(
-    useShallow((state) => ({ request: state.run?.request ?? null, outcome: state.run?.outcome ?? null, laneOrder: state.run?.laneOrder ?? [] })),
-  );
+  const { request, outcome, laneOrder } = useRunStore(useShallow(selectRunHeader));
   const dismiss = useRunStore((state) => state.dismiss);
   if (request === null) return null;
   const visible = laneOrder.slice(0, MAX_VISIBLE_LANES);
