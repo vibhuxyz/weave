@@ -11,6 +11,8 @@ import {
   CODEX_CAPABILITIES,
   AMP_CAPABILITIES,
   ANTIGRAVITY_CAPABILITIES,
+  GEMINI_CAPABILITIES,
+  OPENCODE_CAPABILITIES,
 } from "./capabilities.ts";
 
 export const ENGINES: Record<string, EngineDescriptor> = {
@@ -46,6 +48,31 @@ export const ENGINES: Record<string, EngineDescriptor> = {
     capabilities: AMP_CAPABILITIES,
     tokens: { contextWindow: false, turnTotals: true, cost: false },
     pluginModel: "prompt-only",
+  },
+  gemini: {
+    id: "gemini",
+    label: "Gemini CLI",
+    packageName: "@google/gemini-cli",
+    binName: "gemini",
+    provider: "google",
+    args: ["--acp"],
+    install: "bun add @google/gemini-cli --filter @weave/agent",
+    capabilities: GEMINI_CAPABILITIES,
+    tokens: NO_TOKEN_REPORTING,
+    pluginModel: "mcp-adapter",
+  },
+  opencode: {
+    id: "opencode",
+    label: "OpenCode",
+    packageName: "opencode-ai",
+    binName: "opencode",
+    provider: "sst",
+    runtime: "native",
+    args: ["acp"],
+    install: "bun add opencode-ai --filter @weave/agent (its postinstall fetches the native binary, so it must be allowed to run)",
+    capabilities: OPENCODE_CAPABILITIES,
+    tokens: NO_TOKEN_REPORTING,
+    pluginModel: "mcp-adapter",
   },
   antigravity: {
     id: "antigravity",
