@@ -1284,6 +1284,7 @@ export function App() {
               <UserMessage
                 key={turn.id}
                 text={turn.text}
+                createdAt={turn.createdAt}
                 mentions={turn.mentions}
                 images={turn.images}
                 onEdit={editPrompt}

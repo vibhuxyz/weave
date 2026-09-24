@@ -10,12 +10,12 @@ export function formatElapsed(ms: number): string {
 }
 
 /** Ticks once a second while `live` so a running timer stays current. */
-export function useNow(live: boolean): number {
+export function useNow(live: boolean, intervalMs = 1000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!live) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
     return () => clearInterval(id);
-  }, [live]);
+  }, [live, intervalMs]);
   return now;
 }

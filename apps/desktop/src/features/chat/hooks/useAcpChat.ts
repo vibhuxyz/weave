@@ -1072,6 +1072,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           id: promptId,
           role: "user",
           text: stripSystemPreamble(trimmed),
+          createdAt: Date.now(),
           mentions: opts?.mentions?.length ? opts.mentions : undefined,
           personas: personasRef.current,
           images: images?.map((image) => ({

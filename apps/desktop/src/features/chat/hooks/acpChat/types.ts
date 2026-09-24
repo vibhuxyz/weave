@@ -119,6 +119,7 @@ export interface ChatTurn {
   id: string;
   role: "user" | "assistant" | "notice";
   text: string;
+  createdAt?: number;
   compaction?: CompactionNotice;
   historyGap?: number;
   checkpoint?: TurnCheckpoint;

@@ -17,6 +17,7 @@
 > | Interactive blocks | Plan approval, checkpoint, safety ask, error, permission — unchanged components. | `InteractiveBlocks.tsx` |
 > | Files changed | "Edited 6 files +386 -0 ›" card, first 3 files, then "Show N more"; rows open the diff inspector. | `FilesChanged.tsx` |
 > | Status line | "✳ 19m 12s · 30.0k tokens · 1 running task · Running tools…" while the turn runs. | `StreamStatusLine.tsx` |
+> | User message | Right-aligned gray bubble; under it "just now" (then "7 min. ago", hours, a date), copy, and re-send (opens the prompt for editing and sends it as a new turn; ACP cannot rewind). Replayed history has no send time, so it shows only the buttons. | `features/chat/components/UserMessage.tsx`, `agent/lib/sent-at.ts` |
 > | Background tasks | Opened from "N running tasks": running first, then a collapsible "Finished N" list (last 100, clearable); each card shows the command, kind and state, and expands to its output. | `agent/components/tasks/` |
 >
 > Parallel runs (`/parallel <request>`) show their per-worker lanes in `features/runs/` — see [MVP.3](MVP.md).
