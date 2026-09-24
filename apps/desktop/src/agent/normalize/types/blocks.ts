@@ -78,8 +78,9 @@ export type StepStatus = "queued" | "running" | "passed" | "failed" | "cancelled
 export interface TestRunBlock extends AgentBlockBase {
   type: "test";
   title: string;
-  /** `recovered`: something failed, and a later run of the same kind passed. */
-  status: "running" | "passed" | "failed" | "recovered";
+  /** `recovered`: something failed, and a later run of the same kind passed.
+   * `completed`: every command succeeded, but none of them ran tests, so nothing "passed". */
+  status: "running" | "passed" | "completed" | "failed" | "recovered";
   durationMs?: number;
   steps: Array<{
     id: string;

@@ -1,5 +1,5 @@
 import type { TaskResult, Usage, Verification } from "@weave/protocol";
-import type { RunTaskTracker } from "./sink.ts";
+import { finalMessageOf, type RunTaskTracker } from "./sink.ts";
 import type { RunTaskContext, RunTaskOutcome, Session } from "./types.ts";
 import type { Worktree } from "../worktree/index.ts";
 
@@ -40,6 +40,7 @@ export function buildSuccessOutcome(input: SuccessOutcomeInput): RunTaskOutcome 
     contextSize: tracker.contextSize,
     turnUsage,
     worktree,
+    finalMessage: finalMessageOf(tracker),
   };
 }
 
@@ -76,5 +77,6 @@ export function buildFailureOutcome(input: FailureOutcomeInput): RunTaskOutcome 
     contextSize: tracker.contextSize,
     turnUsage: null,
     worktree,
+    finalMessage: finalMessageOf(tracker),
   };
 }

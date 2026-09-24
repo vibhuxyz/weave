@@ -80,6 +80,14 @@ test("an all-green run is still simply passed", () => {
   assert.equal(block?.status, "passed");
 });
 
+test("commands that succeed without running tests are completed, not passed", () => {
+  const block = testRunFromTools([
+    step("1", "Run sed -n 1,40p docs/MVP.md; git status", "completed", "exit code 0"),
+    step("2", "Run bunx tsc --noEmit", "completed", "exit code 0"),
+  ]);
+  assert.equal(block?.status, "completed");
+});
+
 test("the sequence from the reported run ends recovered", () => {
   const block = testRunFromTools([
     step("1", "Run bun test", "failed", FAILING_SUITE),

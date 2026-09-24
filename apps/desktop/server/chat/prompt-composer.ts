@@ -1,4 +1,5 @@
 import type { PromptBlock } from "@weave/agent";
+import { ASK_USER_SECTION } from "@weave/core";
 import type { PromptImageData } from "../shared/index.ts";
 
 export interface ComposeSystemOptions {
@@ -6,6 +7,7 @@ export interface ComposeSystemOptions {
   readonly persona?: string;
   readonly pluginBlock?: string;
   readonly ruleCatalog?: string;
+  readonly decisionsBlock?: string | null;
   readonly builtinSkillCatalog?: string;
   readonly skillCatalog?: string;
 }
@@ -19,11 +21,12 @@ export function composeSystemPrompt(
     options.persona?.trim() || null,
     options.pluginBlock?.trim() || null,
     options.ruleCatalog,
+    options.decisionsBlock,
+    ASK_USER_SECTION,
     options.builtinSkillCatalog,
     options.skillCatalog,
   ].filter((b): b is string => !!b);
 
-  if (blocks.length === 0) return userText;
   return `<system>\n${blocks.join("\n\n")}\n</system>\n\n${userText}`;
 }
 

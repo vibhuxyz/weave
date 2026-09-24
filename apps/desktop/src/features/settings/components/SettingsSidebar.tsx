@@ -43,7 +43,7 @@ export function SettingsSidebar({
   onBack,
 }: SettingsSidebarProps) {
   return (
-    <aside className="flex w-[240px] shrink-0 flex-col gap-1 border-r border-white/10 p-3 select-none">
+    <aside className="my-3 ml-3 flex w-[240px] shrink-0 flex-col gap-1 overflow-y-auto rounded-2xl border border-border bg-card/30 p-3 select-none">
       <button
         type="button"
         onClick={onBack}

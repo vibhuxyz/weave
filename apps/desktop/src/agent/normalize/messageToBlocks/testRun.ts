@@ -164,6 +164,7 @@ export function testRunFromTools(tools: ToolEntry[]): TestRunBlock | null {
   const stepHasCrash = steps.some((s) => s.badgeTone === "crit" && !s.superseded);
   const failedNow = outstanding.length > 0 || stepHasCrash;
   const recovered = !failedNow && failures.length > 0;
+  const ranTests = commandTools.some(isTestShaped);
 
   return {
     id: "test-run",
@@ -176,7 +177,7 @@ export function testRunFromTools(tools: ToolEntry[]): TestRunBlock | null {
     sourceSeq: commandTools.at(-1)?.sourceSeq,
     type: "test",
     title: "Run log",
-    status: running ? "running" : failedNow ? "failed" : recovered ? "recovered" : "passed",
+    status: running ? "running" : failedNow ? "failed" : recovered ? "recovered" : ranTests ? "passed" : "completed",
     steps,
     findings: 0,
   };

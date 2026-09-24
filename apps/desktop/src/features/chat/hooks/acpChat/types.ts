@@ -1,9 +1,9 @@
 import type { ToolCallStatus, ToolKind } from "@agentclientprotocol/sdk";
-import type { ConversationMeta } from "../../../../../server/index.ts";
+import type { ArchivedChatMeta, ConversationMeta } from "../../../../../server/index.ts";
 import type { CheckpointReason } from "@weave/protocol";
 import type { CompactionNotice } from "@/features/chat/compaction";
 
-export type { ConversationMeta };
+export type { ArchivedChatMeta, ConversationMeta };
 
 /** One file edit an ACP tool reported, as `{ type: "diff" }` content. */
 export interface ToolDiff {

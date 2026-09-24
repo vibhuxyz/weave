@@ -4,10 +4,21 @@ import { handleStartAuth, toAuthInputLine } from "../auth/index.ts";
 import { handleStartSetup } from "../dispatch/index.ts";
 import { handleCompact, handleSaveHistory, handlePrompt, handleNewChat, handleOpenChat, handleSwitchEngine, handleSetConfig, handleSetMode } from "../dispatch/index.ts";
 import { errorMessage } from "../shared/index.ts";
+import { parseProjectDirs } from "../chat/index.ts";
+import { handleChatAction, handleDeleteProject, parseAutoArchiveDays } from "../archive/index.ts";
+import type { ChatAction } from "../archive/index.ts";
 import { createCheckpointTask, runCancelCheckpoint } from "./checkpoint-task.ts";
+import { answerQuestion } from "../questions/index.ts";
+import { saveAnswer } from "../decisions/index.ts";
 import { forwardResult } from "./forward-result.ts";
 import type { ClientMessageContext } from "./types.ts";
 import type { ClientMessage } from "../shared/index.ts";
+
+const CHAT_ACTIONS: Readonly<Record<"archive-chat" | "restore-chat" | "delete-chat", ChatAction>> = {
+  "archive-chat": "archive",
+  "restore-chat": "restore",
+  "delete-chat": "delete",
+};
 
 export function handleClientMessage(
   msg: ClientMessage,
@@ -17,9 +28,12 @@ export function handleClientMessage(
   const {
     sessionMgr,
     projectDir,
-    store,
+    dataDir,
+    chats,
+    directory,
+    autoArchive,
+    weaveHome,
     tasksStore,
-    conversations,
     ledger,
     continuationTaskId,
     ruleCatalog,
@@ -28,6 +42,8 @@ export function handleClientMessage(
     pluginsById,
     authMethodsByEngine,
     pendingPermissions,
+    pendingQuestions,
+    decisions,
     activeSetup,
     compaction,
     history,
@@ -40,7 +56,7 @@ export function handleClientMessage(
     publishAuth,
   } = ctx;
 
-  const checkpointTask = createCheckpointTask({ sessionMgr, projectDir, continuationTaskId, ledger, tasksStore });
+  const checkpointTask = createCheckpointTask({ sessionMgr, projectDir, dataDir, continuationTaskId, ledger, tasksStore });
 
   switch (msg.type) {
     case "cancel":
@@ -50,11 +66,22 @@ export function handleClientMessage(
       for (const requestId of pendingPermissions.cancelAll()) {
         send({ type: "permission-cancelled", requestId });
       }
+      pendingQuestions.cancelAll();
       runCancelCheckpoint(checkpointTask, sessionMgr, send);
       return;
 
     case "permission-response":
       pendingPermissions.resolve(msg.requestId, msg.optionId);
+      return;
+
+    case "question-response":
+      answerQuestion({
+        pending: pendingQuestions,
+        requestId: msg.requestId,
+        answers: msg.answers,
+        send,
+        onAnswered: (answered) => saveAnswer(decisions, { ...answered, engineId: sessionMgr.currentEngineId }, send),
+      });
       return;
 
     case "set-mode":
@@ -149,7 +176,7 @@ export function handleClientMessage(
       return;
 
     case "open-chat":
-      queueTask(() => handleOpenChat({ sessionId: msg.sessionId, sessionMgr, projectDir, store, send, sendChats }));
+      queueTask(() => handleOpenChat({ sessionId: msg.sessionId, sessionMgr, projectDir, chats, send, sendChats }));
       return;
 
     case "compact": {
@@ -162,8 +189,51 @@ export function handleClientMessage(
       return;
     }
 
+    case "list-project-chats": {
+      const projectDirs = parseProjectDirs(msg.projectDirs);
+      const archived = autoArchive.run(sessionMgr.supervisor?.current.sessionId ?? null);
+      if (!archived.ok) send({ type: "error", message: `Automatic archiving skipped: ${archived.reason}` });
+      void directory.listForFolders(projectDirs).then(
+        (listing) => send({ type: "project-chats", ...listing }),
+        (error: unknown) => send({ type: "error", message: `Cannot list project chats: ${errorMessage(error)}` }),
+      );
+      return;
+    }
+
+    case "archive-chat":
+    case "restore-chat":
+    case "delete-chat":
+      queueTask(() =>
+        handleChatAction(CHAT_ACTIONS[msg.type], msg, {
+          directory,
+          currentSessionId: () => sessionMgr.supervisor?.current.sessionId ?? null,
+          now: Date.now,
+          send,
+          sendChats,
+          startNewChat: () => handleNewChat({ sessionMgr, projectDir, send, sendChats }),
+        }),
+      );
+      return;
+
+    case "delete-project":
+      queueTask(() =>
+        handleDeleteProject(msg, { directory, currentProjectId: chats.projectId, weaveHome, send }),
+      );
+      return;
+
+    case "set-auto-archive": {
+      const days = parseAutoArchiveDays(msg.afterDays);
+      if (days === undefined) {
+        send({ type: "error", message: `Cannot set automatic archiving to ${String(msg.afterDays)} days.` });
+        return;
+      }
+      autoArchive.setAfterDays(days);
+      send({ type: "archive-settings", autoArchiveAfterDays: days });
+      return;
+    }
+
     case "save-history":
-      queueTask(() => handleSaveHistory({ raw: msg, history, send }));
+      queueTask(async () => handleSaveHistory({ raw: msg, history, send }));
       return;
 
     case "prompt":
@@ -176,12 +246,12 @@ export function handleClientMessage(
           pluginsById,
           ledger,
           tasksStore,
-          conversations,
-          store,
+          chats,
           continuationTaskId,
           ruleCatalog,
           builtinSkillCatalog,
           skillCatalog,
+          decisions,
           send,
           sendChats,
         }),

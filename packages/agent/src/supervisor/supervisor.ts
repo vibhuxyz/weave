@@ -41,6 +41,7 @@ export async function createEngineSupervisor(
       task: options.task,
       sink: options.sink,
       policy: options.policy,
+      askUser: options.askUser,
       engineId,
       resumeSessionId,
       sandboxed: options.sandboxed ?? options.task.sandboxed,

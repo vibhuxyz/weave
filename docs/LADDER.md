@@ -21,8 +21,8 @@ desktop, that is a signal to think — not to create `packages/utils`.
 | ✅ | **V1.0** headless single-agent runner | Shipped `278bf8a` | `packages/{protocol,agent,core,cli}` |
 | ✅ | **V1.1** intake · verification ladder · eval harness | Shipped | `core/{intake,verify}.ts`, `eval/`, `protocol/{task,eval,verification}.ts` |
 | ⬜ | **V1.2** task state · checkpoints · engine handoff | Not started | `core/{state,checkpoint,handoff,tasks-store}.ts`, `protocol/continuation.ts` |
-| ⬜ | **MVP.1** worktrees · pool · scheduler · integrator | Not started | `core/{worktree,pool,scheduler,integrator,compress}.ts` |
-| ⬜ | **MVP.2** planner · blueprint · contracts · decide | Not started | `core/{planner,blueprint,contracts,decide}.ts` |
+| ✅ | **MVP.1** worktrees · pool · scheduler · integrator | Built; acceptance passed live (3 Claude Code workers, 2026-09-24) — not committed | `core/{worktree,pool,scheduler,integrator,compress,run-plan}/` |
+| 🟨 | **MVP.2** planner · blueprint · contracts · decide | Acceptance passed live on greenfield + existing (2026-09-24); contract-change protocol and per-stack contract still open — not committed | `core/{planner,blueprint,contracts,decide,orchestrate}/` |
 | ⬜ | **MVP.3** lanes in the UI | Not started | `apps/desktop/src/useAcpChat.ts` |
 | ⬜ | **V2.1** ownership · event bus · dynamic deps | Not started | `core/{ownership,bus,state,scheduler}.ts` |
 | ⬜ | **V2.2** project intelligence | Not started | `core/context/` |

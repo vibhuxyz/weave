@@ -22,6 +22,15 @@ const WRITE_SCOPE = `## Scope
 - No refactors, renames or features the task did not ask for.
 - Never pass a check by weakening it: no deleting tests, .skip, any, @ts-ignore, eslint-disable.`;
 
+export const ASK_USER_SECTION = `## Asking the user
+- A decision only the user can make is not a reason to stop. Examples: adding or upgrading a dependency, a design choice the docs leave open, a conflict between the task and the project rules, anything hard to undo.
+- Ask it with your ask-the-user tool (AskUserQuestion in Claude Code, request_user_input in Codex), then continue the same turn with the answer. Do not end the turn with the question written in a report.
+- One decision per question. Offer 2-4 concrete options and put your recommendation first, marked "(Recommended)".
+- Do not ask what you can find out yourself by reading the code or running a command.
+- If the user skips the question, take the safest option that stays in scope, say which one you took, and continue.
+- If no ask-the-user tool is available, finish the work that does not depend on the answer and list the question under OPEN.
+- BLOCKED is only for work another agent owns, or for an action the user declined that the task cannot do without.`;
+
 const WRITE_CODE = `## Code
 - Max 250 lines per file, target 80-150. Functions under 40 lines.
 - One job per file, named by purpose. No utils.ts or helpers.ts.
@@ -47,7 +56,7 @@ const READ_ONLY_SCOPE = `## Scope
 export function buildBasePrompt(access: AgentAccess): string {
   const sections =
     access === "write"
-      ? [PRIORITY, TRUST, WRITE_SCOPE, WRITE_CODE, WRITE_VERIFY]
-      : [PRIORITY, TRUST, READ_ONLY_SCOPE];
+      ? [PRIORITY, TRUST, WRITE_SCOPE, ASK_USER_SECTION, WRITE_CODE, WRITE_VERIFY]
+      : [PRIORITY, TRUST, READ_ONLY_SCOPE, ASK_USER_SECTION];
   return sections.join("\n\n");
 }

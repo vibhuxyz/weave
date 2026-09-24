@@ -6,11 +6,7 @@ import {
   type EngineSupervisor,
   type CreateSupervisorOptions,
 } from "@weave/agent";
-import {
-  readLatest,
-  buildBrief,
-  weaveDirFor,
-} from "@weave/core";
+import { readLatest, buildBrief } from "@weave/core";
 import {
   isAuthRequiredError,
   toEngineAuthMethod,
@@ -94,7 +90,7 @@ export class DesktopSessionManager {
   }
 
   async bindEngine(engineId: string): Promise<boolean> {
-    const resumeId = await this.ctx.store.get(this.ctx.projectDir);
+    const resumeId = this.ctx.chats.lastSessionId();
     const options = this.buildSupervisorOptions(resumeId, engineId);
     try {
       if (!this.supervisor) {
@@ -113,7 +109,7 @@ export class DesktopSessionManager {
 
     if (this.taskCreated) {
       const checkpoint = await readLatest(
-        weaveDirFor(this.ctx.projectDir),
+        this.ctx.dataDir,
         this.ctx.continuationTaskId,
       );
       this.pendingPreamble = checkpoint
@@ -159,8 +155,8 @@ export class DesktopSessionManager {
     return true;
   }
 
-  async prepareReplay(sessionId: string): Promise<void> {
-    const loaded = await this.ctx.history.load(sessionId);
+  prepareReplay(sessionId: string): void {
+    const loaded = this.ctx.history.load(sessionId);
     if (!loaded.ok) this.ctx.send({ type: "error", message: loaded.reason });
     this.ctx.replayGate.arm(sessionId, loaded.ok ? loaded.value : null);
   }
@@ -170,7 +166,7 @@ export class DesktopSessionManager {
   }
 
   async openFirstUsableEngine(wanted: string, resumeId: string | null): Promise<void> {
-    if (resumeId) await this.prepareReplay(resumeId);
+    if (resumeId) this.prepareReplay(resumeId);
     try {
       await this.openEngineInOrder(wanted, resumeId);
     } finally {

@@ -1,8 +1,8 @@
 import { getEngine } from "@weave/agent";
 import { readGitStatus } from "@weave/core";
+import type { ProjectChats } from "../chat/index.ts";
 import type { DesktopSessionManager } from "../session/index.ts";
 import type { ServerMessage } from "../shared/index.ts";
-import type { SessionStore } from "@weave/core";
 
 export interface NewChatOptions {
   readonly instructions?: string;
@@ -49,7 +49,7 @@ export interface OpenChatOptions {
   readonly sessionId: string;
   readonly sessionMgr: DesktopSessionManager;
   readonly projectDir: string;
-  readonly store: SessionStore;
+  readonly chats: ProjectChats;
   readonly send: (msg: ServerMessage) => void;
   readonly sendChats: () => Promise<void>;
 }
@@ -58,15 +58,20 @@ export async function handleOpenChat({
   sessionId: target,
   sessionMgr,
   projectDir,
-  store,
+  chats,
   send,
   sendChats,
 }: OpenChatOptions): Promise<void> {
   if (!sessionMgr.supervisor) return;
+  const isOpenSession = target === sessionMgr.supervisor.current.sessionId;
+  if (!isOpenSession && !chats.has(target)) {
+    send({ type: "error", message: `Cannot open chat ${target}: it does not belong to this project.` });
+    return;
+  }
 
   try {
     send({ type: "reset" });
-    await sessionMgr.prepareReplay(target);
+    sessionMgr.prepareReplay(target);
     const ok = await sessionMgr.supervisor.current
       .resumeSession(target)
       .finally(() => sessionMgr.finishReplay());
@@ -76,7 +81,7 @@ export async function handleOpenChat({
       return;
     }
     sessionMgr.persisted = true;
-    await store.set(projectDir, sessionMgr.supervisor.current.sessionId);
+    chats.rememberLastSession(sessionMgr.supervisor.current.sessionId);
     send({
       type: "ready",
       sessionId: sessionMgr.supervisor.current.sessionId,

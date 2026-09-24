@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2439"/>
+      <stop offset="1" stop-color="#1d1827"/>
+    </linearGradient>
+    <linearGradient id="barTop" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8790f7"/>
+      <stop offset="1" stop-color="#d487f1"/>
+    </linearGradient>
+    <linearGradient id="barMiddle" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e97ab8"/>
+      <stop offset="0.5" stop-color="#f2a79f"/>
+      <stop offset="1" stop-color="#f4d27b"/>
+    </linearGradient>
+    <linearGradient id="barBottom" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9bd2f8"/>
+      <stop offset="0.5" stop-color="#7fe2f3"/>
+      <stop offset="1" stop-color="#8b9df3"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.55" r="0.5">
+      <stop offset="0" stop-color="#8f7cf0" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#8f7cf0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="26"/>
+    </filter>
+    <clipPath id="tile">
+      <rect x="100" y="100" width="824" height="824" rx="185"/>
+    </clipPath>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#background)"/>
+
+  <g clip-path="url(#tile)">
+    <g stroke="#6f86d6" stroke-width="6" stroke-linecap="round" opacity="0.45">
+      <line x1="190" y1="170" x2="202" y2="198"/>
+      <line x1="300" y1="130" x2="304" y2="158"/>
+      <line x1="690" y1="150" x2="680" y2="176"/>
+      <line x1="840" y1="220" x2="826" y2="240"/>
+      <line x1="150" y1="400" x2="166" y2="420"/>
+      <line x1="868" y1="430" x2="850" y2="452"/>
+      <line x1="180" y1="820" x2="200" y2="838"/>
+      <line x1="820" y1="760" x2="804" y2="782"/>
+      <line x1="620" y1="880" x2="612" y2="900"/>
+      <line x1="360" y1="892" x2="372" y2="910"/>
+    </g>
+
+    <ellipse cx="512" cy="540" rx="360" ry="330" fill="url(#halo)"/>
+
+    <g filter="url(#glow)" opacity="0.55">
+      <rect x="212" y="324" width="600" height="76" rx="38" fill="url(#barTop)"/>
+      <rect x="212" y="474" width="600" height="76" rx="38" fill="url(#barMiddle)"/>
+      <rect x="212" y="624" width="600" height="76" rx="38" fill="url(#barBottom)"/>
+    </g>
+
+    <g fill="#0d0c12" stroke="#75727e" stroke-width="7">
+      <rect x="327" y="224" width="70" height="576" rx="35"/>
+      <rect x="477" y="224" width="70" height="576" rx="35"/>
+      <rect x="627" y="224" width="70" height="576" rx="35"/>
+    </g>
+
+    <rect x="212" y="474" width="600" height="76" rx="38" fill="url(#barMiddle)"/>
+
+    <g fill="#0d0c12" fill-opacity="0.62">
+      <rect x="327" y="474" width="70" height="76"/>
+      <rect x="477" y="474" width="70" height="76"/>
+      <rect x="627" y="474" width="70" height="76"/>
+    </g>
+    <g stroke="#75727e" stroke-opacity="0.8" stroke-width="7">
+      <line x1="327" y1="474" x2="327" y2="550"/>
+      <line x1="397" y1="474" x2="397" y2="550"/>
+      <line x1="477" y1="474" x2="477" y2="550"/>
+      <line x1="547" y1="474" x2="547" y2="550"/>
+      <line x1="627" y1="474" x2="627" y2="550"/>
+      <line x1="697" y1="474" x2="697" y2="550"/>
+    </g>
+
+    <rect x="212" y="324" width="600" height="76" rx="38" fill="url(#barTop)"/>
+    <rect x="212" y="624" width="600" height="76" rx="38" fill="url(#barBottom)"/>
+  </g>
+</svg>

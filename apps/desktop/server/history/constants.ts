@@ -1,5 +1,3 @@
-export const HISTORY_DIR_NAME = "history";
-export const HISTORY_FILE_SUFFIX = ".json";
 export const HISTORY_ARCHIVE_VERSION = 1;
 export const MAX_HISTORY_BYTES = 8 * 1024 * 1024;
 export const MAX_CLAUDE_SESSION_FILE_BYTES = 256 * 1024 * 1024;

@@ -7,7 +7,7 @@ projects.
 **Shippable as:** the actual pitch. Everything after this makes it smarter, not
 newly possible.
 
-**Status:** not started. Blocked on [V1](V1.md)'s exit criteria — without the
+**Status:** MVP.1 built and its acceptance passed live (see below). MVP.2 and MVP.3 in progress. The three-arm experiment is still blocked on [V1](V1.md)'s exit criteria — without the
 baseline table, the three-arm experiment at the end of this tier has nothing to
 compare against.
 
@@ -35,6 +35,17 @@ move earlier than they otherwise would.
 ---
 
 ## MVP.1 — worktrees, pool, integration
+
+> **Built.** Entry point: `runPlan()` in `packages/core/src/run-plan/`. Code lives in
+> `core/src/{scheduler,worktree,pool,integrator,compress,run-plan}/` (folders, not single files).
+> Acceptance passed live on 2026-09-24: 3 Claude Code workers started within 8 ms, each wrote only
+> its `allowedPaths`, merged T1 → T2 → T3 with the `tests` rung after each, 7/7 tests on the
+> integration branch. Install ≈0.4 s per worktree, agent ≈24 s, recorded separately.
+> Found and fixed on the way: Weave's own `npm install` wrote `package-lock.json` into each
+> worktree and the scope check blamed the workers. Unlocked installs now use `--no-package-lock`,
+> and an install that changes files fails the install step instead of the worker.
+> Limits: Weave cannot compress tool output an engine reads internally; `compressToolOutput`
+> covers what Weave relays (integration failures, future retry prompts).
 
 ```
 packages/core/src/worktree.ts     create · install · harvest diff · destroy
@@ -108,6 +119,20 @@ merge cleanly, with the ledger showing which task touched what.
 ---
 
 ## MVP.2 — planner, decomposition, blueprint
+
+> **Acceptance passed live on 2026-09-24**, both fixtures, one prompt each, graph run unedited:
+> existing repo — 3 disjoint tasks, `parallel/disjoint-paths`, merged + `tests` verified;
+> greenfield — blueprint → contract committed on a Weave branch → 2 component tasks with the
+> contract read-only, `parallel/components-with-contract`, merged + `tests` verified.
+> Entry point: `planAndRun()` in `packages/core/src/orchestrate/`. The planner runs in a
+> throwaway worktree with every write rejected.
+>
+> **Still open (observed, not hypothetical):** in the greenfield run the API worker hand-copied
+> the contract into `src/contract.js` ("keep in sync") because the contract is always emitted as
+> TypeScript and the stack was plain Node.js with no build step. That is the drift-without-an-edit
+> this section predicts. Needed: a contract in the project's language, the
+> `CONTRACT_CHANGE_REQUEST` loop wired into the run, and a check that flags local re-declarations
+> of contract symbols.
 
 ```
 packages/core/src/planner.ts      prompt + project facts → TaskContract[]

@@ -10,7 +10,14 @@ import {
   toAcpResponse,
   type PermissionPolicy,
 } from "../permissions/index.ts";
-import type { SessionSink } from "./types.ts";
+import type { QuestionAsker, SessionSink } from "./types.ts";
+
+export interface SessionClientOptions {
+  readonly task: TaskContract;
+  readonly sink: SessionSink;
+  readonly policy: PermissionPolicy;
+  readonly askUser?: QuestionAsker;
+}
 
 function sliceFileLines(
   text: string,
@@ -59,13 +66,15 @@ export class SessionClient implements acp.Client {
   readonly task: TaskContract;
   readonly sink: SessionSink;
   readonly policy: PermissionPolicy;
+  readonly askUser: QuestionAsker | undefined;
   readonly written = new Set<string>();
   replaying = false;
 
-  constructor(task: TaskContract, sink: SessionSink, policy: PermissionPolicy) {
+  constructor({ task, sink, policy, askUser }: SessionClientOptions) {
     this.task = task;
     this.sink = sink;
     this.policy = policy;
+    this.askUser = askUser;
   }
 
   private safeResolve(requestedPath: string, mode: "read" | "write"): string {
@@ -117,6 +126,13 @@ export class SessionClient implements acp.Client {
         : { decision: "reject", reason: decision.reason },
     );
     return toAcpResponse(decision);
+  }
+
+  async unstable_createElicitation(
+    params: acp.CreateElicitationRequest,
+  ): Promise<acp.CreateElicitationResponse> {
+    if (params.mode !== "form" || !this.askUser) return { action: "decline" };
+    return this.askUser(params);
   }
 
   async sessionUpdate(params: acp.SessionNotification): Promise<void> {

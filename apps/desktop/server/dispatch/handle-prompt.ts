@@ -1,12 +1,14 @@
 import { titleFromPrompt, readGitStatus } from "@weave/core";
 import { EngineStalledError } from "@weave/agent";
-import { resolveSessionPlugins, composeSystemPrompt, buildPromptBlocks } from "../chat/index.ts";
+import { resolveSessionPlugins, composeSystemPrompt, buildPromptBlocks, parsePersonaIds } from "../chat/index.ts";
 import { compactBeforePrompt } from "../compaction/index.ts";
 import type { CompactionController } from "../compaction/index.ts";
 import { summaryReaderFor } from "../history/index.ts";
 import type { DesktopSessionManager } from "../session/index.ts";
 import type { ClientMessage, ServerMessage } from "../shared/index.ts";
-import type { Ledger, TasksStore, ConversationStore, SessionStore, NormalizedPlugin } from "@weave/core";
+import type { Ledger, TasksStore, NormalizedPlugin } from "@weave/core";
+import type { ProjectChats } from "../chat/index.ts";
+import type { DecisionLog } from "../decisions/index.ts";
 
 export interface PromptOptions {
   readonly msg: Extract<ClientMessage, { readonly type: "prompt" }>;
@@ -16,12 +18,12 @@ export interface PromptOptions {
   readonly pluginsById: ReadonlyMap<string, NormalizedPlugin>;
   readonly ledger: Ledger;
   readonly tasksStore: TasksStore;
-  readonly conversations: ConversationStore;
-  readonly store: SessionStore;
+  readonly chats: ProjectChats;
   readonly continuationTaskId: string;
   readonly ruleCatalog: string;
   readonly builtinSkillCatalog: string;
   readonly skillCatalog: string;
+  readonly decisions: DecisionLog;
   readonly send: (msg: ServerMessage) => void;
   readonly sendChats: () => Promise<void>;
 }
@@ -34,12 +36,12 @@ export async function handlePrompt({
   pluginsById,
   ledger,
   tasksStore,
-  conversations,
-  store,
+  chats,
   continuationTaskId,
   ruleCatalog,
   builtinSkillCatalog,
   skillCatalog,
+  decisions,
   send,
   sendChats,
 }: Readonly<PromptOptions>): Promise<void> {
@@ -108,6 +110,7 @@ export async function handlePrompt({
     persona: msg.persona,
     pluginBlock,
     ruleCatalog,
+    decisionsBlock: decisions.formatBlock(),
     builtinSkillCatalog,
     skillCatalog,
   });
@@ -145,14 +148,17 @@ export async function handlePrompt({
       wallMs: 0,
     });
 
-    if (!sessionMgr.persisted) {
+    const sessionId = sessionMgr.supervisor.current.sessionId;
+    const recorded = chats.record(sessionId, {
+      title: titleFromPrompt(text),
+      engineId: sessionMgr.currentEngineId,
+      personaIds: parsePersonaIds(msg.personaIds),
+    });
+    if (!recorded.ok) send({ type: "error", message: `Cannot save this chat: ${recorded.reason}` });
+    if (recorded.ok && !sessionMgr.persisted) {
       sessionMgr.persisted = true;
-      await store.set(projectDir, sessionMgr.supervisor.current.sessionId);
+      chats.rememberLastSession(sessionId);
     }
-    await conversations.record(
-      sessionMgr.supervisor.current.sessionId,
-      titleFromPrompt(text),
-    );
     await sendChats();
     send({ type: "git-status", git: await readGitStatus(projectDir) });
   } catch (err: unknown) {

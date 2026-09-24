@@ -8,6 +8,7 @@ import { readGitStatus, type Ledger } from "@weave/core";
 import type { SessionConfigOption, SessionUpdate } from "@weave/protocol";
 import type { SessionModes } from "@weave/agent";
 import { createUserPrompter } from "../permissions/index.ts";
+import { createUserAsker } from "../questions/index.ts";
 import type { SessionContext } from "./types.ts";
 
 export interface CreateSupervisorInputs {
@@ -31,7 +32,7 @@ export function createSupervisorOptions({
   onSessionReady,
   resumeId,
 }: CreateSupervisorInputs): Omit<CreateSupervisorOptions, "engineId"> {
-  const { task, projectDir, ledger, send, pendingPermissions, compaction, replayGate } = ctx;
+  const { task, projectDir, ledger, send, pendingPermissions, pendingQuestions, compaction, replayGate } = ctx;
 
   return {
     task,
@@ -39,6 +40,7 @@ export function createSupervisorOptions({
       createUserPrompter({ pending: pendingPermissions, send }),
       { currentModeId: getCurrentModeId },
     ),
+    askUser: createUserAsker({ pending: pendingQuestions, send }),
     resumeSessionId: resumeId,
     sink: {
       onSpawned: (pid: number, entry: string) =>

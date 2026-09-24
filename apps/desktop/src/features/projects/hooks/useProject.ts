@@ -3,11 +3,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { chosenEngineId } from "@/features/onboarding";
 
+export interface ServerEndpoint {
+  readonly port: number;
+  readonly token: string;
+}
+
 export type ProjectState =
   | { status: "loading" }
   | { status: "none" }
   | { status: "starting"; dir: string; engineId?: string }
-  | { status: "running"; dir: string; port: number; engineId?: string }
+  | { status: "running"; dir: string; server: ServerEndpoint; engineId?: string }
   | { status: "error"; message: string };
 
 /**
@@ -26,11 +31,11 @@ export function useProject() {
     const wanted = engineId ?? chosenEngineId() ?? undefined;
     setState({ status: "starting", dir, engineId: wanted });
     try {
-      const port = await invoke<number>("start_agent_server", {
+      const server = await invoke<ServerEndpoint>("start_agent_server", {
         projectDir: dir,
         engineId: wanted,
       });
-      setState({ status: "running", dir, port, engineId: wanted });
+      setState({ status: "running", dir, server, engineId: wanted });
     } catch (error) {
       setState({
         status: "error",

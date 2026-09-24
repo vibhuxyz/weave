@@ -17,6 +17,9 @@ pub mod agents;
 use tauri::{Manager, RunEvent, State};
 
 const SERVER_PORT: u16 = 8137;
+const SERVER_TOKEN_ENV: &str = "WEAVE_SERVER_TOKEN";
+const SERVER_TOKEN_BYTES: usize = 32;
+const CHAT_WORKSPACE_DIR: &str = ".weave/workspace";
 
 /// How long the ACP server gets to shut down cleanly before it is SIGKILLed.
 const SERVER_SHUTDOWN: Duration = Duration::from_secs(3);
@@ -25,10 +28,7 @@ const SERVER_SHUTDOWN: Duration = Duration::from_secs(3);
 /// must never hold the app open.
 const QUIT_TEARDOWN: Duration = Duration::from_secs(5);
 
-/// The bundled server is compiled to plain ESM, so this is the real floor.
-/// Dev additionally needs 22.6+ for `--experimental-strip-types`, which the
-/// dev path checks separately.
-const MIN_NODE_MAJOR: u32 = 18;
+const MIN_NODE_VERSION: (u32, u32) = (22, 13);
 
 // ---------------------------------------------------------------------------
 // Finding node
@@ -60,18 +60,20 @@ fn is_executable(path: &Path) -> bool {
 
 /// `node -v` → major version. Also proves the binary actually runs, which a
 /// permissions check alone does not (a stale nvm shim resolves and then dies).
-fn node_major(node: &Path) -> Option<u32> {
+fn node_version(node: &Path) -> Option<(u32, u32)> {
     let out = Command::new(node).arg("-v").output().ok()?;
     if !out.status.success() {
         return None;
     }
-    String::from_utf8_lossy(&out.stdout)
-        .trim()
-        .trim_start_matches('v')
-        .split('.')
-        .next()?
-        .parse()
-        .ok()
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut parts = text.trim().trim_start_matches('v').split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
+}
+
+fn node_major(node: &Path) -> Option<u32> {
+    node_version(node).map(|(major, _)| major)
 }
 
 /// Anything already on PATH. Covers `pnpm tauri dev` from a terminal.
@@ -154,21 +156,22 @@ fn resolve_node() -> Result<PathBuf, String> {
         .chain(node_in_known_locations())
         .chain(node_from_login_shell());
 
-    let mut too_old: Option<(PathBuf, u32)> = None;
+    let mut too_old: Option<(PathBuf, (u32, u32))> = None;
     for candidate in candidates {
         if !is_executable(&candidate) {
             continue;
         }
-        match node_major(&candidate) {
-            Some(major) if major >= MIN_NODE_MAJOR => return Ok(candidate),
-            Some(major) => too_old.get_or_insert((candidate, major)),
+        match node_version(&candidate) {
+            Some(version) if version >= MIN_NODE_VERSION => return Ok(candidate),
+            Some(version) => too_old.get_or_insert((candidate, version)),
             None => continue,
         };
     }
 
+    let (min_major, min_minor) = MIN_NODE_VERSION;
     Err(match too_old {
-        Some((path, major)) => format!(
-            "Weave needs Node {MIN_NODE_MAJOR} or newer. Found v{major} at {}.",
+        Some((path, (major, minor))) => format!(
+            "Weave needs Node {min_major}.{min_minor} or newer. Found v{major}.{minor} at {}.",
             path.display()
         ),
         None => "Weave could not find Node.js. Install it (https://nodejs.org) \
@@ -255,6 +258,7 @@ impl AgentServer {
         project_dir: &str,
         engine_id: Option<&str>,
         engines_dir: &Path,
+        token: &str,
     ) -> Result<(), String> {
         self.stop();
 
@@ -274,6 +278,7 @@ impl AgentServer {
             // A bundle has no workspace to resolve engines from. This is what
             // `resolveEngineEntry` reads instead. See packages/agent/engines.ts.
             .env("WEAVE_ENGINES_DIR", engines_dir)
+            .env(SERVER_TOKEN_ENV, token)
             .env("PATH", child_path(node));
 
         if let Some(id) = engine_id {
@@ -372,6 +377,17 @@ fn read_settings(app: &tauri::AppHandle) -> Settings {
 struct SavedProject {
     dir: String,
     engine_id: Option<String>,
+}
+
+#[tauri::command]
+fn chat_workspace_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("no home dir: {e}"))?
+        .join(CHAT_WORKSPACE_DIR);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create {}: {e}", dir.display()))?;
+    Ok(dir.to_string_lossy().into_owned())
 }
 
 /// The folder chosen last run, if it still exists.
@@ -1119,8 +1135,6 @@ fn server_launch(app: &tauri::AppHandle) -> Result<ServerLaunch, String> {
                         workdir: desktop,
                     })
                 }
-                // Not fatal — fall through to the bundle, which is plain JS
-                // and runs on anything from node 18.
                 Some(major) => {
                     why_not_dev = Some(format!(
                         "dev runs TypeScript directly and needs node \
@@ -1154,7 +1168,20 @@ fn server_launch(app: &tauri::AppHandle) -> Result<ServerLaunch, String> {
     })
 }
 
-/// Point the agent at `project_dir` and (re)start the server. Returns the port.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServerEndpoint {
+    port: u16,
+    token: String,
+}
+
+fn new_server_token() -> Result<String, String> {
+    let mut bytes = [0u8; SERVER_TOKEN_BYTES];
+    getrandom::fill(&mut bytes).map_err(|e| format!("could not create a server token: {e}"))?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+/// Point the agent at `project_dir` and (re)start the server. Returns where to reach it.
 #[tauri::command]
 fn start_agent_server(
     app: tauri::AppHandle,
@@ -1162,7 +1189,7 @@ fn start_agent_server(
     containers: State<'_, ContainerRegistry>,
     project_dir: String,
     engine_id: Option<String>,
-) -> Result<u16, String> {
+) -> Result<ServerEndpoint, String> {
     if !PathBuf::from(&project_dir).is_dir() {
         return Err(format!("Not a folder: {project_dir}"));
     }
@@ -1179,7 +1206,8 @@ fn start_agent_server(
     let launch = server_launch(&app)?;
     let engines = engines_dir(&app)?;
 
-    server.restart(&launch, &project_dir, engine_id.as_deref(), &engines)?;
+    let token = new_server_token()?;
+    server.restart(&launch, &project_dir, engine_id.as_deref(), &engines, &token)?;
     server.wait_until_listening(SERVER_PORT, Duration::from_secs(20))?;
     *server.project_dir.lock().unwrap() = Some(project_dir.clone());
 
@@ -1193,7 +1221,10 @@ fn start_agent_server(
         }
     }
 
-    Ok(SERVER_PORT)
+    Ok(ServerEndpoint {
+        port: SERVER_PORT,
+        token,
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1205,6 +1236,7 @@ pub fn run() {
         .manage(ContainerRegistry::default())
         .invoke_handler(tauri::generate_handler![
             get_saved_project,
+            chat_workspace_dir,
             save_engine_id,
             install_engine,
             uninstall_engine,

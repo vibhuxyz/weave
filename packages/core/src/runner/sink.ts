@@ -4,10 +4,27 @@ import type { Ledger } from "../shared/index.ts";
 
 export interface RunTaskTracker {
   turns: number;
-  stopped: "maxTurns" | "timeoutMs" | null;
+  stopped: "maxTurns" | "timeoutMs" | "aborted" | null;
   costUsd?: number;
   contextUsed?: number;
   contextSize?: number;
+  finalMessage: string[];
+}
+
+export const MAX_FINAL_MESSAGE_CHARS = 20_000;
+
+const MAX_FINAL_MESSAGE_PARTS = 500;
+
+function appendBounded(parts: string[], text: string): void {
+  parts.push(text);
+  if (parts.length <= MAX_FINAL_MESSAGE_PARTS) return;
+  const tail = parts.join("").slice(-MAX_FINAL_MESSAGE_CHARS);
+  parts.length = 0;
+  parts.push(tail);
+}
+
+export function finalMessageOf(tracker: RunTaskTracker): string {
+  return tracker.finalMessage.join("").slice(-MAX_FINAL_MESSAGE_CHARS);
 }
 
 export interface CreateRunTaskSinkInput {
@@ -27,7 +44,12 @@ function handleSessionUpdate(
   const { task, ledger, emit, maxTurns, tracker, requestCancel } = input;
   emit(ledger.append("agent.message", { taskId: task.id, update }));
 
+  if (update.sessionUpdate === "agent_message_chunk" && update.content.type === "text") {
+    appendBounded(tracker.finalMessage, update.content.text);
+  }
+
   if (update.sessionUpdate === "tool_call") {
+    tracker.finalMessage.length = 0;
     tracker.turns += 1;
     if (tracker.turns > maxTurns && !tracker.stopped) {
       tracker.stopped = "maxTurns";

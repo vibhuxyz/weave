@@ -3,9 +3,7 @@ import type { WebSocket } from "ws";
 import { ENGINES, DEFAULT_ENGINE_ID, installedEngines } from "@weave/agent";
 import {
   Ledger,
-  ConversationStore,
   TasksStore,
-  weaveDirFor,
   newRunId,
   discoverSkills,
   formatSkillCatalog,
@@ -14,18 +12,19 @@ import {
   BUILTIN_SKILLS,
   formatBuiltinSkillsBlock,
   resolveCatalog,
-  type SessionStore,
   type NormalizedPlugin,
 } from "@weave/core";
 import type { TaskContract, AuthMethod } from "@weave/protocol";
 import { DesktopSessionManager, killStaleSupervisors, registerLiveSupervisor, unregisterLiveSupervisor } from "../session/index.ts";
 import { PendingPermissions } from "../permissions/index.ts";
+import { PendingQuestions } from "../questions/index.ts";
 import { ActiveSetup, announceSetupRequired } from "../setup/index.ts";
 import { handleClientMessage } from "./dispatch.ts";
 import { CompactionController } from "../compaction/index.ts";
-import { HistoryStore, ReplayGate } from "../history/index.ts";
+import { ReplayGate } from "../history/index.ts";
 import { EngineAuthStates, type ActiveAuthSession } from "../auth/index.ts";
 import type { ClientMessage, ServerMessage, EngineEntry } from "../shared/index.ts";
+import type { ConnectionStorage } from "./types.ts";
 
 function safeSend(socket: WebSocket, message: ServerMessage): void {
   if (socket.readyState !== socket.OPEN) return;
@@ -63,6 +62,7 @@ const KNOWN_CLIENT_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   "refresh-engines",
   "refresh-plugins",
   "permission-response",
+  "question-response",
   "set-mode",
   "start-setup",
   "cancel-setup",
@@ -70,6 +70,12 @@ const KNOWN_CLIENT_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   "submit-setup-consent",
   "compact",
   "save-history",
+  "list-project-chats",
+  "delete-chat",
+  "archive-chat",
+  "restore-chat",
+  "delete-project",
+  "set-auto-archive",
 ]);
 
 function parseClientMessage(raw: unknown): ClientMessage | null {
@@ -82,12 +88,13 @@ function parseClientMessage(raw: unknown): ClientMessage | null {
 export async function handleConnection(
   socket: WebSocket,
   projectDir: string,
-  store: SessionStore,
+  storage: ConnectionStorage,
 ): Promise<void> {
+  const { dataDir, chats, history } = storage;
   loadEnvFiles(projectDir);
 
   const send = (msg: ServerMessage) => safeSend(socket, msg);
-  const ledger = new Ledger(weaveDirFor(projectDir), newRunId());
+  const ledger = new Ledger(dataDir, newRunId());
   const continuationTaskId = ledger.runId;
   const isSandboxed =
     process.env.WEAVE_SANDBOX === "1" || process.env.SANDBOXED === "true";
@@ -125,15 +132,13 @@ export async function handleConnection(
   };
   await loadPlugins();
 
-  const conversations = new ConversationStore(weaveDirFor(projectDir));
-  const tasksStore = new TasksStore(weaveDirFor(projectDir));
+  const tasksStore = new TasksStore(dataDir);
   const authMethodsByEngine = new Map<string, AuthMethod[]>();
 
   const sendChats = async () => {
-    const chatList = await conversations.list();
     send({
       type: "chats",
-      chats: chatList.sort((a, b) => b.updatedAt - a.updatedAt),
+      chats: chats.list(),
       activeSessionId: sessionMgr.supervisor?.current?.sessionId ?? "",
     });
   };
@@ -144,8 +149,8 @@ export async function handleConnection(
   killStaleSupervisors();
 
   const pendingPermissions = new PendingPermissions();
+  const pendingQuestions = new PendingQuestions();
   const activeSetup = new ActiveSetup();
-  const history = new HistoryStore(projectDir);
   const replayGate = new ReplayGate();
   const compaction = new CompactionController((sessionId, supportsCompaction) =>
     send({ type: "session-capabilities", sessionId, supportsCompaction }),
@@ -154,8 +159,9 @@ export async function handleConnection(
   const initialEngineId = process.env.ENGINE_ID || DEFAULT_ENGINE_ID;
   const sessionMgr = new DesktopSessionManager(initialEngineId, {
     projectDir,
+    dataDir,
     task,
-    store,
+    chats,
     tasksStore,
     ledger,
     continuationTaskId,
@@ -164,18 +170,19 @@ export async function handleConnection(
     authMethodsByEngine,
     engineAuthStates,
     pendingPermissions,
+    pendingQuestions,
     compaction,
     history,
     replayGate,
   });
 
   const [ruleCatalog, builtinSkillCatalog, skillCatalog] = await Promise.all([
-    discoverRules(projectDir).then(formatRulesBlock),
+    discoverRules(storage.ruleDirs).then(formatRulesBlock),
     Promise.resolve(formatBuiltinSkillsBlock(BUILTIN_SKILLS)),
-    discoverSkills(projectDir).then(formatSkillCatalog),
+    discoverSkills(storage.skillDirs).then(formatSkillCatalog),
   ]);
 
-  const resumeId = await store.get(projectDir);
+  const resumeId = chats.lastSessionId();
   try {
     await sessionMgr.openFirstUsableEngine(initialEngineId, resumeId);
   } catch (err) {
@@ -187,6 +194,9 @@ export async function handleConnection(
   }
   sendEngineList();
   announceSetupRequired(initialEngineId, send);
+  const archived = storage.autoArchive.run(sessionMgr.supervisor?.current.sessionId ?? null);
+  if (!archived.ok) send({ type: "error", message: `Automatic archiving skipped: ${archived.reason}` });
+  send({ type: "archive-settings", autoArchiveAfterDays: storage.autoArchive.afterDays() });
   sendChats().catch((error: unknown) => {
     console.error(JSON.stringify({
       level: "error",
@@ -229,13 +239,18 @@ export async function handleConnection(
       {
         sessionMgr,
         pendingPermissions,
+        pendingQuestions,
+        decisions: storage.decisions,
         activeSetup,
         compaction,
         history,
         projectDir,
-        store,
+        dataDir,
+        chats,
+        directory: storage.directory,
+        autoArchive: storage.autoArchive,
+        weaveHome: storage.weaveHome,
         tasksStore,
-        conversations,
         ledger,
         continuationTaskId,
         ruleCatalog,
@@ -261,6 +276,7 @@ export async function handleConnection(
     ledger.append("run.finished", { status: "ok", wallMs: 0 });
     authSession?.abort.abort();
     pendingPermissions.cancelAll();
+    pendingQuestions.cancelAll();
     activeSetup.cancel();
     if (sessionMgr.supervisor) {
       unregisterLiveSupervisor(sessionMgr.supervisor);

@@ -100,7 +100,7 @@ async function prepareRunTask(options: RunTaskOptions): Promise<PreparedRun> {
     workspace,
     before,
     started,
-    tracker: { turns: 0, stopped: null },
+    tracker: { turns: 0, stopped: null, finalMessage: [] },
     maxTurns: options.config?.maxTurns ?? DEFAULT_RUN_CONFIG.maxTurns,
     timeoutMs: options.config?.timeoutMs ?? DEFAULT_RUN_CONFIG.timeoutMs,
   };
@@ -110,13 +110,23 @@ export async function runTask(options: RunTaskOptions): Promise<RunTaskOutcome> 
   const { ctx, workspace, before, started, tracker, maxTurns, timeoutMs } = await prepareRunTask(options);
   let session: Session | null = null;
 
+  const stopOnAbort = () => {
+    if (!tracker.stopped) tracker.stopped = "aborted";
+    session?.cancel().catch((error: unknown) => {
+      ctx.emit(ctx.ledger.append("error", { taskId: ctx.task.id, where: "runTask.cancel", message: String(error) }));
+    });
+  };
+  options.signal?.addEventListener("abort", stopOnAbort, { once: true });
+
   try {
     session = await openTaskSession(ctx, options, maxTurns, tracker);
     await applyWantedConfigOptions(ctx, session, options.config);
-    const { stopReason, usage } = await promptWithDeadline(session, ctx.task.prompt, timeoutMs, tracker);
+    const prompting = promptWithDeadline(session, ctx.task.prompt, timeoutMs, tracker);
+    if (options.signal?.aborted) stopOnAbort();
+    const { stopReason, usage } = await prompting;
     const wallMs = Date.now() - started;
 
-    if (tracker.stopped) {
+    if (tracker.stopped && tracker.stopped !== "aborted") {
       ctx.emit(
         ctx.ledger.append("task.timeout", {
           taskId: ctx.task.id,
@@ -156,6 +166,7 @@ export async function runTask(options: RunTaskOptions): Promise<RunTaskOutcome> 
       worktree: workspace.worktree,
     });
   } finally {
+    options.signal?.removeEventListener("abort", stopOnAbort);
     session?.close();
   }
 }

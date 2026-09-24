@@ -1,5 +1,5 @@
 import type { TaskContract } from "@weave/protocol";
-import type { AgentSession, SessionSink } from "../session/index.ts";
+import type { AgentSession, QuestionAsker, SessionSink } from "../session/index.ts";
 import type { PermissionPolicy } from "../permissions/index.ts";
 
 export interface EngineSupervisor {
@@ -23,6 +23,7 @@ export interface CreateSupervisorOptions {
   task: TaskContract;
   sink: SessionSink;
   policy?: PermissionPolicy;
+  askUser?: QuestionAsker;
   engineId?: string;
   resumeSessionId?: string | null;
   idleGraceMs?: number;

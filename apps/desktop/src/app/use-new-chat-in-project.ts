@@ -1,25 +1,33 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { ConnectionState } from "@/features/chat/hooks";
 
-interface PendingProjectChat {
+export interface NewChatRequest {
+  readonly engineId?: string;
+  readonly afterStart?: () => void;
+}
+
+interface PendingProjectAction {
   readonly dir: string;
+  readonly run: () => void;
   hasReconnected: boolean;
 }
 
-interface NewChatInProjectOptions {
+interface ProjectActionOptions {
   readonly activeDir: string | undefined;
   readonly connection: ConnectionState;
-  readonly startNewChat: () => void;
-  readonly openProject: (dir: string) => void;
+  readonly openProject: (dir: string, engineId?: string) => void;
 }
 
-export function useNewChatInProject({
+interface NewChatInProjectOptions extends ProjectActionOptions {
+  readonly startNewChat: () => void;
+}
+
+export function useRunInProject({
   activeDir,
   connection,
-  startNewChat,
   openProject,
-}: NewChatInProjectOptions): (dir: string) => void {
-  const pending = useRef<PendingProjectChat | null>(null);
+}: ProjectActionOptions): (dir: string, run: () => void, engineId?: string) => void {
+  const pending = useRef<PendingProjectAction | null>(null);
 
   useEffect(() => {
     const request = pending.current;
@@ -30,19 +38,40 @@ export function useNewChatInProject({
     }
     if (request.hasReconnected && activeDir === request.dir) {
       pending.current = null;
-      startNewChat();
+      request.run();
     }
-  }, [connection, activeDir, startNewChat]);
+  }, [connection, activeDir]);
 
   return useCallback(
-    (dir: string) => {
-      if (dir === activeDir) {
-        startNewChat();
+    (dir: string, run: () => void, engineId?: string) => {
+      if (dir === activeDir && engineId === undefined && connection === "ready") {
+        pending.current = null;
+        run();
         return;
       }
-      pending.current = { dir, hasReconnected: false };
-      openProject(dir);
+      const needsProjectStart = dir !== activeDir || engineId !== undefined;
+      pending.current = { dir, run, hasReconnected: !needsProjectStart };
+      if (needsProjectStart) openProject(dir, engineId);
     },
-    [activeDir, startNewChat, openProject],
+    [activeDir, connection, openProject],
+  );
+}
+
+export function useNewChatInProject({
+  startNewChat,
+  ...options
+}: NewChatInProjectOptions): (dir: string, request?: NewChatRequest) => void {
+  const runInProject = useRunInProject(options);
+  return useCallback(
+    (dir: string, request: NewChatRequest = {}) =>
+      runInProject(
+        dir,
+        () => {
+          startNewChat();
+          request.afterStart?.();
+        },
+        request.engineId,
+      ),
+    [runInProject, startNewChat],
   );
 }

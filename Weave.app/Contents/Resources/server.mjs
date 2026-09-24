@@ -2283,7 +2283,7 @@ var require_websocket = __commonJS({
     var http = __require("http");
     var net = __require("net");
     var tls = __require("tls");
-    var { randomBytes, createHash } = __require("crypto");
+    var { randomBytes: randomBytes2, createHash } = __require("crypto");
     var { Duplex, Readable: Readable2 } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -2821,7 +2821,7 @@ var require_websocket = __commonJS({
         }
       }
       const defaultPort = isSecure ? 443 : 80;
-      const key = randomBytes(16).toString("base64");
+      const key = randomBytes2(16).toString("base64");
       const request = isSecure ? https.request : http.request;
       const protocolSet = /* @__PURE__ */ new Set();
       let perMessageDeflate;
@@ -3735,11 +3735,11 @@ var require_utils = __commonJS({
     exports.assign = assign;
     function loadNativeModule(name) {
       var dirs = ["build/Release", "build/Debug", "prebuilds/" + process.platform + "-" + process.arch];
-      var relative3 = ["..", "."];
+      var relative4 = ["..", "."];
       var lastError;
       for (var _i = 0, dirs_1 = dirs; _i < dirs_1.length; _i++) {
         var d = dirs_1[_i];
-        for (var _a3 = 0, relative_1 = relative3; _a3 < relative_1.length; _a3++) {
+        for (var _a3 = 0, relative_1 = relative4; _a3 < relative_1.length; _a3++) {
           var r = relative_1[_a3];
           var dir = r + "/" + d + "/";
           try {
@@ -4023,11 +4023,11 @@ var require_windowsConoutConnection = __commonJS({
     "use strict";
     var __awaiter = exports && exports.__awaiter || function(thisArg, _arguments, P, generator) {
       function adopt(value) {
-        return value instanceof P ? value : new P(function(resolve12) {
-          resolve12(value);
+        return value instanceof P ? value : new P(function(resolve14) {
+          resolve14(value);
         });
       }
-      return new (P || (P = Promise))(function(resolve12, reject) {
+      return new (P || (P = Promise))(function(resolve14, reject) {
         function fulfilled(value) {
           try {
             step(generator.next(value));
@@ -4043,7 +4043,7 @@ var require_windowsConoutConnection = __commonJS({
           }
         }
         function step(result) {
-          result.done ? resolve12(result.value) : adopt(result.value).then(fulfilled, rejected);
+          result.done ? resolve14(result.value) : adopt(result.value).then(fulfilled, rejected);
         }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
@@ -4362,15 +4362,15 @@ var require_windowsPtyAgent = __commonJS({
         };
         WindowsPtyAgent2.prototype._getConsoleProcessList = function() {
           var _this = this;
-          return new Promise(function(resolve12) {
+          return new Promise(function(resolve14) {
             var agent = child_process_1.fork(path.join(__dirname, "conpty_console_list_agent"), [_this._innerPid.toString()]);
             agent.on("message", function(message) {
               clearTimeout(timeout);
-              resolve12(message.consoleProcessList);
+              resolve14(message.consoleProcessList);
             });
             var timeout = setTimeout(function() {
               agent.kill();
-              resolve12([_this._innerPid]);
+              resolve14([_this._innerPid]);
             }, 5e3);
           });
         };
@@ -5018,7 +5018,8 @@ var require_lib = __commonJS({
 });
 
 // server/index.ts
-import { join as join16, resolve as resolve11 } from "node:path";
+import { createServer } from "node:http";
+import { resolve as resolve13 } from "node:path";
 
 // ../../node_modules/.bun/ws@8.21.3/node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
@@ -5029,6 +5030,154 @@ var import_sender = __toESM(require_sender(), 1);
 var import_subprotocol = __toESM(require_subprotocol(), 1);
 var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
+
+// server/access/constants.ts
+var SERVER_TOKEN_ENV = "WEAVE_SERVER_TOKEN";
+var MIN_SERVER_TOKEN_CHARS = 32;
+var MAX_SERVER_TOKEN_CHARS = 256;
+var SERVER_TOKEN_PATTERN = /^[A-Za-z0-9_-]+$/;
+var WEAVE_PROTOCOL = "weave.v1";
+var TOKEN_PROTOCOL_PREFIX = "weave.token.";
+var PROTOCOL_LIST_SEPARATOR = /\s*,\s*/;
+var ALLOWED_ORIGINS = /* @__PURE__ */ new Set([
+  "tauri://localhost",
+  "http://tauri.localhost",
+  "https://tauri.localhost",
+  "http://localhost:5180",
+  "http://127.0.0.1:5180"
+]);
+var HTTP_STATUS_TEXT = {
+  401: "Unauthorized",
+  403: "Forbidden"
+};
+
+// server/access/server-token.ts
+function parseServerToken(raw) {
+  if (raw === void 0 || raw === "") {
+    return { ok: false, reason: `${SERVER_TOKEN_ENV} is not set; the app passes it when it starts the server.` };
+  }
+  if (raw.length < MIN_SERVER_TOKEN_CHARS || raw.length > MAX_SERVER_TOKEN_CHARS) {
+    return {
+      ok: false,
+      reason: `${SERVER_TOKEN_ENV} must be ${MIN_SERVER_TOKEN_CHARS}-${MAX_SERVER_TOKEN_CHARS} characters, got ${raw.length}.`
+    };
+  }
+  if (!SERVER_TOKEN_PATTERN.test(raw)) {
+    return { ok: false, reason: `${SERVER_TOKEN_ENV} may only contain letters, digits, "-" and "_".` };
+  }
+  return { ok: true, token: raw };
+}
+
+// server/access/authorize-upgrade.ts
+import { timingSafeEqual } from "node:crypto";
+function offeredProtocols(header) {
+  if (header === void 0) return [];
+  return header.trim().split(PROTOCOL_LIST_SEPARATOR).filter((protocol) => protocol.length > 0);
+}
+function presentedToken(protocols) {
+  const offer = protocols.find((protocol) => protocol.startsWith(TOKEN_PROTOCOL_PREFIX));
+  return offer === void 0 ? null : offer.slice(TOKEN_PROTOCOL_PREFIX.length);
+}
+function tokensMatch(presented, expected) {
+  const presentedBytes = Buffer.from(presented, "utf8");
+  const expectedBytes = Buffer.from(expected, "utf8");
+  if (presentedBytes.length !== expectedBytes.length) return false;
+  return timingSafeEqual(presentedBytes, expectedBytes);
+}
+function authorizeUpgrade(request, expectedToken) {
+  if (request.origin === void 0) return { kind: "reject", status: 403, reason: "missing origin" };
+  if (!ALLOWED_ORIGINS.has(request.origin)) {
+    return { kind: "reject", status: 403, reason: `origin ${request.origin} is not allowed` };
+  }
+  const protocols = offeredProtocols(request.protocolHeader);
+  if (!protocols.includes(WEAVE_PROTOCOL)) return { kind: "reject", status: 401, reason: `missing ${WEAVE_PROTOCOL} protocol` };
+  const presented = presentedToken(protocols);
+  if (presented === null) return { kind: "reject", status: 401, reason: "missing token" };
+  if (!tokensMatch(presented, expectedToken)) return { kind: "reject", status: 401, reason: "wrong token" };
+  return { kind: "accept" };
+}
+
+// server/access/upgrade-gate.ts
+function rejectUpgrade(socket, status) {
+  socket.end(`HTTP/1.1 ${status} ${HTTP_STATUS_TEXT[status]}\r
+Connection: close\r
+Content-Length: 0\r
+\r
+`);
+}
+function selectWeaveProtocol() {
+  return WEAVE_PROTOCOL;
+}
+function attachUpgradeGate({ httpServer, wss, token, onReject }) {
+  httpServer.on("upgrade", (request, socket, head) => {
+    const decision = authorizeUpgrade(
+      { origin: request.headers.origin, protocolHeader: request.headers["sec-websocket-protocol"] },
+      token
+    );
+    if (decision.kind === "reject") {
+      onReject(decision.status, decision.reason);
+      rejectUpgrade(socket, decision.status);
+      return;
+    }
+    wss.handleUpgrade(request, socket, head, (client) => {
+      wss.emit("connection", client, request);
+    });
+  });
+}
+
+// server/shared/constants.ts
+var DEFAULT_PORT = 8137;
+var MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
+var IMAGE_MIME = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".svg": "image/svg+xml"
+};
+var FILE_SEARCH_IGNORE = /* @__PURE__ */ new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  "target",
+  ".turbo",
+  "coverage"
+]);
+var FILE_SEARCH_MAX_DEPTH = 8;
+var DEFAULT_FILE_SEARCH_LIMIT = 20;
+
+// server/shared/error-message.ts
+function errorMessage(error61) {
+  return error61 instanceof Error ? error61.message : String(error61);
+}
+
+// server/shared/uuid-v7.ts
+import { randomBytes } from "node:crypto";
+var UUID_BYTES = 16;
+var TIMESTAMP_BYTES = 6;
+var VERSION_BYTE_INDEX = 6;
+var VARIANT_BYTE_INDEX = 8;
+var VERSION_7_BITS = 112;
+var LOW_NIBBLE_MASK = 15;
+var VARIANT_BITS = 128;
+var VARIANT_MASK = 63;
+var UUID_GROUP_BOUNDS = [0, 8, 12, 16, 20, 32];
+function uuidV7(nowMs) {
+  const bytes = randomBytes(UUID_BYTES);
+  bytes.writeUIntBE(nowMs, 0, TIMESTAMP_BYTES);
+  bytes.writeUInt8(bytes.readUInt8(VERSION_BYTE_INDEX) & LOW_NIBBLE_MASK | VERSION_7_BITS, VERSION_BYTE_INDEX);
+  bytes.writeUInt8(bytes.readUInt8(VARIANT_BYTE_INDEX) & VARIANT_MASK | VARIANT_BITS, VARIANT_BYTE_INDEX);
+  const hex3 = bytes.toString("hex");
+  const groups = [];
+  for (let index = 1; index < UUID_GROUP_BOUNDS.length; index += 1) {
+    groups.push(hex3.slice(UUID_GROUP_BOUNDS[index - 1], UUID_GROUP_BOUNDS[index]));
+  }
+  return groups.join("-");
+}
 
 // ../../packages/core/src/shared/fs-errors.ts
 function isNotFound(error61) {
@@ -5228,81 +5377,13 @@ var TasksStore = class {
   }
 };
 
-// ../../packages/core/src/stores/sessions-store.ts
-import { mkdir as mkdir2, readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
-import { join as join3 } from "node:path";
-var SessionStore = class {
-  file;
-  constructor(weaveDir) {
-    this.file = join3(weaveDir, "sessions.json");
-  }
-  async readAll() {
-    try {
-      return JSON.parse(await readFile3(this.file, "utf8"));
-    } catch (error61) {
-      if (isNotFound(error61)) return {};
-      throw error61;
-    }
-  }
-  async get(projectDir) {
-    return (await this.readAll())[projectDir] ?? null;
-  }
-  async set(projectDir, sessionId) {
-    const all = await this.readAll();
-    all[projectDir] = sessionId;
-    await mkdir2(join3(this.file, ".."), { recursive: true });
-    await writeFile2(this.file, JSON.stringify(all, null, 2));
-  }
-};
-
 // ../../packages/core/src/stores/conversations-store.ts
-import { mkdir as mkdir3, readFile as readFile4, writeFile as writeFile3 } from "node:fs/promises";
-import { join as join4 } from "node:path";
 var TITLE_MAX = 60;
 var TITLE_ELLIPSIS = "\u2026";
 function titleFromPrompt(text) {
   const oneLine = text.replace(/\s+/g, " ").trim();
   return oneLine.length > TITLE_MAX ? oneLine.slice(0, TITLE_MAX - 1).trimEnd() + TITLE_ELLIPSIS : oneLine;
 }
-var ConversationStore = class {
-  file;
-  constructor(weaveDir) {
-    this.file = join4(weaveDir, "conversations.json");
-  }
-  async list() {
-    let parsed;
-    try {
-      parsed = JSON.parse(await readFile4(this.file, "utf8"));
-    } catch (error61) {
-      if (isNotFound(error61)) return [];
-      throw error61;
-    }
-    return Array.isArray(parsed) ? parsed : [];
-  }
-  async write(all) {
-    await mkdir3(join4(this.file, ".."), { recursive: true });
-    await writeFile3(this.file, JSON.stringify(all, null, 2));
-  }
-  async record(id, title) {
-    const all = await this.list();
-    const now = Date.now();
-    const existing = all.find((c) => c.id === id);
-    if (existing) {
-      existing.updatedAt = now;
-      if (!existing.title && title) existing.title = title;
-    } else {
-      all.push({ id, title, createdAt: now, updatedAt: now });
-    }
-    await this.write(all);
-  }
-  async touch(id) {
-    const all = await this.list();
-    const existing = all.find((c) => c.id === id);
-    if (!existing) return;
-    existing.updatedAt = Date.now();
-    await this.write(all);
-  }
-};
 
 // ../../packages/protocol/src/auth/constants.ts
 var AUTH_OUTPUT_MAX_LINES = 200;
@@ -5490,13 +5571,13 @@ function applyLocations(state2, kind, locations) {
 }
 
 // ../../packages/core/src/checkpoint/checkpoint.ts
-import { mkdir as mkdir4, readFile as readFile5, writeFile as writeFile4 } from "node:fs/promises";
-import { join as join5 } from "node:path";
+import { mkdir as mkdir2, readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
+import { join as join3 } from "node:path";
 function checkpointsDir(weaveDir, taskId) {
-  return join5(weaveDir, "tasks", taskId, "checkpoints");
+  return join3(weaveDir, "tasks", taskId, "checkpoints");
 }
 function latestFile(weaveDir, taskId) {
-  return join5(weaveDir, "tasks", taskId, "latest.json");
+  return join3(weaveDir, "tasks", taskId, "latest.json");
 }
 async function writeCheckpoint(weaveDir, taskId, state2, reason) {
   const checkpoint = {
@@ -5509,15 +5590,15 @@ async function writeCheckpoint(weaveDir, taskId, state2, reason) {
     state: state2
   };
   const dir = checkpointsDir(weaveDir, taskId);
-  await mkdir4(dir, { recursive: true });
+  await mkdir2(dir, { recursive: true });
   const body = JSON.stringify(checkpoint, null, 2);
-  await writeFile4(join5(dir, `${checkpoint.id}.json`), body);
-  await writeFile4(latestFile(weaveDir, taskId), body);
+  await writeFile2(join3(dir, `${checkpoint.id}.json`), body);
+  await writeFile2(latestFile(weaveDir, taskId), body);
   return checkpoint;
 }
 async function readLatest(weaveDir, taskId) {
   try {
-    return JSON.parse(await readFile5(latestFile(weaveDir, taskId), "utf8"));
+    return JSON.parse(await readFile3(latestFile(weaveDir, taskId), "utf8"));
   } catch (error61) {
     if (isNotFound(error61)) return null;
     throw error61;
@@ -5612,9 +5693,6 @@ function buildBrief(checkpoint, _next) {
 
 // ../../packages/core/src/verify/run-command.ts
 var DEFAULT_COMMAND_TIMEOUT_MS = 5 * 60 * 1e3;
-
-// ../../packages/core/src/runner/runner.ts
-import { join as join10, resolve as resolve5 } from "node:path";
 
 // ../../packages/agent/src/auth/terminal-keys.ts
 var TERMINAL_KEYS = {
@@ -5915,7 +5993,7 @@ import { dirname as dirname2, resolve as resolve2 } from "node:path";
 
 // ../../packages/agent/src/engines/engines.ts
 import { createRequire } from "node:module";
-import { dirname, join as join6, resolve } from "node:path";
+import { dirname, join as join4, resolve } from "node:path";
 
 // ../../packages/agent/src/engines/registry.ts
 var ENGINES = {
@@ -5993,7 +6071,7 @@ function resolveEngineArgs(engine, options) {
 var localRequire = createRequire(import.meta.url);
 function appDataRequire() {
   const dir = process.env.WEAVE_ENGINES_DIR;
-  return dir ? createRequire(join6(dir, "package.json")) : null;
+  return dir ? createRequire(join4(dir, "package.json")) : null;
 }
 function getEngine(id = DEFAULT_ENGINE_ID) {
   const normalizedId = id === "agy" ? "antigravity" : id;
@@ -6028,13 +6106,13 @@ function resolveEngineEntry(engine) {
   }
   const manifest = located.resolver(located.manifestPath);
   const bin = manifest.bin;
-  const relative3 = typeof bin === "string" ? bin : bin?.[engine.binName];
-  if (!relative3) {
+  const relative4 = typeof bin === "string" ? bin : bin?.[engine.binName];
+  if (!relative4) {
     throw new Error(
       `${engine.packageName} has no bin "${engine.binName}". Check its package.json \u2014 the ACP server may be published under a different name.`
     );
   }
-  return resolve(dirname(located.manifestPath), relative3);
+  return resolve(dirname(located.manifestPath), relative4);
 }
 function installedEngines() {
   const uniqueEngines = Array.from(
@@ -6118,12 +6196,12 @@ function resolveCodexCliEntry(engine) {
 
 // ../../packages/agent/src/engines/setup.ts
 import { existsSync as existsSync3 } from "node:fs";
-import { join as join7 } from "node:path";
+import { join as join5 } from "node:path";
 function engineSetupState(engine, home = process.env.HOME ?? "") {
   const setup = engine.setup;
   if (!setup || !home) return { required: false, setup: setup ?? null };
   return {
-    required: !existsSync3(join7(home, setup.completedWhenExists)),
+    required: !existsSync3(join5(home, setup.completedWhenExists)),
     setup
   };
 }
@@ -6175,7 +6253,7 @@ ${sensitiveDeniesSbpl}
 
 // ../../packages/agent/src/spawn/node-binary.ts
 import { statSync } from "node:fs";
-import { delimiter, join as join8 } from "node:path";
+import { delimiter, join as join6 } from "node:path";
 var EXECUTE_BITS = 73;
 var NODE_PATH_OVERRIDE = "WEAVE_NODE_PATH";
 function isNodeRuntime() {
@@ -6192,14 +6270,14 @@ function isExecutableFile(path) {
 }
 function nodeCandidates() {
   const home = process.env.HOME ?? "";
-  const fromPath = (process.env.PATH ?? "").split(delimiter).filter(Boolean).map((dir) => join8(dir, "node"));
+  const fromPath = (process.env.PATH ?? "").split(delimiter).filter(Boolean).map((dir) => join6(dir, "node"));
   return [
     ...process.env[NODE_PATH_OVERRIDE] ? [process.env[NODE_PATH_OVERRIDE]] : [],
     ...fromPath,
     "/opt/homebrew/bin/node",
     "/usr/local/bin/node",
     "/usr/bin/node",
-    ...home ? [join8(home, ".local", "bin", "node"), join8(home, ".volta", "bin", "node")] : []
+    ...home ? [join6(home, ".local", "bin", "node"), join6(home, ".volta", "bin", "node")] : []
   ].filter((path) => Boolean(path));
 }
 var resolved = null;
@@ -6457,7 +6535,7 @@ function spawnTerminalAuthProcess(options, command) {
 }
 function runTerminalAuth(options) {
   const command = terminalAuthCommand(options.engine, options.method);
-  return new Promise((resolve12) => {
+  return new Promise((resolve14) => {
     const child = spawnTerminalAuthProcess(options, command);
     if (options.input != null && child.stdin) {
       child.stdin.write(options.input + "\n");
@@ -6468,7 +6546,7 @@ function runTerminalAuth(options) {
     const finish = (ok, code) => {
       if (settled) return;
       settled = true;
-      resolve12({ ok, code, output: collector.finalize() });
+      resolve14({ ok, code, output: collector.finalize() });
     };
     const abort = () => {
       child.kill("SIGTERM");
@@ -6494,7 +6572,7 @@ var import_node_pty = __toESM(require_lib(), 1);
 
 // ../../packages/agent/src/auth/pty-helper.ts
 import { chmodSync, existsSync as existsSync4, statSync as statSync2 } from "node:fs";
-import { dirname as dirname3, join as join9 } from "node:path";
+import { dirname as dirname3, join as join7 } from "node:path";
 import { fileURLToPath } from "node:url";
 var EXECUTE_BITS2 = 73;
 var NATIVE_ADDON_FILE = "pty.node";
@@ -6512,22 +6590,22 @@ function nodePtyPackageRoot() {
   }
 }
 function nodePtyNativeDirs() {
-  const dirs = [join9(dirname3(fileURLToPath(import.meta.url)), "prebuilds", PLATFORM_ARCH)];
+  const dirs = [join7(dirname3(fileURLToPath(import.meta.url)), "prebuilds", PLATFORM_ARCH)];
   const packageRoot = nodePtyPackageRoot();
   if (packageRoot) {
     dirs.push(
-      join9(packageRoot, "build", "Release"),
-      join9(packageRoot, "build", "Debug"),
-      join9(packageRoot, "prebuilds", PLATFORM_ARCH)
+      join7(packageRoot, "build", "Release"),
+      join7(packageRoot, "build", "Debug"),
+      join7(packageRoot, "prebuilds", PLATFORM_ARCH)
     );
   }
   return dirs;
 }
 function ensurePtySpawnHelperExecutable() {
   if (process.platform === "win32") return;
-  const nativeDir = nodePtyNativeDirs().find((dir) => existsSync4(join9(dir, NATIVE_ADDON_FILE)));
+  const nativeDir = nodePtyNativeDirs().find((dir) => existsSync4(join7(dir, NATIVE_ADDON_FILE)));
   if (!nativeDir) return;
-  const helper = join9(nativeDir, SPAWN_HELPER_FILE);
+  const helper = join7(nativeDir, SPAWN_HELPER_FILE);
   if (!existsSync4(helper)) return;
   const mode = statSync2(helper).mode;
   if ((mode & EXECUTE_BITS2) !== 0) return;
@@ -6698,12 +6776,12 @@ function startPtyCommand(options) {
     for (const reply of terminalQueryReplies(chunk)) state2.pty.write(reply);
     collector.push(chunk);
   });
-  const result = new Promise((resolve12) => {
+  const result = new Promise((resolve14) => {
     let isSettled = false;
     watchExit(state2, options.signal, (ok, code) => {
       if (isSettled) return;
       isSettled = true;
-      resolve12({ ok, code, output: collector.finish() });
+      resolve14({ ok, code, output: collector.finish() });
     });
   });
   const submitLine = (text) => {
@@ -7415,11 +7493,11 @@ function createStallWatchdog({
 // ../../packages/agent/src/session/engine-failure.ts
 var EXIT_GRACE_MS = 400;
 function waitForExit(spawned, graceMs) {
-  return new Promise((resolve12) => {
+  return new Promise((resolve14) => {
     const done = () => {
       clearTimeout(timer);
       spawned.child.off("exit", done);
-      resolve12();
+      resolve14();
     };
     const timer = setTimeout(done, graceMs);
     timer.unref?.();
@@ -7440,7 +7518,7 @@ async function asEngineFailure(spawned, error61) {
 }
 
 // ../../packages/agent/src/session/client.ts
-import { mkdir as mkdir5, readFile as readFile6, writeFile as writeFile5 } from "node:fs/promises";
+import { mkdir as mkdir3, readFile as readFile4, writeFile as writeFile3 } from "node:fs/promises";
 import { dirname as dirname5, isAbsolute, resolve as resolve4 } from "node:path";
 function sliceFileLines(text, line, limit) {
   if (line == null && limit == null) return text;
@@ -7526,14 +7604,14 @@ var SessionClient = class {
   }
   async readTextFile(params) {
     const path = this.safeResolve(params.path, "read");
-    const text = await readFile6(path, "utf8");
+    const text = await readFile4(path, "utf8");
     this.sink.onFileRead(path);
     return { content: sliceFileLines(text, params.line, params.limit) };
   }
   async writeTextFile(params) {
     const path = this.safeResolve(params.path, "write");
-    await mkdir5(dirname5(path), { recursive: true });
-    await writeFile5(path, params.content, "utf8");
+    await mkdir3(dirname5(path), { recursive: true });
+    await writeFile3(path, params.content, "utf8");
     this.written.add(path);
     this.sink.onFileWritten(path, Buffer.byteLength(params.content, "utf8"));
     return {};
@@ -28372,8 +28450,8 @@ var Connection = class {
     this.requestHandler = requestHandler;
     this.notificationHandler = notificationHandler;
     this.stream = stream;
-    this.closedPromise = new Promise((resolve12) => {
-      this.abortController.signal.addEventListener("abort", () => resolve12());
+    this.closedPromise = new Promise((resolve14) => {
+      this.abortController.signal.addEventListener("abort", () => resolve14());
     });
     void this.receive();
   }
@@ -28541,8 +28619,8 @@ var Connection = class {
   sendRequest(method, params) {
     this.throwIfClosed();
     const id = this.nextRequestId++;
-    const responsePromise = new Promise((resolve12, reject) => {
-      this.pendingResponses.set(id, { resolve: resolve12, reject });
+    const responsePromise = new Promise((resolve14, reject) => {
+      this.pendingResponses.set(id, { resolve: resolve14, reject });
     });
     responsePromise.catch(() => {
     });
@@ -28961,15 +29039,10 @@ async function createEngineSupervisor(options) {
   };
 }
 
-// ../../packages/core/src/runner/runner.ts
-function weaveDirFor(cwd, config2) {
-  return config2?.weaveDir ?? join10(resolve5(cwd), ".weave");
-}
-
 // ../../packages/core/src/runner/stop-sequence.ts
 var DEFAULT_DRAIN_MS = 2e3;
 function sleep(ms) {
-  return new Promise((resolve12) => setTimeout(resolve12, ms));
+  return new Promise((resolve14) => setTimeout(resolve14, ms));
 }
 async function foldStoppedState(weaveDir, cwd, runId, goal, taskId) {
   const [gitStatus, headCommit] = await Promise.all([readGitStatus(cwd), readHeadCommit(cwd)]);
@@ -28997,9 +29070,8 @@ async function runStopSequence(options) {
 }
 
 // ../../packages/core/src/discovery/skills.ts
-import { readdir as readdir2, readFile as readFile7 } from "node:fs/promises";
-import { join as join11 } from "node:path";
-var SKILL_DIRS = [".weave/skills", ".agents/skills"];
+import { readdir as readdir2, readFile as readFile5 } from "node:fs/promises";
+import { join as join8 } from "node:path";
 var FRONTMATTER_LINE_PATTERN = /^([A-Za-z0-9_-]+):\s*(.*)$/;
 var LIST_ITEM_PATTERN = /^\s*-\s+/;
 var QUOTED_VALUE_PATTERN = /^["']|["']$/g;
@@ -29045,10 +29117,10 @@ function asArray(v) {
   return Array.isArray(v) ? v : [v];
 }
 async function readSkill(dir) {
-  const sourcePath = join11(dir, "SKILL.md");
+  const sourcePath = join8(dir, "SKILL.md");
   let text;
   try {
-    text = await readFile7(sourcePath, "utf8");
+    text = await readFile5(sourcePath, "utf8");
   } catch (error61) {
     if (isNotFound(error61)) return null;
     throw error61;
@@ -29069,20 +29141,19 @@ async function readSkill(dir) {
     appliesTo: asArray(fm["applies-to"] ?? fm.appliesTo)
   };
 }
-async function discoverSkills(projectRoot) {
+async function discoverSkills(skillDirs) {
   const found = [];
   const seen = /* @__PURE__ */ new Set();
-  for (const rel of SKILL_DIRS) {
-    const base = join11(projectRoot, rel);
+  for (const base of skillDirs) {
     let slugs;
     try {
-      slugs = (await readdir2(base, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);
+      slugs = (await readdir2(base, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name).sort();
     } catch (error61) {
       if (isNotFound(error61)) continue;
       throw error61;
     }
     for (const slug of slugs) {
-      const entry = await readSkill(join11(base, slug));
+      const entry = await readSkill(join8(base, slug));
       if (entry && !seen.has(entry.name)) {
         seen.add(entry.name);
         found.push(entry);
@@ -29110,9 +29181,8 @@ function formatSkillCatalog(entries) {
 }
 
 // ../../packages/core/src/discovery/rules.ts
-import { readdir as readdir3, readFile as readFile8 } from "node:fs/promises";
-import { basename as basename2, extname, join as join12 } from "node:path";
-var RULE_DIRS = [".weave/rules", ".agents/rules"];
+import { readdir as readdir3, readFile as readFile6 } from "node:fs/promises";
+import { basename as basename2, extname, join as join9 } from "node:path";
 var FRONTMATTER_NAME_PATTERN = /^name:\s*(.+)$/m;
 var QUOTED_VALUE_PATTERN2 = /^["']|["']$/g;
 function parseRule(text) {
@@ -29130,7 +29200,7 @@ function parseRule(text) {
 async function readRule(path) {
   let text;
   try {
-    text = await readFile8(path, "utf8");
+    text = await readFile6(path, "utf8");
   } catch (error61) {
     if (isNotFound(error61)) return null;
     throw error61;
@@ -29143,20 +29213,19 @@ async function readRule(path) {
     sourcePath: path
   };
 }
-async function discoverRules(projectRoot) {
+async function discoverRules(ruleDirs) {
   const found = [];
   const seen = /* @__PURE__ */ new Set();
-  for (const rel of RULE_DIRS) {
-    const dir = join12(projectRoot, rel);
+  for (const dir of ruleDirs) {
     let files;
     try {
-      files = (await readdir3(dir, { withFileTypes: true })).filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".md")).map((entry) => entry.name);
+      files = (await readdir3(dir, { withFileTypes: true })).filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".md")).map((entry) => entry.name).sort();
     } catch (error61) {
       if (isNotFound(error61)) continue;
       throw error61;
     }
     for (const file2 of files) {
-      const entry = await readRule(join12(dir, file2));
+      const entry = await readRule(join9(dir, file2));
       if (entry && !seen.has(entry.name)) {
         seen.add(entry.name);
         found.push(entry);
@@ -29544,15 +29613,15 @@ function formatActivationPlansSystemPrompt(plans) {
 }
 
 // ../../packages/core/src/plugins/catalog/claude-provider.ts
-import { readFile as readFile9 } from "node:fs/promises";
+import { readFile as readFile7 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join as join13 } from "node:path";
+import { join as join10 } from "node:path";
 var ClaudeCatalogProvider = class {
   id = "claude-catalog";
   label = "Claude Code marketplace";
   root;
   constructor(root) {
-    this.root = root ?? join13(homedir(), ".claude", "plugins");
+    this.root = root ?? join10(homedir(), ".claude", "plugins");
   }
   async listPlugins() {
     const installed = await this.readInstalled();
@@ -29562,7 +29631,7 @@ var ClaudeCatalogProvider = class {
   }
   async readJson(rel) {
     try {
-      return JSON.parse(await readFile9(join13(this.root, rel), "utf8"));
+      return JSON.parse(await readFile7(join10(this.root, rel), "utf8"));
     } catch {
       return void 0;
     }
@@ -29585,7 +29654,7 @@ var ClaudeCatalogProvider = class {
     const out = [];
     for (const mp of Object.keys(known)) {
       const doc = await this.readJson(
-        join13("marketplaces", mp, ".claude-plugin", "marketplace.json")
+        join10("marketplaces", mp, ".claude-plugin", "marketplace.json")
       );
       for (const p of doc?.plugins ?? []) {
         if (!p?.name) continue;
@@ -29686,46 +29755,16 @@ async function resolveCatalog(providers = [new ClaudeCatalogProvider()]) {
   return [...byId.values()];
 }
 
-// server/shared/constants.ts
-var DEFAULT_PORT = 8137;
-var MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
-var IMAGE_MIME = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".bmp": "image/bmp",
-  ".svg": "image/svg+xml"
-};
-var FILE_SEARCH_IGNORE = /* @__PURE__ */ new Set([
-  "node_modules",
-  ".git",
-  "dist",
-  "build",
-  ".next",
-  "target",
-  ".turbo",
-  "coverage"
-]);
-var FILE_SEARCH_MAX_DEPTH = 8;
-var DEFAULT_FILE_SEARCH_LIMIT = 20;
-
-// server/shared/error-message.ts
-function errorMessage(error61) {
-  return error61 instanceof Error ? error61.message : String(error61);
-}
-
 // server/project/read-attachment.ts
-import { readFile as readFile10, stat, realpath } from "node:fs/promises";
-import { extname as extname2, resolve as resolve6 } from "node:path";
+import { readFile as readFile8, stat, realpath } from "node:fs/promises";
+import { extname as extname2, resolve as resolve5 } from "node:path";
 function isExpectedFsError(error61) {
   if (!(error61 instanceof Error) || !("code" in error61)) return false;
   const code = error61.code;
   return code === "ENOENT" || code === "ENOTDIR" || code === "EACCES";
 }
 async function readAttachment(projectDir, relativePath) {
-  const resolved2 = resolve6(projectDir, relativePath);
+  const resolved2 = resolve5(projectDir, relativePath);
   if (!isInside(projectDir, resolved2)) return null;
   const extension2 = extname2(resolved2).toLowerCase();
   const mime = IMAGE_MIME[extension2];
@@ -29737,7 +29776,7 @@ async function readAttachment(projectDir, relativePath) {
     if (!fileStat.isFile() || fileStat.size > MAX_ATTACHMENT_BYTES) {
       return null;
     }
-    const buffer = await readFile10(real);
+    const buffer = await readFile8(real);
     return `data:${mime};base64,${buffer.toString("base64")}`;
   } catch (error61) {
     if (isExpectedFsError(error61)) return null;
@@ -29747,7 +29786,7 @@ async function readAttachment(projectDir, relativePath) {
 
 // server/project/search-files.ts
 import { readdir as readdir4 } from "node:fs/promises";
-import { relative as relative2, resolve as resolve7 } from "node:path";
+import { relative as relative2, resolve as resolve6 } from "node:path";
 function isExpectedSearchError(error61) {
   if (!(error61 instanceof Error) || !("code" in error61)) return false;
   const code = error61.code;
@@ -29767,7 +29806,7 @@ async function collectFiles(root, dir, depth, needle, hits, maxHits) {
   const entries = await readDirectoryEntries(dir);
   for (const entry of entries) {
     if (FILE_SEARCH_IGNORE.has(entry.name)) continue;
-    const abs = resolve7(dir, entry.name);
+    const abs = resolve6(dir, entry.name);
     if (entry.isDirectory()) {
       if (!entry.name.startsWith(".")) {
         await collectFiles(root, abs, depth + 1, needle, hits, maxHits);
@@ -30224,14 +30263,19 @@ async function handleOpenChat({
   sessionId: target,
   sessionMgr,
   projectDir,
-  store,
+  chats,
   send: send2,
   sendChats
 }) {
   if (!sessionMgr.supervisor) return;
+  const isOpenSession = target === sessionMgr.supervisor.current.sessionId;
+  if (!isOpenSession && !chats.has(target)) {
+    send2({ type: "error", message: `Cannot open chat ${target}: it does not belong to this project.` });
+    return;
+  }
   try {
     send2({ type: "reset" });
-    await sessionMgr.prepareReplay(target);
+    sessionMgr.prepareReplay(target);
     const ok = await sessionMgr.supervisor.current.resumeSession(target).finally(() => sessionMgr.finishReplay());
     if (!ok) {
       send2({ type: "error", message: "Could not open that chat." });
@@ -30239,7 +30283,7 @@ async function handleOpenChat({
       return;
     }
     sessionMgr.persisted = true;
-    await store.set(projectDir, sessionMgr.supervisor.current.sessionId);
+    chats.rememberLastSession(sessionMgr.supervisor.current.sessionId);
     send2({
       type: "ready",
       sessionId: sessionMgr.supervisor.current.sessionId,
@@ -30519,13 +30563,7 @@ async function compactBeforePrompt(options) {
   return { kind: "proceed", error: result.kind === "ran" ? result.error : null };
 }
 
-// server/history/history-store.ts
-import { mkdir as mkdir6, readFile as readFile11, rename, stat as stat2, writeFile as writeFile6 } from "node:fs/promises";
-import { join as join14, resolve as resolve8, sep as sep2 } from "node:path";
-
 // server/history/constants.ts
-var HISTORY_DIR_NAME = "history";
-var HISTORY_FILE_SUFFIX = ".json";
 var HISTORY_ARCHIVE_VERSION = 1;
 var MAX_HISTORY_BYTES = 8 * 1024 * 1024;
 var MAX_CLAUDE_SESSION_FILE_BYTES = 256 * 1024 * 1024;
@@ -30564,49 +30602,38 @@ function parseArchive(raw) {
 }
 
 // server/history/history-store.ts
-function isMissing(error61) {
-  return error61 instanceof Error && "code" in error61 && (error61.code === "ENOENT" || error61.code === "ENOTDIR");
-}
 var HistoryStore = class {
-  root;
-  constructor(projectDir) {
-    this.root = resolve8(weaveDirFor(projectDir), HISTORY_DIR_NAME);
+  options;
+  constructor(options) {
+    this.options = options;
   }
-  pathFor(sessionId) {
-    if (!isSafeSessionId(sessionId)) return null;
-    const path = resolve8(this.root, `${sessionId}${HISTORY_FILE_SUFFIX}`);
-    return path.startsWith(`${this.root}${sep2}`) ? path : null;
-  }
-  async load(sessionId) {
-    const path = this.pathFor(sessionId);
-    if (!path) return { ok: false, reason: `Cannot load history for invalid session id ${sessionId}` };
+  load(sessionId) {
+    if (!isSafeSessionId(sessionId)) return { ok: false, reason: `Cannot load history for invalid session id ${sessionId}` };
+    const raw = this.options.archives.load(this.options.projectId, sessionId);
+    if (raw === null) return { ok: true, value: null };
+    const bytes = Buffer.byteLength(raw, "utf8");
+    if (bytes > MAX_HISTORY_BYTES) {
+      return { ok: false, reason: `Saved history for ${sessionId} is ${bytes} bytes, over the ${MAX_HISTORY_BYTES} byte limit` };
+    }
     try {
-      const info = await stat2(path);
-      if (info.size > MAX_HISTORY_BYTES) {
-        return { ok: false, reason: `History file ${path} is ${info.size} bytes, over the ${MAX_HISTORY_BYTES} byte limit` };
-      }
-      const parsed = parseArchive(JSON.parse(await readFile11(path, "utf8")));
-      if (!parsed.ok) return { ok: false, reason: `Cannot read history file ${path}: ${parsed.reason}` };
+      const parsed = parseArchive(JSON.parse(raw));
+      if (!parsed.ok) return { ok: false, reason: `Cannot read saved history for ${sessionId}: ${parsed.reason}` };
       return { ok: true, value: parsed.value };
     } catch (error61) {
-      if (isMissing(error61)) return { ok: true, value: null };
-      if (error61 instanceof SyntaxError) return { ok: false, reason: `History file ${path} is not valid JSON` };
+      if (error61 instanceof SyntaxError) return { ok: false, reason: `Saved history for ${sessionId} is not valid JSON` };
       throw error61;
     }
   }
-  async save(archive) {
-    const path = this.pathFor(archive.sessionId);
-    if (!path) return { ok: false, reason: `Cannot save history for invalid session id ${archive.sessionId}` };
+  save(archive) {
+    if (!isSafeSessionId(archive.sessionId)) {
+      return { ok: false, reason: `Cannot save history for invalid session id ${archive.sessionId}` };
+    }
     const body = JSON.stringify(archive);
     const bytes = Buffer.byteLength(body, "utf8");
     if (bytes > MAX_HISTORY_BYTES) {
       return { ok: false, reason: `History for ${archive.sessionId} is ${bytes} bytes, over the ${MAX_HISTORY_BYTES} byte limit` };
     }
-    await mkdir6(this.root, { recursive: true });
-    const temporary = join14(this.root, `.${archive.sessionId}.${process.pid}.tmp`);
-    await writeFile6(temporary, body, "utf8");
-    await rename(temporary, path);
-    return { ok: true, value: null };
+    return this.options.archives.save(this.options.projectId, archive.sessionId, body, this.options.now());
   }
 };
 
@@ -30673,29 +30700,29 @@ var ReplayGate = class {
 
 // server/history/claude-summary-reader.ts
 import { createReadStream } from "node:fs";
-import { realpath as realpath2, stat as stat3 } from "node:fs/promises";
+import { realpath as realpath2, stat as stat2 } from "node:fs/promises";
 import { homedir as homedir2 } from "node:os";
-import { resolve as resolve9, sep as sep3 } from "node:path";
+import { resolve as resolve7, sep as sep2 } from "node:path";
 import { createInterface } from "node:readline";
 var CLAUDE_DIR_NAME = ".claude";
 var NON_PATH_CHAR = /[^a-zA-Z0-9]/g;
-function isMissing2(error61) {
+function isMissing(error61) {
   return error61 instanceof Error && "code" in error61 && (error61.code === "ENOENT" || error61.code === "ENOTDIR");
 }
 function claudeProjectsRoot() {
-  return resolve9(process.env.CLAUDE_CONFIG_DIR ?? resolve9(homedir2(), CLAUDE_DIR_NAME), CLAUDE_PROJECTS_DIR);
+  return resolve7(process.env.CLAUDE_CONFIG_DIR ?? resolve7(homedir2(), CLAUDE_DIR_NAME), CLAUDE_PROJECTS_DIR);
 }
 async function sessionFile(projectDir, sessionId) {
   if (!isSafeSessionId(sessionId)) return null;
   const root = claudeProjectsRoot();
-  const candidate = resolve9(root, projectDir.replace(NON_PATH_CHAR, "-"), `${sessionId}${CLAUDE_SESSION_SUFFIX}`);
+  const candidate = resolve7(root, projectDir.replace(NON_PATH_CHAR, "-"), `${sessionId}${CLAUDE_SESSION_SUFFIX}`);
   try {
     const [realRoot, realFile] = await Promise.all([realpath2(root), realpath2(candidate)]);
-    if (!realFile.startsWith(`${realRoot}${sep3}`)) return null;
-    const info = await stat3(realFile);
+    if (!realFile.startsWith(`${realRoot}${sep2}`)) return null;
+    const info = await stat2(realFile);
     return info.size <= MAX_CLAUDE_SESSION_FILE_BYTES ? realFile : null;
   } catch (error61) {
-    if (isMissing2(error61)) return null;
+    if (isMissing(error61)) return null;
     throw error61;
   }
 }
@@ -30748,13 +30775,13 @@ async function handleCompact({ operationId, projectDir, sessionMgr, compaction, 
 }
 
 // server/dispatch/handle-save-history.ts
-async function handleSaveHistory({ raw, history, send: send2 }) {
+function handleSaveHistory({ raw, history, send: send2 }) {
   const parsed = parseArchive(raw);
   if (!parsed.ok) {
     send2({ type: "error", message: `Cannot save chat history: ${parsed.reason}` });
     return;
   }
-  const saved = await history.save(parsed.value);
+  const saved = history.save(parsed.value);
   if (!saved.ok) send2({ type: "error", message: `Cannot save chat history: ${saved.reason}` });
 }
 
@@ -30850,6 +30877,530 @@ function summarizeCheckpoint(checkpoint) {
   };
 }
 
+// server/chat/project-chats.ts
+function parsePersonaIds(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((id) => typeof id === "string");
+}
+var ProjectChats = class {
+  options;
+  constructor(options) {
+    this.options = options;
+  }
+  get projectId() {
+    return this.options.project.id;
+  }
+  list() {
+    return this.options.sessions.listForProject(this.projectId);
+  }
+  has(sessionId) {
+    return this.options.sessions.belongsToProject(sessionId, this.projectId);
+  }
+  record(sessionId, details) {
+    return this.options.sessions.record(
+      { sessionId, projectId: this.projectId, workingDir: this.options.workingDir, ...details },
+      this.options.now()
+    );
+  }
+  lastSessionId() {
+    return this.options.projects.lastSessionId(this.projectId);
+  }
+  rememberLastSession(sessionId) {
+    return this.options.projects.setLastSessionId(this.projectId, sessionId, this.options.now());
+  }
+};
+
+// server/chat/chat-directory.ts
+import { resolve as resolve11 } from "node:path";
+
+// server/storage/constants.ts
+var WEAVE_HOME_ENV = "WEAVE_HOME";
+var WEAVE_HOME_DIR_NAME = ".weave";
+var DATA_DIR_NAME = "data";
+var DATABASE_FILE_NAME = "weave.sqlite";
+var PROJECTS_DIR_NAME = "projects";
+var SKILLS_DIR_NAME = "skills";
+var RULES_DIR_NAME = "rules";
+var LOGS_DIR_NAME = "logs";
+var COMMITTED_SKILLS_DIR = ".agents/skills";
+var COMMITTED_RULES_DIR = ".agents/rules";
+var PRIVATE_DIR_MODE = 448;
+var PRIVATE_FILE_MODE = 384;
+var SQLITE_BUSY_TIMEOUT_MS = 5e3;
+var MAX_LISTED_CHATS = 200;
+var MAX_PERSONAS_PER_SESSION = 16;
+var MAX_PERSONA_ID_CHARS = 128;
+var MAX_TITLE_CHARS = 200;
+
+// server/storage/canonical-path.ts
+import { realpath as realpath3, stat as stat3 } from "node:fs/promises";
+import { isAbsolute as isAbsolute2, resolve as resolve8 } from "node:path";
+function isMissing2(error61) {
+  return error61 instanceof Error && "code" in error61 && (error61.code === "ENOENT" || error61.code === "ENOTDIR");
+}
+async function canonicalProjectPath(input2) {
+  if (!isAbsolute2(input2)) return { ok: false, reason: `Project folder ${input2} is not an absolute path` };
+  try {
+    const canonical = await realpath3(resolve8(input2));
+    if (!(await stat3(canonical)).isDirectory()) return { ok: false, reason: `Project path ${input2} is not a folder` };
+    return { ok: true, value: canonical };
+  } catch (error61) {
+    if (isMissing2(error61)) return { ok: false, reason: `Project folder ${input2} does not exist` };
+    throw error61;
+  }
+}
+
+// server/storage/database.ts
+import { chmodSync as chmodSync2, mkdirSync as mkdirSync2 } from "node:fs";
+import { dirname as dirname6 } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+
+// server/storage/schema.ts
+var MIGRATIONS = [
+  `
+  CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    root_path TEXT NOT NULL,
+    last_session_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CONSTRAINT uq_projects__root_path UNIQUE (root_path)
+  );
+
+  CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    working_dir TEXT NOT NULL,
+    title TEXT NOT NULL,
+    engine_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_sessions__project_id_updated_at ON sessions (project_id, updated_at);
+
+  CREATE TABLE session_personas (
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    persona_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (session_id, persona_id)
+  );
+
+  CREATE TABLE history_archives (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+    archive_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  `,
+  `
+  ALTER TABLE sessions ADD COLUMN archived_at TEXT;
+  CREATE INDEX idx_sessions__project_id_archived_at ON sessions (project_id, archived_at);
+
+  CREATE TABLE app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  `
+];
+
+// server/storage/database.ts
+function schemaVersion(db) {
+  const row = db.prepare("PRAGMA user_version").get();
+  const version2 = row?.user_version;
+  return typeof version2 === "number" ? version2 : 0;
+}
+function newerSchemaError(version2) {
+  return new Error(
+    `The Weave database is at schema version ${version2}, newer than this app understands (${MIGRATIONS.length}). Update Weave.`
+  );
+}
+function applyNextMigration(db) {
+  const version2 = schemaVersion(db);
+  if (version2 > MIGRATIONS.length) throw newerSchemaError(version2);
+  const migration = MIGRATIONS[version2];
+  if (migration === void 0) return false;
+  try {
+    db.exec(migration);
+  } catch (error61) {
+    throw new Error(`Cannot apply database migration ${version2 + 1}`, { cause: error61 });
+  }
+  db.exec(`PRAGMA user_version = ${version2 + 1}`);
+  return true;
+}
+function migrate(db) {
+  for (let step = 0; step <= MIGRATIONS.length; step += 1) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const applied = applyNextMigration(db);
+      db.exec("COMMIT");
+      if (!applied) return;
+    } catch (error61) {
+      db.exec("ROLLBACK");
+      throw error61;
+    }
+  }
+}
+function prepareDatabase(db) {
+  db.exec(`PRAGMA foreign_keys = ON; PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};`);
+  migrate(db);
+  return db;
+}
+function ensurePrivateDir(path) {
+  mkdirSync2(path, { recursive: true, mode: PRIVATE_DIR_MODE });
+  chmodSync2(path, PRIVATE_DIR_MODE);
+}
+function openDatabaseFile(path) {
+  mkdirSync2(dirname6(path), { recursive: true, mode: PRIVATE_DIR_MODE });
+  const db = new DatabaseSync(path);
+  try {
+    chmodSync2(path, PRIVATE_FILE_MODE);
+    db.exec("PRAGMA journal_mode = WAL");
+    return prepareDatabase(db);
+  } catch (error61) {
+    db.close();
+    throw new Error(`Cannot open the Weave database at ${path}`, { cause: error61 });
+  }
+}
+
+// server/storage/locations.ts
+import { homedir as homedir3 } from "node:os";
+import { isAbsolute as isAbsolute3, join as join11, resolve as resolve9 } from "node:path";
+function weaveLocations(homeOverride) {
+  const home = homeOverride && isAbsolute3(homeOverride) ? resolve9(homeOverride) : join11(homedir3(), WEAVE_HOME_DIR_NAME);
+  return {
+    home,
+    databasePath: join11(home, DATA_DIR_NAME, DATABASE_FILE_NAME),
+    globalSkillsDir: join11(home, SKILLS_DIR_NAME),
+    globalRulesDir: join11(home, RULES_DIR_NAME)
+  };
+}
+function projectLocations(weave, project) {
+  const dataDir = join11(weave.home, PROJECTS_DIR_NAME, project.id);
+  return {
+    dataDir,
+    logsDir: join11(dataDir, LOGS_DIR_NAME),
+    skillDirs: [join11(dataDir, SKILLS_DIR_NAME), join11(project.rootPath, COMMITTED_SKILLS_DIR), weave.globalSkillsDir],
+    ruleDirs: [join11(dataDir, RULES_DIR_NAME), join11(project.rootPath, COMMITTED_RULES_DIR), weave.globalRulesDir]
+  };
+}
+
+// server/storage/repos/projects-repo.ts
+import { basename as basename3 } from "node:path";
+
+// server/storage/repos/rows.ts
+function isRow(value) {
+  return typeof value === "object" && value !== null;
+}
+function stringField(row, key) {
+  const value = row[key];
+  if (typeof value !== "string") throw new Error(`Database row field ${key} is not text`);
+  return value;
+}
+function optionalStringField(row, key) {
+  const value = row[key];
+  if (value === null || value === void 0) return null;
+  if (typeof value !== "string") throw new Error(`Database row field ${key} is not text`);
+  return value;
+}
+function isoFromMs(nowMs) {
+  return new Date(nowMs).toISOString();
+}
+function msFromIso(iso) {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) throw new Error(`Database timestamp ${iso} is not ISO 8601`);
+  return ms;
+}
+
+// server/storage/repos/projects-repo.ts
+function toProject(row) {
+  if (!isRow(row)) return null;
+  return { id: stringField(row, "id"), name: stringField(row, "name"), rootPath: stringField(row, "root_path") };
+}
+var ProjectsRepo = class {
+  db;
+  constructor(db) {
+    this.db = db;
+  }
+  findByRootPath(rootPath) {
+    return toProject(this.db.prepare("SELECT id, name, root_path FROM projects WHERE root_path = ?").get(rootPath));
+  }
+  resolve(rootPath, nowMs) {
+    const existing = this.findByRootPath(rootPath);
+    if (existing) return existing;
+    const now = isoFromMs(nowMs);
+    this.db.prepare(
+      "INSERT INTO projects (id, name, root_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (root_path) DO NOTHING"
+    ).run(uuidV7(nowMs), basename3(rootPath) || rootPath, rootPath, now, now);
+    const created = this.findByRootPath(rootPath);
+    if (!created) throw new Error(`Cannot register project ${rootPath}`);
+    return created;
+  }
+  delete(projectId) {
+    return Number(this.db.prepare("DELETE FROM projects WHERE id = ?").run(projectId).changes) > 0;
+  }
+  lastSessionId(projectId) {
+    const row = this.db.prepare("SELECT last_session_id FROM projects WHERE id = ?").get(projectId);
+    return isRow(row) ? optionalStringField(row, "last_session_id") : null;
+  }
+  setLastSessionId(projectId, sessionId, nowMs) {
+    const result = this.db.prepare(
+      `UPDATE projects SET last_session_id = ?, updated_at = ?
+         WHERE id = ? AND EXISTS (SELECT 1 FROM sessions WHERE id = ? AND project_id = ?)`
+    ).run(sessionId, isoFromMs(nowMs), projectId, sessionId, projectId);
+    return Number(result.changes) > 0;
+  }
+};
+
+// server/storage/repos/transaction.ts
+var SQLITE_BUSY = 5;
+var SQLITE_LOCKED = 6;
+function isDatabaseBusy(error61) {
+  if (!(error61 instanceof Error) || !("errcode" in error61)) return false;
+  return error61.errcode === SQLITE_BUSY || error61.errcode === SQLITE_LOCKED;
+}
+function inTransaction(db, work) {
+  try {
+    db.exec("BEGIN IMMEDIATE");
+  } catch (error61) {
+    if (isDatabaseBusy(error61)) return { ok: false, reason: "The Weave database is busy in another process; try again." };
+    throw error61;
+  }
+  try {
+    const result = work();
+    db.exec(result.ok ? "COMMIT" : "ROLLBACK");
+    return result;
+  } catch (error61) {
+    db.exec("ROLLBACK");
+    if (isDatabaseBusy(error61)) return { ok: false, reason: "The Weave database is busy in another process; try again." };
+    throw error61;
+  }
+}
+
+// server/storage/repos/sessions-repo.ts
+function toChatSummary(row) {
+  if (!isRow(row)) return null;
+  return {
+    id: stringField(row, "id"),
+    title: stringField(row, "title"),
+    createdAt: msFromIso(stringField(row, "created_at")),
+    updatedAt: msFromIso(stringField(row, "updated_at")),
+    archivedAt: archivedAtMs(optionalStringField(row, "archived_at"))
+  };
+}
+function archivedAtMs(iso) {
+  return iso === null ? null : msFromIso(iso);
+}
+var CHAT_COLUMNS = "id, title, created_at, updated_at, archived_at";
+function validPersonaIds(personaIds) {
+  const unique = [...new Set(personaIds)].filter((id) => id.length > 0 && id.length <= MAX_PERSONA_ID_CHARS);
+  return unique.sort().slice(0, MAX_PERSONAS_PER_SESSION);
+}
+var SessionsRepo = class {
+  db;
+  constructor(db) {
+    this.db = db;
+  }
+  record(input2, nowMs) {
+    return inTransaction(this.db, () => this.recordWithPersonas(input2, isoFromMs(nowMs)));
+  }
+  recordWithPersonas(input2, now) {
+    const result = this.db.prepare(
+      `INSERT INTO sessions (id, project_id, working_dir, title, engine_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           updated_at = excluded.updated_at,
+           archived_at = NULL,
+           engine_id = excluded.engine_id,
+           title = CASE WHEN sessions.title = '' THEN excluded.title ELSE sessions.title END
+         WHERE sessions.project_id = excluded.project_id`
+    ).run(input2.sessionId, input2.projectId, input2.workingDir, input2.title.slice(0, MAX_TITLE_CHARS), input2.engineId, now, now);
+    if (Number(result.changes) === 0) {
+      return { ok: false, reason: `Session ${input2.sessionId} is already registered to another project` };
+    }
+    const addPersona = this.db.prepare(
+      "INSERT INTO session_personas (session_id, persona_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING"
+    );
+    for (const personaId of validPersonaIds(input2.personaIds)) addPersona.run(input2.sessionId, personaId, now);
+    return { ok: true, value: null };
+  }
+  listForProject(projectId) {
+    const rows = this.db.prepare(
+      `SELECT ${CHAT_COLUMNS} FROM sessions
+         WHERE project_id = ? AND archived_at IS NULL ORDER BY updated_at DESC, id DESC LIMIT ?`
+    ).all(projectId, MAX_LISTED_CHATS);
+    return rows.map(toChatSummary).filter((chat) => chat !== null);
+  }
+  listArchivedForProject(projectId) {
+    const rows = this.db.prepare(
+      `SELECT ${CHAT_COLUMNS} FROM sessions
+         WHERE project_id = ? AND archived_at IS NOT NULL ORDER BY archived_at DESC, id DESC LIMIT ?`
+    ).all(projectId, MAX_LISTED_CHATS);
+    return rows.map(toChatSummary).filter((chat) => chat !== null);
+  }
+  setArchived(sessionId, projectId, archivedAtMs2) {
+    return inTransaction(this.db, () => {
+      if (archivedAtMs2 !== null) {
+        this.db.prepare("UPDATE projects SET last_session_id = NULL WHERE id = ? AND last_session_id = ?").run(projectId, sessionId);
+      }
+      const changed = this.db.prepare("UPDATE sessions SET archived_at = ? WHERE id = ? AND project_id = ?").run(archivedAtMs2 === null ? null : isoFromMs(archivedAtMs2), sessionId, projectId);
+      if (Number(changed.changes) === 0) return { ok: false, reason: `Chat ${sessionId} was not found in this project` };
+      return { ok: true, value: null };
+    });
+  }
+  archiveInactive(cutoffMs, keepSessionId, nowMs) {
+    return inTransaction(this.db, () => {
+      const result = this.db.prepare(
+        `UPDATE sessions SET archived_at = ?
+           WHERE archived_at IS NULL AND updated_at < ? AND id IS NOT ?`
+      ).run(isoFromMs(nowMs), isoFromMs(cutoffMs), keepSessionId);
+      this.db.prepare(
+        `UPDATE projects SET last_session_id = NULL
+           WHERE last_session_id IN (SELECT id FROM sessions WHERE archived_at IS NOT NULL)`
+      ).run();
+      return { ok: true, value: Number(result.changes) };
+    });
+  }
+  delete(sessionId, projectId) {
+    return inTransaction(this.db, () => {
+      this.db.prepare("UPDATE projects SET last_session_id = NULL WHERE id = ? AND last_session_id = ?").run(projectId, sessionId);
+      const removed = this.db.prepare("DELETE FROM sessions WHERE id = ? AND project_id = ?").run(sessionId, projectId);
+      if (Number(removed.changes) === 0) return { ok: false, reason: `Chat ${sessionId} was not found in this project; it may already be deleted` };
+      return { ok: true, value: null };
+    });
+  }
+  countForProject(projectId) {
+    const row = this.db.prepare("SELECT COUNT(*) AS total FROM sessions WHERE project_id = ?").get(projectId);
+    const total = isRow(row) ? row.total : 0;
+    return typeof total === "number" ? total : 0;
+  }
+  belongsToProject(sessionId, projectId) {
+    return this.db.prepare("SELECT 1 AS found FROM sessions WHERE id = ? AND project_id = ?").get(sessionId, projectId) !== void 0;
+  }
+  personaIds(sessionId) {
+    const rows = this.db.prepare("SELECT persona_id FROM session_personas WHERE session_id = ? ORDER BY persona_id").all(sessionId);
+    return rows.filter(isRow).map((row) => stringField(row, "persona_id"));
+  }
+};
+
+// server/storage/repos/archives-repo.ts
+var ArchivesRepo = class {
+  db;
+  constructor(db) {
+    this.db = db;
+  }
+  load(projectId, sessionId) {
+    const row = this.db.prepare(
+      `SELECT a.archive_json FROM history_archives a
+         JOIN sessions s ON s.id = a.session_id
+         WHERE a.session_id = ? AND s.project_id = ?`
+    ).get(sessionId, projectId);
+    return isRow(row) ? stringField(row, "archive_json") : null;
+  }
+  save(projectId, sessionId, archiveJson, nowMs) {
+    return inTransaction(this.db, () => this.upsert(projectId, sessionId, archiveJson, isoFromMs(nowMs)));
+  }
+  upsert(projectId, sessionId, archiveJson, now) {
+    const result = this.db.prepare(
+      `INSERT INTO history_archives (session_id, archive_json, created_at, updated_at)
+         SELECT s.id, ?, ?, ? FROM sessions s WHERE s.id = ? AND s.project_id = ?
+         ON CONFLICT (session_id) DO UPDATE SET archive_json = excluded.archive_json, updated_at = excluded.updated_at`
+    ).run(archiveJson, now, now, sessionId, projectId);
+    if (Number(result.changes) === 0) {
+      return { ok: false, reason: `Session ${sessionId} is not a chat of this project` };
+    }
+    return { ok: true, value: null };
+  }
+};
+
+// server/storage/repos/settings-repo.ts
+var SettingsRepo = class {
+  db;
+  constructor(db) {
+    this.db = db;
+  }
+  get(key) {
+    const row = this.db.prepare("SELECT value FROM app_settings WHERE key = ?").get(key);
+    return isRow(row) ? stringField(row, "value") : null;
+  }
+  set(key, value, nowMs) {
+    this.db.prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    ).run(key, value, isoFromMs(nowMs));
+  }
+};
+
+// server/storage/project-data.ts
+import { rm } from "node:fs/promises";
+import { relative as relative3, resolve as resolve10, sep as sep3 } from "node:path";
+var PROJECT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+function projectDataDir(weaveHome, projectId) {
+  if (!PROJECT_ID_PATTERN.test(projectId)) return { ok: false, reason: `Project id ${projectId} is not a Weave project id` };
+  const root = resolve10(weaveHome, PROJECTS_DIR_NAME);
+  const dir = resolve10(root, projectId);
+  const inside = relative3(root, dir);
+  if (inside !== projectId || inside.includes(sep3)) return { ok: false, reason: `Project data for ${projectId} is outside ${root}` };
+  return { ok: true, value: dir };
+}
+async function removeProjectData(weaveHome, projectId) {
+  const dir = projectDataDir(weaveHome, projectId);
+  if (!dir.ok) return dir;
+  await rm(dir.value, { recursive: true, force: true });
+  return { ok: true, value: null };
+}
+
+// server/chat/chat-directory.ts
+var MAX_LISTED_PROJECTS = 64;
+var MAX_PROJECT_DIR_CHARS = 4096;
+function isProjectDir(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= MAX_PROJECT_DIR_CHARS;
+}
+function parseProjectDirs(raw) {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter(isProjectDir))].sort().slice(0, MAX_LISTED_PROJECTS);
+}
+var ChatDirectory = class {
+  projects;
+  sessions;
+  constructor(projects, sessions) {
+    this.projects = projects;
+    this.sessions = sessions;
+  }
+  async projectForFolder(projectDir) {
+    const canonical = await canonicalProjectPath(projectDir);
+    return this.projects.findByRootPath(canonical.ok ? canonical.value : resolve11(projectDir));
+  }
+  async setChatArchived(projectDir, sessionId, archivedAtMs2) {
+    const project = await this.projectForFolder(projectDir);
+    if (!project) return { ok: false, reason: `No chats are saved for ${projectDir}` };
+    return this.sessions.setArchived(sessionId, project.id, archivedAtMs2);
+  }
+  async deleteChat(projectDir, sessionId) {
+    const project = await this.projectForFolder(projectDir);
+    if (!project) return { ok: false, reason: `No chats are saved for ${projectDir}` };
+    return this.sessions.delete(sessionId, project.id);
+  }
+  async deleteProject(projectDir) {
+    const project = await this.projectForFolder(projectDir);
+    if (!project) return null;
+    const removedChatCount = this.sessions.countForProject(project.id);
+    this.projects.delete(project.id);
+    return { projectId: project.id, removedChatCount };
+  }
+  async listForFolders(dirs) {
+    const resolved2 = await Promise.all(dirs.map(async (dir) => ({ dir, project: await this.projectForFolder(dir) })));
+    const chatsByProject = {};
+    const archivedChatsByProject = {};
+    for (const { dir, project } of resolved2) {
+      chatsByProject[dir] = project ? this.sessions.listForProject(project.id) : [];
+      archivedChatsByProject[dir] = project ? this.sessions.listArchivedForProject(project.id) : [];
+    }
+    return { chatsByProject, archivedChatsByProject };
+  }
+};
+
 // server/dispatch/handle-prompt.ts
 async function handlePrompt({
   msg,
@@ -30859,8 +31410,7 @@ async function handlePrompt({
   pluginsById,
   ledger,
   tasksStore,
-  conversations,
-  store,
+  chats,
   continuationTaskId,
   ruleCatalog,
   builtinSkillCatalog,
@@ -30958,14 +31508,17 @@ async function handlePrompt({
       stopReason,
       wallMs: 0
     });
-    if (!sessionMgr.persisted) {
+    const sessionId = sessionMgr.supervisor.current.sessionId;
+    const recorded = chats.record(sessionId, {
+      title: titleFromPrompt(text),
+      engineId: sessionMgr.currentEngineId,
+      personaIds: parsePersonaIds(msg.personaIds)
+    });
+    if (!recorded.ok) send2({ type: "error", message: `Cannot save this chat: ${recorded.reason}` });
+    if (recorded.ok && !sessionMgr.persisted) {
       sessionMgr.persisted = true;
-      await store.set(projectDir, sessionMgr.supervisor.current.sessionId);
+      chats.rememberLastSession(sessionId);
     }
-    await conversations.record(
-      sessionMgr.supervisor.current.sessionId,
-      titleFromPrompt(text)
-    );
     await sendChats();
     send2({ type: "git-status", git: await readGitStatus(projectDir) });
   } catch (err) {
@@ -31094,8 +31647,8 @@ function formatRecord(record2) {
 }
 
 // server/logging/sink.ts
-import { appendFileSync as appendFileSync2, mkdirSync as mkdirSync2, renameSync, statSync as statSync3 } from "node:fs";
-import { join as join15 } from "node:path";
+import { appendFileSync as appendFileSync2, mkdirSync as mkdirSync3, renameSync, statSync as statSync3 } from "node:fs";
+import { join as join12 } from "node:path";
 var consoleSink = {
   write(line, level) {
     const stream = level === "error" || level === "warn" ? process.stderr : process.stdout;
@@ -31129,11 +31682,11 @@ function rotate(path, rotated) {
   }
 }
 function createFileSink(dir) {
-  const path = join15(dir, LOG_FILE_NAME);
-  const rotated = join15(dir, ROTATED_LOG_FILE_NAME);
+  const path = join12(dir, LOG_FILE_NAME);
+  const rotated = join12(dir, ROTATED_LOG_FILE_NAME);
   const state2 = { bytes: 0, enabled: true };
   try {
-    mkdirSync2(dir, { recursive: true });
+    mkdirSync3(dir, { recursive: true });
     state2.bytes = existingBytes(path);
   } catch (error61) {
     reportSinkFailure("open", path, error61);
@@ -31656,16 +32209,109 @@ function handleStartSetup({
   });
 }
 
+// server/archive/constants.ts
+var AUTO_ARCHIVE_SETTING_KEY = "auto_archive_after_days";
+var AUTO_ARCHIVE_DAY_OPTIONS = [1, 7, 30, 90];
+var MS_PER_DAY = 864e5;
+var SESSION_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
+// server/archive/auto-archive.ts
+var NEVER2 = "never";
+function parseAutoArchiveDays(raw) {
+  if (raw === null || raw === NEVER2) return null;
+  const days = typeof raw === "string" ? Number(raw) : raw;
+  return AUTO_ARCHIVE_DAY_OPTIONS.find((option) => option === days);
+}
+var AutoArchive = class {
+  options;
+  constructor(options) {
+    this.options = options;
+  }
+  afterDays() {
+    return parseAutoArchiveDays(this.options.settings.get(AUTO_ARCHIVE_SETTING_KEY)) ?? null;
+  }
+  setAfterDays(days) {
+    this.options.settings.set(AUTO_ARCHIVE_SETTING_KEY, days === null ? NEVER2 : String(days), this.options.now());
+  }
+  run(keepSessionId) {
+    const days = this.afterDays();
+    if (days === null) return { ok: true, value: 0 };
+    const nowMs = this.options.now();
+    return this.options.sessions.archiveInactive(nowMs - days * MS_PER_DAY, keepSessionId, nowMs);
+  }
+};
+
+// server/archive/chat-actions.ts
+var ACTION_VERBS = { archive: "archive", restore: "restore", delete: "delete" };
+function apply(action, projectDir, sessionId, options) {
+  switch (action) {
+    case "archive":
+      return options.directory.setChatArchived(projectDir, sessionId, options.now());
+    case "restore":
+      return options.directory.setChatArchived(projectDir, sessionId, null);
+    case "delete":
+      return options.directory.deleteChat(projectDir, sessionId);
+    default: {
+      const unreachable = action;
+      throw new Error(`Unknown chat action ${String(unreachable)}`);
+    }
+  }
+}
+function doneMessageType(action) {
+  if (action === "archive") return "chat-archived";
+  if (action === "restore") return "chat-restored";
+  return "chat-deleted";
+}
+async function handleChatAction(action, request, options) {
+  const { sessionId, projectDir } = request;
+  const verb = ACTION_VERBS[action];
+  if (typeof sessionId !== "string" || !SESSION_ID_PATTERN2.test(sessionId) || !isProjectDir(projectDir)) {
+    options.send({ type: "error", message: `Cannot ${verb} chat: the request needs a valid chat id and project folder.` });
+    return;
+  }
+  const result = await apply(action, projectDir, sessionId, options);
+  if (!result.ok) {
+    options.send({ type: "error", message: `Cannot ${verb} chat: ${result.reason}` });
+    return;
+  }
+  options.send({ type: doneMessageType(action), sessionId, projectDir });
+  if (action !== "restore" && sessionId === options.currentSessionId()) {
+    await options.startNewChat();
+    return;
+  }
+  await options.sendChats();
+}
+
+// server/archive/delete-project.ts
+async function handleDeleteProject(request, options) {
+  const { projectDir } = request;
+  if (!isProjectDir(projectDir)) {
+    options.send({ type: "error", message: "Cannot delete project: the request needs a project folder." });
+    return;
+  }
+  const project = await options.directory.projectForFolder(projectDir);
+  if (project?.id === options.currentProjectId) {
+    options.send({ type: "error", message: `Cannot delete ${projectDir} while it is open. Switch to another project first.` });
+    return;
+  }
+  const deleted = await options.directory.deleteProject(projectDir);
+  if (deleted) {
+    const removed = await removeProjectData(options.weaveHome, deleted.projectId);
+    if (!removed.ok) options.send({ type: "error", message: `Deleted ${projectDir} from Weave, but ${removed.reason}` });
+  }
+  options.send({ type: "project-deleted", projectDir, removedChatCount: deleted?.removedChatCount ?? 0 });
+}
+
 // server/connection/checkpoint-task.ts
 function createCheckpointTask(deps) {
-  const { sessionMgr, projectDir, continuationTaskId, ledger, tasksStore } = deps;
+  const { sessionMgr, projectDir, dataDir, continuationTaskId, ledger, tasksStore } = deps;
   return async (reason, cancel) => {
     if (!sessionMgr.taskCreated) {
       await cancel?.();
       return null;
     }
     const { checkpoint } = await runStopSequence({
-      weaveDir: weaveDirFor(projectDir),
+      weaveDir: dataDir,
       cwd: projectDir,
       taskId: continuationTaskId,
       runId: ledger.runId,
@@ -31700,13 +32346,21 @@ function forwardResult(promise2, send2, onSuccess, errorPrefix) {
 }
 
 // server/connection/dispatch.ts
+var CHAT_ACTIONS = {
+  "archive-chat": "archive",
+  "restore-chat": "restore",
+  "delete-chat": "delete"
+};
 function handleClientMessage(msg, ctx, queueTask) {
   const {
     sessionMgr,
     projectDir,
-    store,
+    dataDir,
+    chats,
+    directory,
+    autoArchive,
+    weaveHome,
     tasksStore,
-    conversations,
     ledger,
     continuationTaskId,
     ruleCatalog,
@@ -31726,7 +32380,7 @@ function handleClientMessage(msg, ctx, queueTask) {
     setAuthSession,
     publishAuth
   } = ctx;
-  const checkpointTask = createCheckpointTask({ sessionMgr, projectDir, continuationTaskId, ledger, tasksStore });
+  const checkpointTask = createCheckpointTask({ sessionMgr, projectDir, dataDir, continuationTaskId, ledger, tasksStore });
   switch (msg.type) {
     case "cancel":
       for (const requestId of pendingPermissions.cancelAll()) {
@@ -31813,7 +32467,7 @@ function handleClientMessage(msg, ctx, queueTask) {
       queueTask(() => handleNewChat({ instructions: msg.instructions, sessionMgr, projectDir, send: send2, sendChats }));
       return;
     case "open-chat":
-      queueTask(() => handleOpenChat({ sessionId: msg.sessionId, sessionMgr, projectDir, store, send: send2, sendChats }));
+      queueTask(() => handleOpenChat({ sessionId: msg.sessionId, sessionMgr, projectDir, chats, send: send2, sendChats }));
       return;
     case "compact": {
       const { operationId } = msg;
@@ -31824,8 +32478,47 @@ function handleClientMessage(msg, ctx, queueTask) {
       queueTask(() => handleCompact({ operationId, projectDir, sessionMgr, compaction, send: send2 }));
       return;
     }
+    case "list-project-chats": {
+      const projectDirs = parseProjectDirs(msg.projectDirs);
+      const archived = autoArchive.run(sessionMgr.supervisor?.current.sessionId ?? null);
+      if (!archived.ok) send2({ type: "error", message: `Automatic archiving skipped: ${archived.reason}` });
+      void directory.listForFolders(projectDirs).then(
+        (listing) => send2({ type: "project-chats", ...listing }),
+        (error61) => send2({ type: "error", message: `Cannot list project chats: ${errorMessage(error61)}` })
+      );
+      return;
+    }
+    case "archive-chat":
+    case "restore-chat":
+    case "delete-chat":
+      queueTask(
+        () => handleChatAction(CHAT_ACTIONS[msg.type], msg, {
+          directory,
+          currentSessionId: () => sessionMgr.supervisor?.current.sessionId ?? null,
+          now: Date.now,
+          send: send2,
+          sendChats,
+          startNewChat: () => handleNewChat({ sessionMgr, projectDir, send: send2, sendChats })
+        })
+      );
+      return;
+    case "delete-project":
+      queueTask(
+        () => handleDeleteProject(msg, { directory, currentProjectId: chats.projectId, weaveHome, send: send2 })
+      );
+      return;
+    case "set-auto-archive": {
+      const days = parseAutoArchiveDays(msg.afterDays);
+      if (days === void 0) {
+        send2({ type: "error", message: `Cannot set automatic archiving to ${String(msg.afterDays)} days.` });
+        return;
+      }
+      autoArchive.setAfterDays(days);
+      send2({ type: "archive-settings", autoArchiveAfterDays: days });
+      return;
+    }
     case "save-history":
-      queueTask(() => handleSaveHistory({ raw: msg, history, send: send2 }));
+      queueTask(async () => handleSaveHistory({ raw: msg, history, send: send2 }));
       return;
     case "prompt":
       queueTask(
@@ -31837,8 +32530,7 @@ function handleClientMessage(msg, ctx, queueTask) {
           pluginsById,
           ledger,
           tasksStore,
-          conversations,
-          store,
+          chats,
           continuationTaskId,
           ruleCatalog,
           builtinSkillCatalog,
@@ -31857,7 +32549,7 @@ function handleClientMessage(msg, ctx, queueTask) {
 }
 
 // server/connection/handle-connection.ts
-import { resolve as resolve10 } from "node:path";
+import { resolve as resolve12 } from "node:path";
 
 // server/session/cleanup.ts
 var liveSupervisors = /* @__PURE__ */ new Set();
@@ -31921,15 +32613,15 @@ function createUserPrompter({
   pending,
   send: send2
 }) {
-  return (_task, request, command) => new Promise((resolve12) => {
+  return (_task, request, command) => new Promise((resolve14) => {
     const options = toOptions(request.options ?? []);
     const entry = pending.open(options, (optionId) => {
       if (optionId === null) {
         send2({ type: "permission-cancelled", requestId: entry.requestId });
-        resolve12({ decision: "reject", reason: "declined by user" });
+        resolve14({ decision: "reject", reason: "declined by user" });
         return;
       }
-      resolve12({ decision: "allow", optionId, reason: "approved by user" });
+      resolve14({ decision: "allow", optionId, reason: "approved by user" });
     });
     send2({
       type: "permission-request",
@@ -32093,7 +32785,7 @@ var DesktopSessionManager = class {
     return { ...opts, engineId };
   }
   async bindEngine(engineId) {
-    const resumeId = await this.ctx.store.get(this.ctx.projectDir);
+    const resumeId = this.ctx.chats.lastSessionId();
     const options = this.buildSupervisorOptions(resumeId, engineId);
     try {
       if (!this.supervisor) {
@@ -32110,7 +32802,7 @@ var DesktopSessionManager = class {
     this.ctx.engineAuthStates.set(engineId, "authenticated");
     if (this.taskCreated) {
       const checkpoint = await readLatest(
-        weaveDirFor(this.ctx.projectDir),
+        this.ctx.dataDir,
         this.ctx.continuationTaskId
       );
       this.pendingPreamble = checkpoint ? buildBrief(checkpoint, getEngine(engineId)) : null;
@@ -32150,8 +32842,8 @@ var DesktopSessionManager = class {
     await this.ctx.sendChats();
     return true;
   }
-  async prepareReplay(sessionId) {
-    const loaded = await this.ctx.history.load(sessionId);
+  prepareReplay(sessionId) {
+    const loaded = this.ctx.history.load(sessionId);
     if (!loaded.ok) this.ctx.send({ type: "error", message: loaded.reason });
     this.ctx.replayGate.arm(sessionId, loaded.ok ? loaded.value : null);
   }
@@ -32159,7 +32851,7 @@ var DesktopSessionManager = class {
     this.ctx.replayGate.disarm();
   }
   async openFirstUsableEngine(wanted, resumeId) {
-    if (resumeId) await this.prepareReplay(resumeId);
+    if (resumeId) this.prepareReplay(resumeId);
     try {
       await this.openEngineInOrder(wanted, resumeId);
     } finally {
@@ -32214,7 +32906,7 @@ function isExpectedEnvError(error61) {
 function loadEnvFiles(projectDir) {
   for (const name of [".env", ".env.local"]) {
     try {
-      process.loadEnvFile(resolve10(projectDir, name));
+      process.loadEnvFile(resolve12(projectDir, name));
     } catch (error61) {
       if (!isExpectedEnvError(error61)) throw error61;
     }
@@ -32242,7 +32934,13 @@ var KNOWN_CLIENT_MESSAGE_TYPES = /* @__PURE__ */ new Set([
   "submit-setup-key",
   "submit-setup-consent",
   "compact",
-  "save-history"
+  "save-history",
+  "list-project-chats",
+  "delete-chat",
+  "archive-chat",
+  "restore-chat",
+  "delete-project",
+  "set-auto-archive"
 ]);
 function parseClientMessage(raw) {
   if (typeof raw !== "object" || raw === null) return null;
@@ -32250,10 +32948,11 @@ function parseClientMessage(raw) {
   if (typeof type !== "string" || !KNOWN_CLIENT_MESSAGE_TYPES.has(type)) return null;
   return raw;
 }
-async function handleConnection(socket, projectDir, store) {
+async function handleConnection(socket, projectDir, storage) {
+  const { dataDir, chats, history } = storage;
   loadEnvFiles(projectDir);
   const send2 = (msg) => safeSend(socket, msg);
-  const ledger = new Ledger(weaveDirFor(projectDir), newRunId());
+  const ledger = new Ledger(dataDir, newRunId());
   const continuationTaskId = ledger.runId;
   const isSandboxed = process.env.WEAVE_SANDBOX === "1" || process.env.SANDBOXED === "true";
   const task = {
@@ -32285,21 +32984,18 @@ async function handleConnection(socket, projectDir, store) {
     send2({ type: "plugin-catalog", plugins: pluginCatalog });
   };
   await loadPlugins();
-  const conversations = new ConversationStore(weaveDirFor(projectDir));
-  const tasksStore = new TasksStore(weaveDirFor(projectDir));
+  const tasksStore = new TasksStore(dataDir);
   const authMethodsByEngine = /* @__PURE__ */ new Map();
   const sendChats = async () => {
-    const chatList = await conversations.list();
     send2({
       type: "chats",
-      chats: chatList.sort((a, b) => b.updatedAt - a.updatedAt),
+      chats: chats.list(),
       activeSessionId: sessionMgr.supervisor?.current?.sessionId ?? ""
     });
   };
   killStaleSupervisors();
   const pendingPermissions = new PendingPermissions();
   const activeSetup = new ActiveSetup();
-  const history = new HistoryStore(projectDir);
   const replayGate = new ReplayGate();
   const compaction = new CompactionController(
     (sessionId, supportsCompaction) => send2({ type: "session-capabilities", sessionId, supportsCompaction })
@@ -32307,8 +33003,9 @@ async function handleConnection(socket, projectDir, store) {
   const initialEngineId = process.env.ENGINE_ID || DEFAULT_ENGINE_ID;
   const sessionMgr = new DesktopSessionManager(initialEngineId, {
     projectDir,
+    dataDir,
     task,
-    store,
+    chats,
     tasksStore,
     ledger,
     continuationTaskId,
@@ -32322,11 +33019,11 @@ async function handleConnection(socket, projectDir, store) {
     replayGate
   });
   const [ruleCatalog, builtinSkillCatalog, skillCatalog] = await Promise.all([
-    discoverRules(projectDir).then(formatRulesBlock),
+    discoverRules(storage.ruleDirs).then(formatRulesBlock),
     Promise.resolve(formatBuiltinSkillsBlock(BUILTIN_SKILLS)),
-    discoverSkills(projectDir).then(formatSkillCatalog)
+    discoverSkills(storage.skillDirs).then(formatSkillCatalog)
   ]);
-  const resumeId = await store.get(projectDir);
+  const resumeId = chats.lastSessionId();
   try {
     await sessionMgr.openFirstUsableEngine(initialEngineId, resumeId);
   } catch (err) {
@@ -32337,6 +33034,9 @@ async function handleConnection(socket, projectDir, store) {
   }
   sendEngineList();
   announceSetupRequired(initialEngineId, send2);
+  const archived = storage.autoArchive.run(sessionMgr.supervisor?.current.sessionId ?? null);
+  if (!archived.ok) send2({ type: "error", message: `Automatic archiving skipped: ${archived.reason}` });
+  send2({ type: "archive-settings", autoArchiveAfterDays: storage.autoArchive.afterDays() });
   sendChats().catch((error61) => {
     console.error(JSON.stringify({
       level: "error",
@@ -32379,9 +33079,12 @@ async function handleConnection(socket, projectDir, store) {
         compaction,
         history,
         projectDir,
-        store,
+        dataDir,
+        chats,
+        directory: storage.directory,
+        autoArchive: storage.autoArchive,
+        weaveHome: storage.weaveHome,
         tasksStore,
-        conversations,
         ledger,
         continuationTaskId,
         ruleCatalog,
@@ -32414,13 +33117,43 @@ async function handleConnection(socket, projectDir, store) {
   });
 }
 
+// server/connection/project-storage.ts
+async function openProjectStorage({ projectDir, weaveHome, now }) {
+  const rootPath = await canonicalProjectPath(projectDir);
+  if (!rootPath.ok) throw new Error(`Cannot open project: ${rootPath.reason}`);
+  const weave = weaveLocations(weaveHome);
+  ensurePrivateDir(weave.home);
+  const db = openDatabaseFile(weave.databasePath);
+  const projects = new ProjectsRepo(db);
+  const sessions = new SessionsRepo(db);
+  const project = projects.resolve(rootPath.value, now());
+  const locations = projectLocations(weave, project);
+  ensurePrivateDir(locations.dataDir);
+  return {
+    projectId: project.id,
+    logsDir: locations.logsDir,
+    close: () => db.close(),
+    storage: {
+      dataDir: locations.dataDir,
+      skillDirs: locations.skillDirs,
+      ruleDirs: locations.ruleDirs,
+      chats: new ProjectChats({ project, workingDir: projectDir, sessions, projects, now }),
+      directory: new ChatDirectory(projects, sessions),
+      autoArchive: new AutoArchive({ settings: new SettingsRepo(db), sessions, now }),
+      weaveHome: weave.home,
+      history: new HistoryStore({ archives: new ArchivesRepo(db), projectId: project.id, now })
+    }
+  };
+}
+
 // server/index.ts
-var LOG_DIR_NAME = "logs";
+var LOOPBACK_HOST = "127.0.0.1";
+var HTTP_UPGRADE_REQUIRED = 426;
 var log3 = createLogger("server");
-function openLogFile(projectDir) {
+function openLogFile(logsDir) {
   const level = parseLogLevel(process.env.WEAVE_LOG_LEVEL);
   if (level) setLogLevel(level);
-  const file2 = createFileSink(join16(weaveDirFor(projectDir), LOG_DIR_NAME));
+  const file2 = createFileSink(logsDir);
   if (!file2) return null;
   addLogSink(file2.sink);
   return file2.path;
@@ -32430,36 +33163,64 @@ function safeSendError(socket, message) {
   const errorMsg = { type: "error", message };
   socket.send(JSON.stringify(errorMsg));
 }
+function listenOnLoopback(httpServer, port) {
+  return new Promise((done, fail) => {
+    httpServer.once("error", fail);
+    httpServer.listen(port, LOOPBACK_HOST, () => {
+      httpServer.off("error", fail);
+      done();
+    });
+  });
+}
 async function startAcpServer(options) {
-  const projectDir = resolve11(options.projectDir);
+  const projectDir = resolve13(options.projectDir);
   const port = options.port ?? DEFAULT_PORT;
-  const wss = new import_websocket_server.default({ port, host: "127.0.0.1" });
-  const store = new SessionStore(weaveDirFor(projectDir));
-  const logFile = openLogFile(projectDir);
-  log3.info("WebSocket server listening", { port, projectDir, logFile });
-  wss.on("error", (error61) => {
+  const httpServer = createServer((_request, response) => {
+    response.writeHead(HTTP_UPGRADE_REQUIRED).end();
+  });
+  const wss = new import_websocket_server.default({ noServer: true, handleProtocols: selectWeaveProtocol });
+  const opened = await openProjectStorage({ projectDir, weaveHome: process.env[WEAVE_HOME_ENV], now: Date.now });
+  const logFile = openLogFile(opened.logsDir);
+  attachUpgradeGate({
+    httpServer,
+    wss,
+    token: options.token,
+    onReject: (status, reason) => log3.warn("WebSocket connection refused", { status, reason })
+  });
+  httpServer.on("error", (error61) => {
     log3.error("WebSocket server failed", { port, error: error61 });
   });
   wss.on("connection", (socket) => {
-    void handleConnection(socket, projectDir, store).catch((error61) => {
+    void handleConnection(socket, projectDir, opened.storage).catch((error61) => {
       const message = error61 instanceof Error ? error61.message : String(error61);
       log3.error("Connection handler failed", { message });
       safeSendError(socket, message);
     });
   });
+  await listenOnLoopback(httpServer, port);
+  log3.info("WebSocket server listening", { port, projectDir, projectId: opened.projectId, logFile });
   return {
     port,
-    close: () => new Promise((done) => wss.close(() => done()))
+    close: () => new Promise((done) => {
+      wss.close();
+      httpServer.close(() => {
+        opened.close();
+        done();
+      });
+    })
   };
 }
 var isDirectRun = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+function startFromEnvironment() {
+  const token = parseServerToken(process.env[SERVER_TOKEN_ENV]);
+  if (!token.ok) return Promise.reject(new Error(token.reason));
+  return startAcpServer({ projectDir: process.env.PROJECT_DIR ?? process.cwd(), token: token.token });
+}
 if (isDirectRun) {
-  startAcpServer({ projectDir: process.env.PROJECT_DIR ?? process.cwd() }).catch(
-    (error61) => {
-      log3.error("Server failed to start", { error: error61 });
-      process.exit(1);
-    }
-  );
+  startFromEnvironment().catch((error61) => {
+    log3.error("Server failed to start", { error: error61 });
+    process.exit(1);
+  });
 }
 export {
   DEFAULT_PORT,

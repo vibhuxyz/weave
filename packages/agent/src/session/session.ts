@@ -16,6 +16,7 @@ import type {
   SessionSink,
   PromptBlock,
   PromptOptions,
+  QuestionAsker,
 } from "./types.ts";
 
 /**
@@ -149,7 +150,22 @@ export async function openSession(
     }
   };
 
-  const client = new SessionClient(task, watchedSink(sink, watchdog.touch), watchedPolicy);
+  const askUser = options.askUser;
+  const watchedAskUser: QuestionAsker | undefined = askUser && (async (request) => {
+    watchdog.pause();
+    try {
+      return await askUser(request);
+    } finally {
+      watchdog.resume();
+    }
+  });
+
+  const client = new SessionClient({
+    task,
+    sink: watchedSink(sink, watchdog.touch),
+    policy: watchedPolicy,
+    askUser: watchedAskUser,
+  });
   const connection = createClientConnection(spawned, client);
 
   const init = await startHandshake(spawned, () => connection.initialize({
@@ -157,7 +173,7 @@ export async function openSession(
     clientCapabilities: {
       fs: { readTextFile: true, writeTextFile: true },
       auth: { terminal: true },
-      elicitation: { url: {} },
+      elicitation: watchedAskUser ? { form: {}, url: {} } : { url: {} },
       _meta: { "terminal-auth": true },
     },
   }));

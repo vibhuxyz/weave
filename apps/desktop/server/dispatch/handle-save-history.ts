@@ -8,12 +8,12 @@ export interface SaveHistoryOptions {
   readonly send: (msg: ServerMessage) => void;
 }
 
-export async function handleSaveHistory({ raw, history, send }: SaveHistoryOptions): Promise<void> {
+export function handleSaveHistory({ raw, history, send }: SaveHistoryOptions): void {
   const parsed = parseArchive(raw);
   if (!parsed.ok) {
     send({ type: "error", message: `Cannot save chat history: ${parsed.reason}` });
     return;
   }
-  const saved = await history.save(parsed.value);
+  const saved = history.save(parsed.value);
   if (!saved.ok) send({ type: "error", message: `Cannot save chat history: ${saved.reason}` });
 }

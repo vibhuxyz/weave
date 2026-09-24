@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Button, ComposerActionButton, ComposerSendButton, ConfirmDialog, GlassButton, ImageLightbox, JumpToLatestButton, DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger, ConfigPicker, Popover, PopoverContent, PopoverTrigger } from "@/shared/ui";
 import { DefaultProjectGlyphIcon } from "@/features/projects/ui";
+import { ArchiveSettingsView, archiveLoadState } from "@/features/archive";
 import type { ChatImageAttachmentDraft } from "@/shared/types/messages";
 import {
   usePersistedState,
@@ -29,7 +30,7 @@ import { isAuthRequiredError } from "@weave/protocol";
 import { ENGINES, DEFAULT_ENGINE_ID, tokenReportingFor } from "@weave/agent/browser";
 import { EnginePicker } from '@/features/engines/components';
 import { SettingsView } from '@/features/settings';
-import { ChatSkeleton, ContextPanel, EngineSetupPanel, hasSelectableModes, ModePicker, PermissionCard, UserMessage, type ContextPanelTab } from '@/features/chat/components';
+import { ChatSkeleton, ContextPanel, EngineSetupPanel, hasSelectableModes, ModePicker, PermissionCard, QuestionCard, UserMessage, type ContextPanelTab } from '@/features/chat/components';
 
 /** Inspector width: the spec's 400px to start, dragged from its left edge. */
 const INSPECTOR_DEFAULT_WIDTH = 400;
@@ -51,7 +52,7 @@ import { DepthPicker, TurnDiffPanel, type DepthLevel, AgentMessage, AgentStatusL
 import { collectTurnDiffs } from "@/agent/diff";
 import { Sidebar } from "./Sidebar";
 import { CreateProjectDialog, toneColor } from '@/features/projects/components';
-import { AgentAvatar, AgentsView } from '@/features/agents/components';
+import { AgentAvatar, AgentsView, ConversationStart } from '@/features/agents/components';
 import { SkillsView } from "@/features/skills/components";
 import { formatSkillPluginsSystemPrompt, usePlugins, useSkillPlugins } from '@/features/plugins/hooks';
 import { PluginsView } from '@/features/plugins/components';
@@ -64,7 +65,7 @@ import {
 import { EngineAuthPanel } from "@/features/auth";
 import { HomeView } from "@/home/canvas/ui";
 import { basename } from '@/features/projects/lib';
-import { useAcpChat, type ChatImageAttachment, type ConversationMeta } from '@/features/chat/hooks';
+import { useAcpChat, type ChatImageAttachment } from '@/features/chat/hooks';
 import {
   AutoCompactSetting,
   CompactionNoticeRow,
@@ -73,8 +74,8 @@ import {
   mergeDraftImages,
   mergeDraftText,
 } from '@/features/chat/compaction';
-import { useProject, useProjectHomePins, useProjects, type ProjectEntry } from '@/features/projects/hooks';
-import { useNewChatInProject } from "./use-new-chat-in-project";
+import { useChatWorkspace, useProject, useProjectHomePins, useProjects, type ProjectEntry } from '@/features/projects/hooks';
+import { useNewChatInProject, useRunInProject } from "./use-new-chat-in-project";
 import { useRunningServers } from '@/features/engines/hooks';
 import { useHarnesses } from '@/features/settings/hooks';
 import { UsageLimitIsland, useQuotaStore } from "@/features/quota";
@@ -103,10 +104,13 @@ function QuotaButton({ engineId }: { engineId: string | null | undefined }) {
   );
 }
 
+const NO_PROJECT_LABEL = "No project";
+const NEW_CHAT_TITLE = "New chat";
+
 export function App() {
   const [previousView, setPreviousView] = useState<"home" | "chat" | "agents" | "plugins" | "skills">("home");
   const { state: project, choose, startWith } = useProject();
-  const port = project.status === "running" ? project.port : null;
+  const server = project.status === "running" ? project.server : null;
   // Ported from Berd's onboarding gate: Home never requires a project — it's
   // seeded and browsable on its own. Chat and the project-scoped chrome
   // (header title, sidebar's active row, context panel) fall back to "no
@@ -125,9 +129,12 @@ export function App() {
     engines,
     pluginCatalog,
     chats,
+    archive: chatArchive,
     activeSessionId,
     permissionRequest,
     answerPermission,
+    question,
+    answerQuestion,
     modes,
     setMode,
     engineSetup,
@@ -163,7 +170,7 @@ export function App() {
     newChat,
     openChat,
     updateTurnPlan,
-  } = useAcpChat(port);
+  } = useAcpChat(server, { onProjectDeleted: (dir) => forget(dir) });
 
   const { enrichedEngines } = useHarnesses({ engines, onRefreshEngines: refreshEngines });
   const startupSplash = useStartupSplash({
@@ -173,11 +180,14 @@ export function App() {
     hasError: error !== null,
   });
 
-  const { projects, remember, setProjectAgents, setProjectPlugins, archive, unarchive } =
+  const { projects, remember, forget, setProjectAgents, setProjectPlugins, archive, unarchive } =
     useProjects();
   const { pinnedDirs: homeProjectDirs, togglePin: toggleProjectHome } = useProjectHomePins();
   const [archivingProject, setArchivingProject] = useState<ProjectEntry | null>(null);
   const { agents } = useAgents();
+  const chatWorkspace = useChatWorkspace();
+  const chatWorkspaceDir = chatWorkspace.status === "ready" ? chatWorkspace.dir : null;
+  const isChatWorkspaceActive = activeDir !== undefined && activeDir === chatWorkspaceDir;
   const { plugins: skillPlugins } = useSkillPlugins();
   const [createOpen, setCreateOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<
@@ -234,11 +244,11 @@ export function App() {
     setSelectedAgentId(null);
   }, [project, choose, newChat, setView]);
   const openProject = useCallback(
-    (dir: string) => {
+    (dir: string, engineId?: string) => {
       setView("chat");
-      if (dir === activeDir) return;
+      if (dir === activeDir && engineId === undefined) return;
       const entry = projects.find((p) => p.dir === dir);
-      void startWith(dir, entry?.engineId);
+      void startWith(dir, engineId ?? entry?.engineId);
     },
     [activeDir, projects, startWith, setView],
   );
@@ -248,6 +258,13 @@ export function App() {
     startNewChat,
     openProject,
   });
+  const startChatWithoutProject = useCallback(() => {
+    if (!chatWorkspaceDir) {
+      startNewChat();
+      return;
+    }
+    newChatInProject(chatWorkspaceDir);
+  }, [chatWorkspaceDir, newChatInProject, startNewChat]);
   const confirmArchiveProject = useCallback(
     (entry: ProjectEntry) => {
       archive(entry.dir, new Date());
@@ -260,16 +277,57 @@ export function App() {
   const openChatAndShow = useCallback(
     (sessionId: string) => {
       setView("chat");
-      // Already the active chat, either loaded or still arriving — just show it.
-      if (sessionId === activeSessionId && (turns.length > 0 || isOpeningChat)) return;
+      // Already the active chat — loaded, still arriving, or a new chat with nothing sent yet.
+      const isUnsavedDraft = !chats.some((chat) => chat.id === sessionId);
+      if (sessionId === activeSessionId && (turns.length > 0 || isOpeningChat || isUnsavedDraft)) return;
       openChat(sessionId);
     },
-    [openChat, setView, activeSessionId, turns.length, isOpeningChat],
+    [openChat, setView, activeSessionId, turns.length, isOpeningChat, chats],
+  );
+  const runInProject = useRunInProject({ activeDir, connection, openProject });
+  const openChatInProject = useCallback(
+    (sessionId: string, projectDir: string) => runInProject(projectDir, () => openChatAndShow(sessionId)),
+    [runInProject, openChatAndShow],
   );
 
   // Every project dir Weave knows about, so a container started for one of
   // them still shows up (and stays stoppable) from any other session.
-  const knownDirs = useMemo(() => projects.map((p) => p.dir), [projects]);
+  const knownDirs = useMemo(() => {
+    const dirs = projects.map((p) => p.dir).filter((dir) => dir !== chatWorkspaceDir);
+    return chatWorkspaceDir ? [...dirs, chatWorkspaceDir] : dirs;
+  }, [projects, chatWorkspaceDir]);
+  const pickerProjects = useMemo(
+    () => projects.filter((p) => p.dir !== chatWorkspaceDir && (!p.archivedAt || p.dir === activeDir)),
+    [projects, chatWorkspaceDir, activeDir],
+  );
+  const selectedAgent = useMemo(
+    () => (selectedAgentId ? agents.find((agent) => agent.id === selectedAgentId) ?? null : null),
+    [agents, selectedAgentId],
+  );
+  const activeChatTitle = chats.find((chat) => chat.id === activeSessionId)?.title || null;
+  const isDraftChat = activeSessionId !== null && activeSessionId !== "" && activeChatTitle === null && !chats.some((chat) => chat.id === activeSessionId);
+  const projectTitle = isChatWorkspaceActive || !activeDir ? "Weave" : basename(activeDir);
+  const topBarTitle = view === "chat" ? activeChatTitle ?? (isDraftChat ? NEW_CHAT_TITLE : projectTitle) : projectTitle;
+  const archiveProjects = useMemo(
+    () => {
+      const saved = projects
+        .filter((p) => p.dir !== chatWorkspaceDir)
+        .map((p) => ({ dir: p.dir, name: p.name || basename(p.dir), tint: p.tint, archivedAt: p.archivedAt }));
+      return chatWorkspaceDir ? [...saved, { dir: chatWorkspaceDir, name: NO_PROJECT_LABEL }] : saved;
+    },
+    [projects, chatWorkspaceDir],
+  );
+  const { chatsByProject, archivedChatsByProject, requestProjectChats } = chatArchive;
+  const chatCountByProject = useMemo(
+    () =>
+      Object.fromEntries(
+        knownDirs.map((dir) => [dir, (chatsByProject[dir]?.length ?? 0) + (archivedChatsByProject[dir]?.length ?? 0)]),
+      ),
+    [knownDirs, chatsByProject, archivedChatsByProject],
+  );
+  useEffect(() => {
+    if (connection === "ready") requestProjectChats(knownDirs);
+  }, [connection, knownDirs, requestProjectChats]);
   const { servers, stop: stopServer } = useRunningServers(
     turns,
     project.status === "running" ? project.dir : undefined,
@@ -281,10 +339,10 @@ export function App() {
   // the requested one is not installed, and remembering the request would ask
   // for the missing engine again on every reopen.
   useEffect(() => {
-    if (project.status === "running") {
-      remember(project.dir, engineId ?? project.engineId);
-    }
-  }, [project, engineId, remember]);
+    if (project.status !== "running" || chatWorkspace.status === "loading") return;
+    if (project.dir === chatWorkspaceDir) return;
+    remember(project.dir, engineId ?? project.engineId);
+  }, [project, engineId, remember, chatWorkspace.status, chatWorkspaceDir]);
 
   // A model a chosen agent asked for, applied once its config options arrive.
   const pendingAgentModel = useRef<string | null>(null);
@@ -308,7 +366,7 @@ export function App() {
       if (id === currentId && !authRequired) return;
       clearAuth();
       void invoke("save_engine_id", { engineId: id }).catch(console.error);
-      if (activeDir) remember(activeDir, id);
+      if (activeDir && activeDir !== chatWorkspaceDir) remember(activeDir, id);
       if (connection === "ready") switchEngine(id);
       else if (activeDir) void startWith(activeDir, id);
     },
@@ -319,27 +377,21 @@ export function App() {
 
   const handleChatWithAgent = useCallback(
     (agent: Agent) => {
-      const running = project.status === "running";
-      if (!running) {
-        // No project to run the agent against yet — same deferral as
-        // `startNewChat`.
+      if (!chatWorkspaceDir) {
         void choose();
         return;
       }
-      setView("chat");
       pendingAgentModel.current = agent.model ?? null;
-      setSelectedAgentId(agent.id);
-      const currentEngine = project.engineId;
-      // The picked agent rides every prompt of the new chat.
-      setManualActive([agent.id]);
-      if (agent.engineId && agent.engineId !== currentEngine) {
-        void startWith(project.dir, agent.engineId);
-        setTimeout(() => newChat(), 400);
-      } else {
-        newChat();
-      }
+      const needsEngine = agent.engineId !== undefined && !isSameEngine(agent.engineId, activeEngineId);
+      newChatInProject(chatWorkspaceDir, {
+        engineId: needsEngine ? agent.engineId : undefined,
+        afterStart: () => {
+          setSelectedAgentId(agent.id);
+          setManualActive([agent.id]);
+        },
+      });
     },
-    [project, choose, startWith, newChat, setView],
+    [chatWorkspaceDir, choose, isSameEngine, activeEngineId, newChatInProject],
   );
 
   /**
@@ -405,29 +457,6 @@ export function App() {
 
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 
-  const [chatsByProject, setChatsByProject] = usePersistedState<
-    Record<string, ConversationMeta[]>
-  >(
-    "weave:chats-by-project",
-    {
-      "/Users/xyz/Coding/Perp": [
-        { id: "start", title: "@Start", createdAt: Date.now() - 15 * 3600 * 1000, updatedAt: Date.now() - 15 * 3600 * 1000 },
-      ],
-      "/Users/xyz/Coding/Weave": [
-        { id: "hy", title: "hy", createdAt: Date.now() - 7 * 3600 * 1000, updatedAt: Date.now() - 7 * 3600 * 1000 },
-      ],
-    },
-    (v, d) => (v && typeof v === "object" ? (v as Record<string, ConversationMeta[]>) : d),
-  );
-
-  useEffect(() => {
-    if (activeDir && chats.length > 0) {
-      setChatsByProject((prev) => ({
-        ...prev,
-        [activeDir]: chats,
-      }));
-    }
-  }, [activeDir, chats, setChatsByProject]);
 
   const exitPlanMode = useCallback(
     (intent: PlanExitIntent = "accept-edits") => {
@@ -637,6 +666,7 @@ export function App() {
 
   // @-mentioned agents applied to the *next* message only.
   const [mentioned, setMentioned] = useState<Agent[]>([]);
+  const chipAgent = selectedAgent && !mentioned.some((agent) => agent.id === selectedAgent.id) ? selectedAgent : null;
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionItemRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -969,7 +999,7 @@ export function App() {
           data-tauri-drag-region
           className="min-w-0 flex-1 truncate text-[length:var(--text-app-top-bar-title)] text-foreground"
         >
-          {activeDir ? basename(activeDir) : "Weave"}
+          {topBarTitle}
         </span>
         <div className="flex shrink-0 items-center gap-2 text-xs">
           {activeDir && !ready && (
@@ -1008,12 +1038,28 @@ export function App() {
       {/* ── Body: three floating panels over the dot grid ─────────────── */}
       <div className="flex min-h-0 flex-1 gap-[var(--spacing-app-panel-gutter-inline)] px-[var(--spacing-app-panel-gutter-inline)] pt-[var(--spacing-app-panel-gutter-bottom)] pb-[var(--spacing-app-panel-gutter-bottom)]">
         {view === "settings" ? (
-          <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-[var(--radius-app-panel)] border border-app-panel-border bg-[#121214] shadow-[var(--shadow-app-panel)] backdrop-blur-xl">
+          <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-[14px] border border-sidebar-shell-border bg-[#121214] shadow-[var(--sidebar-shell-shadow)] backdrop-blur-xl">
             <SettingsView
               engines={enrichedEngines}
               onRefreshEngines={refreshEngines}
               onBack={closeSettings}
               behaviorSettings={<AutoCompactSetting />}
+              archiveSettings={
+                <ArchiveSettingsView
+                  projects={archiveProjects}
+                  activeDir={activeDir}
+                  chatCountByProject={chatCountByProject}
+                  archivedChatsByProject={archivedChatsByProject}
+                  autoArchiveAfterDays={chatArchive.autoArchiveAfterDays}
+                  chatsLoadState={archiveLoadState(server !== null, chatArchive.isChatListLoaded)}
+                  settingsLoadState={archiveLoadState(server !== null, chatArchive.isArchiveSettingsLoaded)}
+                  onSetAutoArchive={chatArchive.setAutoArchive}
+                  onRestoreProject={unarchive}
+                  onDeleteProject={chatArchive.deleteProject}
+                  onRestoreChat={chatArchive.restoreChat}
+                  onDeleteChat={chatArchive.deleteChat}
+                />
+              }
               onSignInWithEngine={(id) => {
                 closeSettings();
                 handleSelectEngine(id);
@@ -1060,8 +1106,12 @@ export function App() {
               chats={chats}
               chatsByProject={chatsByProject}
               activeSessionId={activeSessionId}
-              onSelectChat={openChatAndShow}
-              onNewChat={startNewChat}
+              onSelectChat={openChatInProject}
+              chatWorkspaceDir={chatWorkspaceDir}
+              draftSessionId={isDraftChat ? activeSessionId : null}
+              onArchiveChat={(chat, projectDir) => chatArchive.archiveChat(chat.id, projectDir)}
+              busySessionId={busy || isCompacting ? activeSessionId : null}
+              onNewChat={startChatWithoutProject}
               onOpenSettings={openSettings}
               view={view}
               onViewChange={setView}
@@ -1200,11 +1250,7 @@ export function App() {
           )}
         >
           {isOpeningChat && <ChatSkeleton />}
-          {!isOpeningChat && turns.length === 0 && ready && (
-            <p className="mt-16 text-center text-sm text-muted-foreground">
-              Send a message to start this chat.
-            </p>
-          )}
+          {!isOpeningChat && turns.length === 0 && ready && <ConversationStart agent={selectedAgent} />}
           {!isOpeningChat && turns.map((turn) =>
             turn.role === "notice" ? (
               turn.compaction ? (
@@ -1314,6 +1360,14 @@ export function App() {
             <PermissionCard
               request={permissionRequest}
               onAnswer={answerPermission}
+            />
+          )}
+
+          {question && (
+            <QuestionCard
+              key={question.request.requestId}
+              state={question}
+              onAnswer={answerQuestion}
             />
           )}
 
@@ -1553,8 +1607,33 @@ export function App() {
                 </div>
               </div>
             )}
-            {mentioned.length > 0 && (
+            {(mentioned.length > 0 || chipAgent) && (
               <div className="flex flex-wrap items-center gap-1.5">
+                {chipAgent && (
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-primary/15 py-0.5 pl-1 pr-1.5 text-xs text-primary">
+                    <AgentAvatar
+                      name={chipAgent.name}
+                      seed={chipAgent.id}
+                      tint={chipAgent.tint}
+                      icon={chipAgent.icon}
+                      character={chipAgent.character}
+                      size="xs"
+                      className="size-4 shrink-0 rounded-full"
+                    />
+                    <span className="font-medium">{chipAgent.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAgentId(null);
+                        setManualActive((cur) => cur.filter((id) => id !== chipAgent.id));
+                      }}
+                      className="flex size-3.5 items-center justify-center rounded-full text-primary/70 hover:bg-primary/20 hover:text-primary"
+                      aria-label={`Remove ${chipAgent.name}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
                 {mentioned.map((a) => (
                   <span
                     key={a.id}
@@ -1714,9 +1793,7 @@ export function App() {
                 }
               }}
               placeholder={
-                selectedAgentId
-                  ? `Chat with ${agents.find((a) => a.id === selectedAgentId)?.name || "Agent"}…`
-                  : `Chat with ${ready && engineLabel ? engineLabel : "Agent"}…`
+                `Chat with ${selectedAgent?.name ?? (ready && engineLabel ? engineLabel : "Agent")}, @ for agents or files`
               }
               rows={1}
               disabled={!ready}
@@ -1754,17 +1831,19 @@ export function App() {
                       type="button"
                       size="sm"
                       leftIcon={
-                        <DefaultProjectGlyphIcon
-                          color={activeProjectEntry?.tint}
-                          className="size-4"
-                        />
+                        isChatWorkspaceActive ? (
+                          <span className="size-2.5 rounded-full bg-muted-foreground/60" aria-hidden />
+                        ) : (
+                          <DefaultProjectGlyphIcon color={activeProjectEntry?.tint} className="size-4" />
+                        )
                       }
                       rightIcon={<ChevronDownIcon className="size-3.5 opacity-50" />}
                       className="chat-composer-selector-trigger"
                     >
                       <span className="font-medium truncate max-w-40">
-                        {activeProjectEntry?.name ||
-                          (activeDir ? basename(activeDir) : "Weave")}
+                        {isChatWorkspaceActive
+                          ? NO_PROJECT_LABEL
+                          : activeProjectEntry?.name || (activeDir ? basename(activeDir) : "Weave")}
                       </span>
                     </ComposerActionButton>
                   </PopoverTrigger>
@@ -1777,9 +1856,32 @@ export function App() {
                       Projects
                     </div>
                     <div className="space-y-0.5">
-                      {projects.map((p) => {
+                      {chatWorkspaceDir && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProjectPickerOpen(false);
+                            if (!isChatWorkspaceActive) openProject(chatWorkspaceDir);
+                          }}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors",
+                            isChatWorkspaceActive
+                              ? "bg-accent font-medium text-foreground"
+                              : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                          )}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="grid size-4 shrink-0 place-items-center" aria-hidden>
+                              <span className="size-2.5 rounded-full bg-muted-foreground/60" />
+                            </span>
+                            <span className="truncate">{NO_PROJECT_LABEL}</span>
+                          </div>
+                          {isChatWorkspaceActive && <CheckIcon className="ml-2 size-4 shrink-0 text-muted-foreground" />}
+                        </button>
+                      )}
+                      {pickerProjects.map((p) => {
                         const isSelected = p.dir === activeDir;
-                        const pLabel = p.name || basename(p.dir);
+                        const pLabel = p.archivedAt ? `${p.name || basename(p.dir)} (archived)` : p.name || basename(p.dir);
                         return (
                           <button
                             key={p.dir}

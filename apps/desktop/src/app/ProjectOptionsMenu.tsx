@@ -1,20 +1,38 @@
 import { ArchiveIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon } from "lucide-react";
 import {
+  ContextMenuContent,
+  ContextMenuItem,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui";
 
-export interface ProjectOptionsMenuProps {
-  label: string;
+export interface ProjectMenuActions {
   isOnHome: boolean;
   onToggleHome: () => void;
   onEdit: () => void;
   onArchive: () => void;
 }
 
-export function ProjectOptionsMenu({ label, isOnHome, onToggleHome, onEdit, onArchive }: ProjectOptionsMenuProps) {
+export interface ProjectOptionsMenuProps extends ProjectMenuActions {
+  label: string;
+}
+
+function menuEntries({ isOnHome, onToggleHome, onEdit, onArchive }: ProjectMenuActions) {
+  return [
+    {
+      key: "home",
+      icon: isOnHome ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />,
+      label: isOnHome ? "Remove from Home" : "Add to Home",
+      onSelect: onToggleHome,
+    },
+    { key: "edit", icon: <PencilIcon className="size-3.5" />, label: "Edit", onSelect: onEdit },
+    { key: "archive", icon: <ArchiveIcon className="size-3.5" />, label: "Archive", onSelect: onArchive },
+  ];
+}
+
+export function ProjectOptionsMenu({ label, ...actions }: ProjectOptionsMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -27,19 +45,26 @@ export function ProjectOptionsMenu({ label, isOnHome, onToggleHome, onEdit, onAr
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={6}>
-        <DropdownMenuItem onClick={onToggleHome}>
-          {isOnHome ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
-          {isOnHome ? "Remove from Home" : "Add to Home"}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onEdit}>
-          <PencilIcon className="size-3.5" />
-          Edit
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onArchive}>
-          <ArchiveIcon className="size-3.5" />
-          Archive
-        </DropdownMenuItem>
+        {menuEntries(actions).map((entry) => (
+          <DropdownMenuItem key={entry.key} onClick={entry.onSelect}>
+            {entry.icon}
+            {entry.label}
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+export function ProjectContextMenuContent(actions: ProjectMenuActions) {
+  return (
+    <ContextMenuContent>
+      {menuEntries(actions).map((entry) => (
+        <ContextMenuItem key={entry.key} onClick={entry.onSelect}>
+          {entry.icon}
+          {entry.label}
+        </ContextMenuItem>
+      ))}
+    </ContextMenuContent>
   );
 }

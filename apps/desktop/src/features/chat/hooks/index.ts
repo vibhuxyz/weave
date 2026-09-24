@@ -1,4 +1,13 @@
 export { useAcpChat } from "./useAcpChat";
+export { hasMissingRequired, toAnswerPayload } from "./question";
+export type {
+  QuestionAnswers,
+  QuestionField,
+  QuestionFormValue,
+  QuestionFormValues,
+  QuestionNotice,
+  QuestionState,
+} from "./question";
 export type {
   EngineSetupPrompt,
   SetupConsent,
@@ -11,6 +20,7 @@ export type {
   ChatTurn,
   ConnectionState,
   ConversationMeta,
+  ArchivedChatMeta,
   ToolDiff,
   ToolEntry,
   TurnCheckpoint,

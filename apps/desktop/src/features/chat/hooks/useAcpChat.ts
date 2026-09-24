@@ -32,6 +32,9 @@ import {
   type CompactionCapabilities,
 } from "@/features/chat/compaction";
 import { buildHistoryArchive, restoreArchivedTurns } from "./acpChat/history-archive";
+import { useArchiveChannel } from "./acpChat/use-archive-channel";
+import type { ArchiveChannelOptions } from "./acpChat/use-archive-channel";
+import { useQuestionChannel } from "./question";
 import {
   applyCompactionSettled,
   applyCompactionStarted,
@@ -56,6 +59,7 @@ import type {
 } from "./acpChat/types";
 
 export type {
+  ArchivedChatMeta,
   ChatImageAttachment,
   ChatTurn,
   ConnectionState,
@@ -84,6 +88,18 @@ const NEW_CHAT_PENDING = "pending-new-chat";
 
 const CONNECTION_LOST_DURING_COMPACTION = "Connection to the engine server closed during compaction.";
 const PROMPT_WITHDRAWN_WITHOUT_DRAFT = "Compaction was cancelled, so your message was not sent. Send it again when ready.";
+
+export interface ChatServerEndpoint {
+  readonly port: number;
+  readonly token: string;
+}
+
+const WEAVE_PROTOCOL = "weave.v1";
+const TOKEN_PROTOCOL_PREFIX = "weave.token.";
+
+function openServerSocket(port: number, token: string): WebSocket {
+  return new WebSocket(`ws://127.0.0.1:${port}`, [WEAVE_PROTOCOL, `${TOKEN_PROTOCOL_PREFIX}${token}`]);
+}
 
 export interface EngineSetupPrompt {
   readonly engineId: string;
@@ -129,11 +145,15 @@ function sealTurns(turns: readonly ChatTurn[], endedAt: number): ChatTurn[] | nu
  * Owns the WebSocket to the ACP server and folds `session/update`
  * notifications into a transcript the UI can render.
  *
- * Pass `null` for `port` while no project is chosen — the hook stays idle
+ * Pass `null` for `server` while no project is chosen — the hook stays idle
  * rather than dialling a server that is not running yet.
  */
-export function useAcpChat(port: number | null) {
+export function useAcpChat(server: ChatServerEndpoint | null, options: ArchiveChannelOptions = {}) {
+  const port = server?.port ?? null;
+  const token = server?.token ?? null;
   const socketRef = useRef<WebSocket | null>(null);
+  const archive = useArchiveChannel(socketRef, options);
+  const questionChannel = useQuestionChannel(socketRef);
   const [state, setState] = useState<ConnectionState>("idle");
   const [cwd, setCwd] = useState<string | null>(null);
   const [engineId, setEngineId] = useState<string | null>(null);
@@ -512,6 +532,8 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     setError(null);
     setResumed(false);
     setChats([]);
+    archive.reset();
+    questionChannel.reset();
     setPermissionRequest(null);
     setModes(null);
     setEngineSetup(null);
@@ -526,7 +548,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     pendingOpenRef.current = null;
     setOpeningSessionId(null);
 
-    if (port == null) {
+    if (port == null || token == null) {
       setState("idle");
       return;
     }
@@ -546,7 +568,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     const connect = () => {
       if (disposed) return;
       attempt += 1;
-      const next = new WebSocket(`ws://127.0.0.1:${port}`);
+      const next = openServerSocket(port, token);
       socket = next;
       socketRef.current = next;
 
@@ -558,6 +580,8 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
 
       next.onmessage = (event) => {
         const message = JSON.parse(String(event.data)) as ServerMessage;
+        if (archive.handleMessage(message)) return;
+        if (questionChannel.handleMessage(message)) return;
         switch (message.type) {
           case "ready":
             setState("ready");
@@ -987,7 +1011,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       clearTimeout(retry);
       socket?.close();
     };
-  }, [applyUpdate, withAssistantTurn, port]);
+  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset]);
 
   const latestUsage = latestContextUsage(turns);
   const contextUsed = latestUsage?.contextTokens;
@@ -1058,6 +1082,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           promptId,
           autoCompactThreshold,
           persona: opts?.persona,
+          personaIds: personasRef.current?.map((persona) => persona.id),
           plugins: opts?.plugins?.length ? opts.plugins : undefined,
           images: images?.map((image) => ({
             data: image.base64,
@@ -1290,9 +1315,12 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     engines,
     pluginCatalog,
     chats,
+    archive,
     activeSessionId,
     permissionRequest,
     answerPermission,
+    question: questionChannel.question,
+    answerQuestion: questionChannel.answer,
     modes,
     setMode,
     engineSetup,

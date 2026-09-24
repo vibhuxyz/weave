@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "packageManager": "bun@1.4.2",
   "scripts": {
@@ -14,8 +14,6 @@
     "tauri": "bun run --filter desktop tauri",
     "build": "bun run --filter desktop build",
     "build:app": "bun run --filter desktop tauri build && cp -a apps/desktop/src-tauri/target/release/bundle/macos/*.app ./",
-    "weave": "INIT_CWD=$PWD bun run --filter @weave/cli start",
-    "eval": "INIT_CWD=$PWD bun run --filter @weave/cli start eval",
     "typecheck": "bun run --workspaces typecheck"
   },
   "trustedDependencies": [

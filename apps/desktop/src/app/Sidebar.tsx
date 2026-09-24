@@ -8,9 +8,10 @@ import {
 } from "lucide-react";
 import { DefaultProjectGlyphIcon } from "@/features/projects/ui";
 import { cn } from "@/shared/lib";
+import { usePersistedState } from "@/shared/hooks";
 import type { ConversationMeta } from "@/features/chat/hooks";
 import type { ProjectEntry } from "@/features/projects/hooks";
-import { ChatRow } from "./ChatRow";
+import { ProjectChatList } from "./ProjectChatList";
 import { ProjectRow } from "./ProjectRow";
 
 export type SidebarView = "home" | "chat" | "agents" | "plugins" | "skills" | "settings";
@@ -26,10 +27,13 @@ export interface SidebarProps {
   homeProjectDirs: ReadonlySet<string>;
   onToggleProjectHome: (dir: string) => void;
   chats: ConversationMeta[];
-  chatsByProject?: Record<string, ConversationMeta[]>;
-  nonProjectChats?: ConversationMeta[];
+  chatsByProject: Record<string, ConversationMeta[]>;
+  chatWorkspaceDir: string | null;
+  draftSessionId: string | null;
   activeSessionId: string | null;
-  onSelectChat: (sessionId: string) => void;
+  onSelectChat: (sessionId: string, projectDir: string) => void;
+  onArchiveChat: (chat: ConversationMeta, projectDir: string) => void;
+  busySessionId: string | null;
   onNewChat: () => void;
   onOpenSettings?: () => void;
   view: SidebarView;
@@ -77,41 +81,23 @@ function SectionAction({
   );
 }
 
+const COLLAPSED_PROJECTS_KEY = "weave:sidebar-collapsed-projects";
+const NEW_CHAT_TITLE = "New chat";
+
 function findChatsForProject(
   entry: ProjectEntry,
-  chatsByProject: Record<string, ConversationMeta[]> | undefined,
+  chatsByProject: Record<string, ConversationMeta[]>,
   activeProjectDir: string | undefined,
   currentChats: ConversationMeta[],
 ): ConversationMeta[] {
-  if (!chatsByProject) {
-    return entry.dir === activeProjectDir ? currentChats : [];
-  }
-  const byDir = chatsByProject[entry.dir];
-  if (byDir) return byDir;
-  if (entry.name) {
-    const byName = chatsByProject[entry.name];
-    if (byName) return byName;
-  }
+  if (entry.dir === activeProjectDir) return currentChats;
+  return chatsByProject[entry.dir] ?? [];
+}
 
-  const lowerDir = entry.dir.toLowerCase();
-  const lowerName = entry.name ? entry.name.toLowerCase() : "";
-
-  const matchedKey = Object.keys(chatsByProject).find((k) => {
-    const lowerKey = k.toLowerCase();
-    return (
-      lowerKey === lowerDir ||
-      (lowerName.length > 0 && lowerKey === lowerName) ||
-      lowerDir.endsWith(`/${lowerKey}`) ||
-      (lowerName.length > 0 && lowerKey.endsWith(`/${lowerName}`))
-    );
-  });
-
-  if (matchedKey) {
-    const matchedChats = chatsByProject[matchedKey];
-    if (matchedChats) return matchedChats;
-  }
-
-  return entry.dir === activeProjectDir ? currentChats : [];
+function withDraft(chats: ConversationMeta[], draftSessionId: string | null): ConversationMeta[] {
+  if (!draftSessionId || chats.some((chat) => chat.id === draftSessionId)) return chats;
+  const startedAt = Date.now();
+  return [{ id: draftSessionId, title: NEW_CHAT_TITLE, createdAt: startedAt, updatedAt: startedAt }, ...chats];
 }
 
 export function Sidebar({
@@ -126,16 +112,32 @@ export function Sidebar({
   onToggleProjectHome,
   chats,
   chatsByProject,
-  nonProjectChats,
+  chatWorkspaceDir,
+  draftSessionId,
   activeSessionId,
   onSelectChat,
+  onArchiveChat,
+  busySessionId,
   onNewChat,
   onOpenSettings,
   view,
   onViewChange,
 }: SidebarProps) {
-  const standaloneChats = nonProjectChats || (chatsByProject && chatsByProject[""]) || [];
-  const visibleProjects = projects.filter((entry) => !entry.archivedAt);
+  const isWorkspaceActive = chatWorkspaceDir !== null && activeProjectDir === chatWorkspaceDir;
+  const workspaceChats = isWorkspaceActive ? chats : chatWorkspaceDir ? (chatsByProject[chatWorkspaceDir] ?? []) : [];
+  const standaloneChats = withDraft(workspaceChats, isWorkspaceActive ? draftSessionId : null);
+  const visibleProjects = projects.filter((entry) => !entry.archivedAt && entry.dir !== chatWorkspaceDir);
+  const [collapsedDirs, setCollapsedDirs] = usePersistedState<string[]>(
+    COLLAPSED_PROJECTS_KEY,
+    [],
+    (value, defaults) => (Array.isArray(value) ? value.filter((dir): dir is string => typeof dir === "string") : defaults),
+  );
+  const toggleExpanded = (dir: string) =>
+    setCollapsedDirs((current) => {
+      const projectDirs = new Set(projects.map((project) => project.dir));
+      const known = current.filter((entry) => projectDirs.has(entry));
+      return known.includes(dir) ? known.filter((entry) => entry !== dir) : [...known, dir];
+    });
 
   return (
     <aside className="flex h-fit min-h-[710px] max-h-[calc(100vh-2.5rem)] w-full shrink-0 flex-col overflow-hidden rounded-[14px] border border-sidebar-shell-border bg-sidebar-shell p-3 shadow-[var(--sidebar-shell-shadow)]">
@@ -185,23 +187,24 @@ export function Sidebar({
             </button>
           )}
           {visibleProjects.map((entry) => {
-            const projectChats = findChatsForProject(
-              entry,
-              chatsByProject,
-              activeProjectDir,
-              chats,
-            );
+            const projectChats = findChatsForProject(entry, chatsByProject, activeProjectDir, chats);
+            const chatsWithDraft = entry.dir === activeProjectDir ? withDraft(projectChats, draftSessionId) : projectChats;
 
             return (
               <ProjectRow
                 key={entry.dir}
                 entry={entry}
                 active={entry.dir === activeProjectDir}
+                isExpanded={!collapsedDirs.includes(entry.dir)}
+                onToggleExpanded={toggleExpanded}
                 isOnHome={homeProjectDirs.has(entry.dir)}
-                chats={projectChats}
+                chats={chatsWithDraft}
                 activeSessionId={activeSessionId}
                 onSelectProject={onSelectProject}
                 onSelectChat={onSelectChat}
+                onArchiveChat={onArchiveChat}
+                busySessionId={busySessionId}
+                draftSessionId={draftSessionId}
                 onNewChat={onNewChatInProject}
                 onEditProject={onEditProject}
                 onArchiveProject={onArchiveProject}
@@ -222,15 +225,18 @@ export function Sidebar({
             <span>Start a chat</span>
           </button>
 
-          {standaloneChats.map((chat) => (
-            <ChatRow
-              key={chat.id}
-              title={chat.title || "New chat"}
-              updatedAt={chat.updatedAt}
-              active={chat.id === activeSessionId}
-              onClick={() => onSelectChat(chat.id)}
+          {chatWorkspaceDir && (
+            <ProjectChatList
+              chats={standaloneChats}
+              activeSessionId={activeSessionId}
+              onOpenChat={(sessionId) => onSelectChat(sessionId, chatWorkspaceDir)}
+              onArchiveChat={(chat) => onArchiveChat(chat, chatWorkspaceDir)}
+              busySessionId={isWorkspaceActive ? busySessionId : null}
+              draftSessionId={isWorkspaceActive ? draftSessionId : null}
+              className="pl-0"
+              emptyLabel={null}
             />
-          ))}
+          )}
         </div>
       </div>
 

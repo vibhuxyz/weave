@@ -118,7 +118,7 @@ export function TestRunBlock({
       >
         <Chip
           icon={
-            block.status === "passed" || block.status === "recovered"
+            block.status === "passed" || block.status === "recovered" || block.status === "completed"
               ? CheckIcon
               : block.status === "failed"
                 ? CircleIcon
@@ -133,12 +133,14 @@ export function TestRunBlock({
                 ? "critical"
                 : block.status === "recovered"
                   ? "warn"
-                  : "running"
+                  : block.status === "completed"
+                    ? "neutral"
+                    : "running"
           }
         />
         <Chip
           icon={LayersIcon}
-          label={`${block.steps.length} step${block.steps.length === 1 ? "" : "s"}`}
+          label={`${block.steps.length} command${block.steps.length === 1 ? "" : "s"}`}
         />
         <Chip
           icon={TriangleAlertIcon}
@@ -241,7 +243,7 @@ export function TestRunBlock({
             )}
           </div>
           <span className="text-agent-text-faint text-xs">
-            {failing} failing · {block.steps.length} steps
+            {failing} failing · {block.steps.length} commands
             {totalMs > 0 && ` · ${formatDuration(totalMs)}`}
           </span>
         </div>

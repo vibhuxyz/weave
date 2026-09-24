@@ -1,4 +1,4 @@
-import { runStopSequence, weaveDirFor } from "@weave/core";
+import { runStopSequence } from "@weave/core";
 import { summarizeCheckpoint } from "../chat/index.ts";
 import { errorMessage } from "../shared/index.ts";
 import type { DesktopSessionManager } from "../session/index.ts";
@@ -14,20 +14,21 @@ export type CheckpointTask = (
 export interface CheckpointTaskDeps {
   readonly sessionMgr: DesktopSessionManager;
   readonly projectDir: string;
+  readonly dataDir: string;
   readonly continuationTaskId: string;
   readonly ledger: Ledger;
   readonly tasksStore: TasksStore;
 }
 
 export function createCheckpointTask(deps: CheckpointTaskDeps): CheckpointTask {
-  const { sessionMgr, projectDir, continuationTaskId, ledger, tasksStore } = deps;
+  const { sessionMgr, projectDir, dataDir, continuationTaskId, ledger, tasksStore } = deps;
   return async (reason, cancel) => {
     if (!sessionMgr.taskCreated) {
       await cancel?.();
       return null;
     }
     const { checkpoint } = await runStopSequence({
-      weaveDir: weaveDirFor(projectDir),
+      weaveDir: dataDir,
       cwd: projectDir,
       taskId: continuationTaskId,
       runId: ledger.runId,

@@ -1,5 +1,7 @@
 import type {
   AuthMethod,
+  CreateElicitationRequest,
+  CreateElicitationResponse,
   SessionConfigOption,
   SessionUpdate,
   TaskContract,
@@ -7,6 +9,12 @@ import type {
 } from "@weave/protocol";
 import type { PermissionPolicy } from "../permissions/index.ts";
 import type { SessionModes } from "./modes.ts";
+
+export type FormElicitationRequest = Extract<CreateElicitationRequest, { mode: "form" }>;
+
+export type QuestionAsker = (
+  request: FormElicitationRequest,
+) => Promise<CreateElicitationResponse>;
 
 export interface PromptOptions {
   readonly stallTimeoutMs?: number;
@@ -41,6 +49,7 @@ export interface OpenSessionOptions {
   task: TaskContract;
   sink: SessionSink;
   policy?: PermissionPolicy;
+  askUser?: QuestionAsker;
   resumeSessionId?: string | null;
   engineId?: string;
   sandboxed?: boolean;

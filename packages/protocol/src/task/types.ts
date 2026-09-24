@@ -1,6 +1,11 @@
 import type { Verification, VerificationRung } from "../verification/index.ts";
 import type { TaskPolicy } from "./policy.ts";
 
+export interface TaskDependency {
+  task: string;
+  requiredOutputs: string[];
+}
+
 export interface TaskContract {
   id: string;
   prompt: string;
@@ -8,7 +13,7 @@ export interface TaskContract {
   allowedPaths?: string[];
   policy?: TaskPolicy;
   readOnlyPaths?: string[];
-  dependsOn?: string[];
+  dependencies?: TaskDependency[];
   verify?: string;
   sandboxed?: boolean;
   verifyRung?: VerificationRung;

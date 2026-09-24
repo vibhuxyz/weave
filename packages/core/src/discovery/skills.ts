@@ -9,7 +9,6 @@ export interface SkillEntry {
   appliesTo?: string[];
 }
 
-const SKILL_DIRS = [".weave/skills", ".agents/skills"];
 const FRONTMATTER_LINE_PATTERN = /^([A-Za-z0-9_-]+):\s*(.*)$/;
 const LIST_ITEM_PATTERN = /^\s*-\s+/;
 const QUOTED_VALUE_PATTERN = /^["']|["']$/g;
@@ -89,16 +88,16 @@ async function readSkill(dir: string): Promise<SkillEntry | null> {
   };
 }
 
-export async function discoverSkills(projectRoot: string): Promise<SkillEntry[]> {
+export async function discoverSkills(skillDirs: readonly string[]): Promise<SkillEntry[]> {
   const found: SkillEntry[] = [];
   const seen = new Set<string>();
-  for (const rel of SKILL_DIRS) {
-    const base = join(projectRoot, rel);
+  for (const base of skillDirs) {
     let slugs: string[];
     try {
       slugs = (await readdir(base, { withFileTypes: true }))
         .filter((e) => e.isDirectory())
-        .map((e) => e.name);
+        .map((e) => e.name)
+        .sort();
     } catch (error) {
       if (isNotFound(error)) continue;
       throw error;

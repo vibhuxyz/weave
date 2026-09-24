@@ -140,6 +140,50 @@ export type WeaveEvent =
       branch: string;
       baseCommit: string;
     })
-  | (BaseEvent & { type: "worktree.removed"; taskId: string; path: string });
+  | (BaseEvent & { type: "worktree.removed"; taskId: string; path: string })
+  | (BaseEvent & {
+      type: "worktree.installed";
+      taskId: string;
+      status: "ok" | "failed" | "skipped";
+      command: string | null;
+      durationMs: number;
+      detail: string;
+    })
+  | (BaseEvent & { type: "worktree.harvested"; taskId: string; commit: string | null; files: string[] })
+  | (BaseEvent & { type: "task.skipped"; taskId: string; reason: string })
+  | (BaseEvent & { type: "contract.changed"; version: number; requestedBy: string; affects: string[]; rerun: string[]; commit: string })
+  | (BaseEvent & { type: "contract.change.rejected"; requestedBy: string; reason: string })
+  | (BaseEvent & {
+      type: "plan.created";
+      kind: "existing" | "greenfield";
+      mode: "sequential" | "parallel";
+      reason: string;
+      concurrency: number;
+      tasks: { id: string; title: string; allowedPaths: string[]; dependsOn: string[] }[];
+    })
+  | (BaseEvent & {
+      type: "pool.task.settled";
+      taskId: string;
+      status: "ok" | "failed" | "cancelled";
+      reason: string | null;
+      installMs: number;
+      agentMs: number;
+      wallMs: number;
+    })
+  | (BaseEvent & {
+      type: "merge.finished";
+      taskId: string;
+      status: "merged" | "empty" | "conflict" | "merge-error" | "verify-failed";
+      commit: string | null;
+      rungs: VerificationRung[];
+      detail: string;
+    })
+  | (BaseEvent & {
+      type: "integration.finished";
+      status: "ok" | "failed" | "unverified";
+      branch: string;
+      head: string;
+      brokenBy: string | null;
+    });
 
 export type WeaveEventType = WeaveEvent["type"];

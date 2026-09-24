@@ -8,7 +8,6 @@ export interface RuleEntry {
   sourcePath: string;
 }
 
-const RULE_DIRS = [".weave/rules", ".agents/rules"];
 const FRONTMATTER_NAME_PATTERN = /^name:\s*(.+)$/m;
 const QUOTED_VALUE_PATTERN = /^["']|["']$/g;
 
@@ -43,16 +42,16 @@ async function readRule(path: string): Promise<RuleEntry | null> {
   };
 }
 
-export async function discoverRules(projectRoot: string): Promise<RuleEntry[]> {
+export async function discoverRules(ruleDirs: readonly string[]): Promise<RuleEntry[]> {
   const found: RuleEntry[] = [];
   const seen = new Set<string>();
-  for (const rel of RULE_DIRS) {
-    const dir = join(projectRoot, rel);
+  for (const dir of ruleDirs) {
     let files: string[];
     try {
       files = (await readdir(dir, { withFileTypes: true }))
         .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".md"))
-        .map((entry) => entry.name);
+        .map((entry) => entry.name)
+        .sort();
     } catch (error) {
       if (isNotFound(error)) continue;
       throw error;

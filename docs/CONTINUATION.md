@@ -625,6 +625,10 @@ tasks; one task can span several conversations. Deciding they are the same is
 simpler now and possibly wrong at MVP.2, when the planner emits many tasks from
 one prompt.
 
+> **Decided 2026-09-24: a chat owns runs of tasks.** A task is its own identity.
+> One chat message can start one run (`runPlan`), and that run holds N tasks, each
+> with its own worktree and ledger events keyed by `taskId`.
+
 ---
 
 ## 13. Exit criteria

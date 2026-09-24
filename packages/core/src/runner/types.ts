@@ -14,6 +14,7 @@ export interface RunTaskOptions {
   verifyAfter?: boolean;
   onEvent?: (event: WeaveEvent) => void;
   isolate?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface RunTaskOutcome {
@@ -27,6 +28,7 @@ export interface RunTaskOutcome {
   contextSize?: number;
   turnUsage?: Usage | null;
   worktree?: Worktree | null;
+  finalMessage: string;
 }
 
 export interface RunTaskContext {

@@ -14,6 +14,7 @@ import type {
   SessionUpdate,
   Usage,
 } from "@weave/protocol";
+import type { QuestionField, QuestionNotice } from "./question-types.ts";
 
 export type { ConversationMeta, GitStatus, GitChange };
 
@@ -49,6 +50,7 @@ export type ClientMessage =
       readonly promptId?: string;
       readonly autoCompactThreshold?: number;
       readonly persona?: string;
+      readonly personaIds?: readonly string[];
       readonly plugins?: readonly ActivePluginRef[];
       readonly images?: readonly PromptImageData[];
     }
@@ -80,8 +82,19 @@ export type ClientMessage =
       /** `null` rejects: the user declined, or closed the card. */
       readonly optionId: string | null;
     }
+  | {
+      readonly type: "question-response";
+      readonly requestId: string;
+      readonly answers: Readonly<Record<string, unknown>> | null;
+    }
   | { readonly type: "refresh-plugins" }
   | { readonly type: "compact"; readonly operationId: string }
+  | { readonly type: "list-project-chats"; readonly projectDirs: readonly string[] }
+  | { readonly type: "delete-chat"; readonly sessionId: string; readonly projectDir: string }
+  | { readonly type: "archive-chat"; readonly sessionId: string; readonly projectDir: string }
+  | { readonly type: "restore-chat"; readonly sessionId: string; readonly projectDir: string }
+  | { readonly type: "delete-project"; readonly projectDir: string }
+  | { readonly type: "set-auto-archive"; readonly afterDays: number | null }
   | {
       readonly type: "save-history";
       readonly sessionId: string;
@@ -104,6 +117,10 @@ export interface EngineEntry {
   readonly label: string;
   readonly installed: boolean;
   readonly authState: EngineAuthState;
+}
+
+export interface ArchivedChatMeta extends ConversationMeta {
+  readonly archivedAt: number | null;
 }
 
 export interface ContextSnapshot {
@@ -179,6 +196,15 @@ export type ServerMessage =
       readonly options: readonly PermissionOption[];
     }
   | { readonly type: "permission-cancelled"; readonly requestId: string }
+  | {
+      readonly type: "question-request";
+      readonly requestId: string;
+      readonly message: string;
+      readonly fields: readonly QuestionField[];
+      readonly notices: readonly QuestionNotice[];
+    }
+  | { readonly type: "question-invalid"; readonly requestId: string; readonly message: string }
+  | { readonly type: "question-closed"; readonly requestId: string }
   | { readonly type: "modes"; readonly modes: SessionModes | null }
   | {
       readonly type: "policy-block";
@@ -219,6 +245,16 @@ export type ServerMessage =
   | { readonly type: "engines"; readonly engines: readonly EngineEntry[] }
   | { readonly type: "plugin-catalog"; readonly plugins: readonly NormalizedPlugin[] }
   | { readonly type: "chats"; readonly chats: readonly ConversationMeta[]; readonly activeSessionId: string | null }
+  | { readonly type: "chat-deleted"; readonly sessionId: string; readonly projectDir: string }
+  | { readonly type: "chat-archived"; readonly sessionId: string; readonly projectDir: string }
+  | { readonly type: "chat-restored"; readonly sessionId: string; readonly projectDir: string }
+  | { readonly type: "project-deleted"; readonly projectDir: string; readonly removedChatCount: number }
+  | { readonly type: "archive-settings"; readonly autoArchiveAfterDays: number | null }
+  | {
+      readonly type: "project-chats";
+      readonly chatsByProject: Readonly<Record<string, readonly ConversationMeta[]>>;
+      readonly archivedChatsByProject: Readonly<Record<string, readonly ArchivedChatMeta[]>>;
+    }
   | { readonly type: "files"; readonly query: string; readonly files: readonly string[] }
   | { readonly type: "reset" }
   | {

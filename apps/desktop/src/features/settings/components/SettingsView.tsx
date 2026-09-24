@@ -14,6 +14,7 @@ interface SettingsViewProps {
   readonly onBack?: () => void;
   readonly onSignInWithEngine?: (engineId: string) => void;
   readonly behaviorSettings?: ReactNode;
+  readonly archiveSettings?: ReactNode;
 }
 
 const noop = () => {};
@@ -25,6 +26,7 @@ export function SettingsView({
   onBack = noop,
   onSignInWithEngine,
   behaviorSettings,
+  archiveSettings,
 }: SettingsViewProps) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab);
   const {
@@ -60,38 +62,42 @@ export function SettingsView({
         onBack={onBack}
       />
 
-      <main className="flex-1 overflow-y-auto">
-        {activeTab === "ai-providers" ? (
-          <AiProvidersView
-            isInstalled={isHarnessInstalled}
-            isAuthenticated={isHarnessAuthenticated}
-            isUsable={isHarnessUsable}
-            getVersion={getHarnessVersion}
-            getAuthMethods={getHarnessAuthMethods}
-            installingId={installingId}
-            activeLog={activeLog}
-            refreshing={refreshing}
-            errorMessage={errorMessage}
-            onRefresh={refresh}
-            onSetup={handleSetup}
-            onInstall={installHarness}
-            onRemove={removeHarness}
-          />
-        ) : activeTab === "behavior" && behaviorSettings ? (
-          <div className="mx-auto flex max-w-4xl flex-col gap-6 px-10 py-12">
-            <h1 className="text-2xl font-semibold text-white">Behavior</h1>
-            {behaviorSettings}
-          </div>
-        ) : (
-          <div className="flex flex-col py-12 px-10 max-w-4xl mx-auto">
-            <h1 className="text-2xl font-semibold capitalize text-white">
-              {activeTab.replace("-", " ")}
-            </h1>
-            <p className="mt-2 text-sm text-zinc-400">
-              Configure your {activeTab.replace("-", " ")} preferences.
-            </p>
-          </div>
-        )}
+      <main className="flex min-w-0 flex-1 p-3">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-border bg-card/30">
+          {activeTab === "ai-providers" ? (
+            <AiProvidersView
+              isInstalled={isHarnessInstalled}
+              isAuthenticated={isHarnessAuthenticated}
+              isUsable={isHarnessUsable}
+              getVersion={getHarnessVersion}
+              getAuthMethods={getHarnessAuthMethods}
+              installingId={installingId}
+              activeLog={activeLog}
+              refreshing={refreshing}
+              errorMessage={errorMessage}
+              onRefresh={refresh}
+              onSetup={handleSetup}
+              onInstall={installHarness}
+              onRemove={removeHarness}
+            />
+          ) : activeTab === "archive" && archiveSettings ? (
+            archiveSettings
+          ) : activeTab === "behavior" && behaviorSettings ? (
+            <div className="mx-auto flex max-w-4xl flex-col gap-6 px-10 py-12">
+              <h1 className="text-2xl font-semibold text-white">Behavior</h1>
+              {behaviorSettings}
+            </div>
+          ) : (
+            <div className="flex flex-col py-12 px-10 max-w-4xl mx-auto">
+              <h1 className="text-2xl font-semibold capitalize text-white">
+                {activeTab.replace("-", " ")}
+              </h1>
+              <p className="mt-2 text-sm text-zinc-400">
+                Configure your {activeTab.replace("-", " ")} preferences.
+              </p>
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );

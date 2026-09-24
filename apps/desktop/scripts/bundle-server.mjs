@@ -34,9 +34,7 @@ const result = await build({
   bundle: true,
   platform: "node",
   format: "esm",
-  // Match the floor in the root manifest's `engines.node`, minus the type
-  // stripping we no longer need. Anything older than this is not supported.
-  target: "node18",
+  target: "node22.13",
   sourcemap: true,
   // `ws` reaches for these two native accelerators and works fine without
   // them. Bundling them would pull a compiler into the build for no gain.
