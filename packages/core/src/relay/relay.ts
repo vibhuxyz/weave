@@ -29,6 +29,10 @@ async function promptFor(options: RelayOptions, state: TaskState | null): Promis
   return context.prompt;
 }
 
+function withBriefing(prompt: string, briefing: string | undefined): string {
+  return briefing ? `${prompt}\n\n${briefing}` : prompt;
+}
+
 function finish(status: RelayResult["status"], attempts: readonly AttemptRecord[], state: TaskState, last: AttemptOutcome | null): RelayResult {
   return { status, attempts, state, finalMessage: last?.finalMessage ?? "", error: last?.error ?? null };
 }
@@ -43,7 +47,7 @@ export async function relayTask(options: RelayOptions): Promise<RelayResult> {
     const engineId = engines[engineCursor];
     if (!engineId) break;
     const resumed = attemptIndex === 0 ? null : await currentState(options);
-    const prompt = await promptFor(options, resumed);
+    const prompt = withBriefing(await promptFor(options, resumed), options.briefing);
     ledger.append("attempt.started", { taskId: task.id, attemptIndex, engineId, sessionId: "" });
     last = await runAttempt({ engineId, attemptIndex, task: { ...task, prompt }, ledger, signal });
     const { move, reason } = afterAttempt(last);

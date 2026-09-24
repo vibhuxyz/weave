@@ -1,4 +1,5 @@
 import type { TaskContract } from "@weave/protocol";
+import { Coordinator } from "../coordination/index.ts";
 import { nextStep, type ScheduledState, type SkippedTask } from "../scheduler/index.ts";
 import { runOneTask } from "./run-one.ts";
 import type { PoolContext, PoolOptions, PoolReport, PoolTaskReport } from "./types.ts";
@@ -24,6 +25,7 @@ function skip(pool: PoolState, ctx: PoolContext, skipped: readonly SkippedTask[]
   for (const { taskId, reason } of skipped) {
     ctx.ledger.append("task.skipped", { taskId, reason });
     record(pool, notRunReport(taskId, "skipped", reason));
+    ctx.coordinator.taskSettled(taskId, "skipped");
   }
 }
 
@@ -37,7 +39,17 @@ function cancelPending(pool: PoolState, ctx: PoolContext, ready: readonly string
 
 function launch(pool: PoolState, ctx: PoolContext, task: TaskContract): void {
   pool.states.set(task.id, "running");
+  ctx.coordinator.taskStarted(task.id);
   pool.running.set(task.id, runOneTask(task, ctx));
+}
+
+function launchReady(pool: PoolState, ctx: PoolContext, ready: readonly string[], capacity: number): void {
+  const tasksById = new Map(ctx.coordinator.tasks().map((task) => [task.id, task]));
+  for (const taskId of ready) {
+    if (pool.running.size >= capacity) return;
+    const task = tasksById.get(taskId);
+    if (task && ctx.coordinator.claim(task)) launch(pool, ctx, task);
+  }
 }
 
 function linkedController(signal: AbortSignal | undefined): AbortController {
@@ -47,8 +59,38 @@ function linkedController(signal: AbortSignal | undefined): AbortController {
   return controller;
 }
 
+async function drive(pool: PoolState, ctx: PoolContext, capacity: number): Promise<void> {
+  for (;;) {
+    const step = nextStep(ctx.coordinator.tasks(), pool.states, ctx.coordinator.availableOutputs());
+    skip(pool, ctx, step.skipped);
+    if (step.skipped.length > 0) continue;
+    if (ctx.signal.aborted && step.ready.length > 0) {
+      cancelPending(pool, ctx, step.ready);
+      continue;
+    }
+    if (!ctx.signal.aborted) launchReady(pool, ctx, step.ready, capacity);
+    if (pool.running.size === 0) return;
+    const settled = await Promise.race([...pool.running.values(), ctx.coordinator.nextChange()]);
+    if (!settled) continue;
+    pool.running.delete(settled.taskId);
+    record(pool, settled);
+    ctx.coordinator.taskSettled(settled.taskId, settled.status);
+  }
+}
+
+function invalidateConsumers(pool: PoolState, ctx: PoolContext): void {
+  const reasons = ctx.coordinator.invalidations((taskId) => pool.reports.get(taskId)?.status === "ok");
+  for (const [taskId, reason] of reasons) {
+    const report = pool.reports.get(taskId);
+    if (!report) continue;
+    ctx.ledger.append("consumer.invalidated", { taskId, reason });
+    record(pool, { ...report, status: "failed", reason });
+  }
+}
+
 export async function runPool(options: PoolOptions): Promise<PoolReport> {
   const controller = linkedController(options.signal);
+  const coordinator = options.coordinator ?? new Coordinator({ tasks: options.tasks, ledger: options.ledger });
   const ctx: PoolContext = {
     repoRoot: options.repoRoot,
     weaveDir: options.weaveDir,
@@ -59,33 +101,21 @@ export async function runPool(options: PoolOptions): Promise<PoolReport> {
     baseCommit: options.baseCommit,
     inspectHarvest: options.inspectHarvest,
     attempt: options.attempt ?? 0,
+    coordinator,
   };
-  const tasksById = new Map(options.tasks.map((task) => [task.id, task]));
   const capacity = Math.max(1, Math.floor(options.concurrency));
   const pool: PoolState = { states: new Map(), reports: new Map(), running: new Map() };
-
-  for (;;) {
-    const step = nextStep(options.tasks, pool.states);
-    skip(pool, ctx, step.skipped);
-    if (step.skipped.length > 0) continue;
-    if (ctx.signal.aborted && step.ready.length > 0) {
-      cancelPending(pool, ctx, step.ready);
-      continue;
-    }
-    const startable = ctx.signal.aborted ? [] : step.ready.slice(0, capacity - pool.running.size);
-    for (const taskId of startable) {
-      const task = tasksById.get(taskId);
-      if (task) launch(pool, ctx, task);
-    }
-    if (pool.running.size === 0) break;
-    const settled = await Promise.race(pool.running.values());
-    pool.running.delete(settled.taskId);
-    record(pool, settled);
+  const stopWatching = coordinator.watch(options.ledger);
+  try {
+    await drive(pool, ctx, capacity);
+  } finally {
+    stopWatching();
   }
-
+  invalidateConsumers(pool, ctx);
   return {
     tasks: options.tasks.map(
       (task) => pool.reports.get(task.id) ?? notRunReport(task.id, "skipped", NEVER_REACHED_REASON),
     ),
+    coordination: coordinator.report(),
   };
 }

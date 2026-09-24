@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { TaskContract } from "@weave/protocol";
+import type { TaskContract, TaskDependency } from "@weave/protocol";
 import { integrate, verifyWithLadder, type IntegrationReport } from "../integrator/index.ts";
 import { validateGraph } from "../planner/index.ts";
 import { runPool, type PoolReport } from "../pool/index.ts";
@@ -26,9 +26,20 @@ function planIssues(tasks: readonly TaskContract[]): readonly string[] {
   return [...(tasks.length === 0 ? ["The plan has no tasks"] : []), ...reserved, ...validateGraph(tasks)];
 }
 
+function withAddedDependencies(tasks: readonly TaskContract[], pool: PoolReport): readonly TaskContract[] {
+  const addedByTask = new Map<string, TaskDependency[]>();
+  for (const edge of pool.coordination.addedDependencies) {
+    addedByTask.set(edge.taskId, [...(addedByTask.get(edge.taskId) ?? []), edge.dependency]);
+  }
+  return tasks.map((task) => {
+    const added = addedByTask.get(task.id);
+    return added ? { ...task, dependencies: [...(task.dependencies ?? []), ...added] } : task;
+  });
+}
+
 function mergeCandidates(tasks: readonly TaskContract[], pool: PoolReport) {
   const reports = new Map(pool.tasks.map((entry) => [entry.taskId, entry]));
-  return topologicalOrder(tasks).flatMap((taskId) => {
+  return topologicalOrder(withAddedDependencies(tasks, pool)).flatMap((taskId) => {
     const entry = reports.get(taskId);
     if (entry?.status !== "ok" || !entry.branch) return [];
     return [{ taskId, branch: entry.branch, commit: entry.harvest?.commit ?? null }];

@@ -1,4 +1,5 @@
-import type { ScheduleStep, ScheduledState, SchedulableTask, SkippedTask } from "./types.ts";
+import type { TaskDependency } from "@weave/protocol";
+import type { AvailableOutputs, ScheduleStep, ScheduledState, SchedulableTask, SkippedTask } from "./types.ts";
 
 const SETTLED_STATES: ReadonlySet<ScheduledState> = new Set(["ok", "failed", "cancelled", "skipped"]);
 const FAILED_STATES: ReadonlySet<ScheduledState> = new Set(["failed", "cancelled", "skipped"]);
@@ -20,13 +21,23 @@ function brokenDependency(
   return null;
 }
 
-function isReady(task: SchedulableTask, states: ReadonlyMap<string, ScheduledState>): boolean {
-  return (task.dependencies ?? []).every((dependency) => stateOf(states, dependency.task) === "ok");
+const NO_OUTPUTS: AvailableOutputs = new Map();
+
+function hasPublishedOutputs(dependency: TaskDependency, available: AvailableOutputs): boolean {
+  const published = available.get(dependency.task);
+  return dependency.requiredOutputs.length > 0 && dependency.requiredOutputs.every((output) => published?.has(output) ?? false);
+}
+
+function isReady(task: SchedulableTask, states: ReadonlyMap<string, ScheduledState>, available: AvailableOutputs): boolean {
+  return (task.dependencies ?? []).every(
+    (dependency) => stateOf(states, dependency.task) === "ok" || hasPublishedOutputs(dependency, available),
+  );
 }
 
 export function nextStep(
   tasks: readonly SchedulableTask[],
   states: ReadonlyMap<string, ScheduledState>,
+  available: AvailableOutputs = NO_OUTPUTS,
 ): ScheduleStep {
   const pending = tasks.filter((task) => stateOf(states, task.id) === "pending");
   const skipped = pending
@@ -34,7 +45,7 @@ export function nextStep(
     .filter((entry): entry is SkippedTask => entry !== null);
   const skippedIds = new Set(skipped.map((entry) => entry.taskId));
   const ready = pending
-    .filter((task) => !skippedIds.has(task.id) && isReady(task, states))
+    .filter((task) => !skippedIds.has(task.id) && isReady(task, states, available))
     .map((task) => task.id);
   const isFinished = tasks.every(
     (task) => SETTLED_STATES.has(stateOf(states, task.id)) || skippedIds.has(task.id),

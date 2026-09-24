@@ -85,3 +85,17 @@ test("plans that cannot run are refused before anything starts", async () => {
   const dirty = await runPlan({ ...base, tasks: [task("A")] });
   assert.match(dirty.ok ? "" : dirty.reason, /uncommitted change/);
 });
+
+test("a dependency discovered mid-run reorders the merge without a restart", async () => {
+  const repo = await makeRepo();
+  const worker: RunWorker = async ({ task: running, coordination }) => {
+    if (running.id === "B") coordination.publish({ type: "dependency.blocked", data: { need: { output: "config", task: "A" }, reason: "needs A's config" } });
+    if (running.id === "A") coordination.publish({ type: "artifact.ready", data: { artifact: { name: "config", summary: "c", files: [] } } });
+    await writeFile(join(running.cwd, `${running.id}.txt`), running.id);
+    return { status: "ok" };
+  };
+  const result = await runPlan({ tasks: [task("B"), task("A")], repoRoot: repo, concurrency: 2, runWorker: worker, verify: verifyOk, shouldInstall: false });
+  assert.ok(result.ok);
+  assert.deepEqual(result.value.pool.coordination.addedDependencies, [{ taskId: "B", dependency: { task: "A", requiredOutputs: ["config"] } }]);
+  assert.deepEqual(result.value.integration?.merges.map((merge) => merge.taskId), ["A", "B"]);
+});

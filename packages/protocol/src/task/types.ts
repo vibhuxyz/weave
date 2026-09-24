@@ -1,3 +1,4 @@
+import type { ResourceRef } from "../coordination/index.ts";
 import type { Verification, VerificationRung } from "../verification/index.ts";
 import type { TaskPolicy } from "./policy.ts";
 
@@ -13,6 +14,7 @@ export interface TaskContract {
   allowedPaths?: string[];
   policy?: TaskPolicy;
   readOnlyPaths?: string[];
+  owns?: ResourceRef[];
   dependencies?: TaskDependency[];
   verify?: string;
   sandboxed?: boolean;

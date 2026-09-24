@@ -30,6 +30,7 @@ export interface RelayOptions {
   readonly runAttempt: AttemptRunner;
   readonly maxAttempts?: number;
   readonly signal?: AbortSignal;
+  readonly briefing?: string;
 }
 
 export type NextMove = "done" | "stop" | "same-engine" | "next-engine";

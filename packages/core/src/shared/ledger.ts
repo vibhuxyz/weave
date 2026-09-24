@@ -9,6 +9,7 @@ export class Ledger {
   readonly file: string;
   private _seq = 0;
   private readonly onAppend: ((event: WeaveEvent) => void) | undefined;
+  private readonly listeners = new Set<(event: WeaveEvent) => void>();
 
   constructor(weaveDir: string, runId: string, onAppend?: (event: WeaveEvent) => void) {
     this.runId = runId;
@@ -36,7 +37,13 @@ export class Ledger {
     } as unknown as WeaveEvent;
     appendFileSync(this.file, JSON.stringify(event) + "\n");
     this.onAppend?.(event);
+    for (const listener of this.listeners) listener(event);
     return event;
+  }
+
+  subscribe(listener: (event: WeaveEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   writeArtifact(name: string, data: unknown): void {

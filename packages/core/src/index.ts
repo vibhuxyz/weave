@@ -21,6 +21,8 @@ export { runPool, scopeViolations } from "./pool/index.ts";
 export type { PoolOptions, PoolReport, PoolTaskReport, RunWorker, SettledStatus, WorkerInput, WorkerOutcome } from "./pool/index.ts";
 export { INTEGRATION_WORKTREE_ID, integrate, verifyWithLadder } from "./integrator/index.ts";
 export type { IntegrateOptions, IntegrationReport, MergeCandidate, MergeReport, MergeStatus, VerifyResult, VerifyWorkspace } from "./integrator/index.ts";
+export { Coordinator } from "./coordination/index.ts";
+export type { CoordinationChannel, CoordinationReport, EmployeeSubmission, InboxBatch, PublishResult } from "./coordination/index.ts";
 export { compressToolOutput } from "./compress/index.ts";
 export { engineWorker, runPlan } from "./run-plan/index.ts";
 export type { RunPlanOptions, RunPlanReport, RunPlanResult } from "./run-plan/index.ts";

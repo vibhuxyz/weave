@@ -47,7 +47,7 @@ async function install(task: TaskContract, worktree: Worktree, ctx: PoolContext)
 async function work(task: TaskContract, worktree: Worktree, ctx: PoolContext): Promise<{ ms: number; outcome: WorkerOutcome }> {
   const started = Date.now();
   const outcome = await ctx
-    .runWorker({ task: { ...task, cwd: worktree.path }, ledger: ctx.ledger, signal: ctx.signal })
+    .runWorker({ task: { ...task, cwd: worktree.path }, ledger: ctx.ledger, signal: ctx.signal, coordination: ctx.coordinator.channelFor(task.id) })
     .catch((error: unknown): WorkerOutcome => ({ status: "failed", error: `worker crashed: ${errorText(error)}` }));
   const settled: WorkerOutcome = ctx.signal.aborted ? { status: "cancelled", error: "run cancelled" } : outcome;
   return { ms: Date.now() - started, outcome: settled };
