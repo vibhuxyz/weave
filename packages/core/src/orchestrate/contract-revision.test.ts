@@ -59,6 +59,12 @@ function recordingWorker(seen: Seen[], editor: (cwd: string, prompt: string) => 
   };
 }
 
+const roundsOf = (seen: readonly Seen[], sizes: readonly number[]): readonly (readonly string[])[] =>
+  sizes.map((size, index) => {
+    const start = sizes.slice(0, index).reduce((total, each) => total + each, 0);
+    return seen.slice(start, start + size).map((entry) => entry.id).sort();
+  });
+
 const bumpsVersion = async (cwd: string, prompt: string) => {
   const version = /set CONTRACT_VERSION to (\d+)/.exec(prompt)?.[1] ?? "0";
   const path = join(cwd, ENTRY);
@@ -72,7 +78,8 @@ test("a change request bumps the contract, re-runs only the tasks that read the 
   const result = await planAndRun({ request: "notes", repoRoot: repo, runTurn, verify: verifyOk, shouldInstall: false, runWorker: recordingWorker(seen, bumpsVersion, (count) => count === 1) });
   assert.equal(result.status, "ran");
   if (result.status !== "ran") return;
-  assert.deepEqual(seen.map((entry) => entry.id), ["API", "WEB", "JOBS", "contract-v2", "API", "WEB"]);
+  assert.equal(seen.length, 6);
+  assert.deepEqual(roundsOf(seen, [3, 1, 2]), [["API", "JOBS", "WEB"], ["contract-v2"], ["API", "WEB"]]);
   const reruns = seen.slice(4);
   assert.ok(reruns.every((entry) => entry.prompt.includes("The shared contract changed and is now version 2")));
   assert.ok(reruns.every((entry) => entry.cwd.endsWith(".r1")));
@@ -93,7 +100,8 @@ test("an editor that forgets to bump the version is rejected and nothing re-runs
   const result = await planAndRun({ request: "notes", repoRoot: repo, runTurn, verify: verifyOk, shouldInstall: false, runWorker: recordingWorker(seen, forgetful, () => true) });
   assert.equal(result.status, "ran");
   if (result.status !== "ran") return;
-  assert.deepEqual(seen.map((entry) => entry.id), ["API", "WEB", "JOBS", "contract-v2"]);
+  assert.equal(seen.length, 4);
+  assert.deepEqual(roundsOf(seen, [3, 1]), [["API", "JOBS", "WEB"], ["contract-v2"]]);
   const events = await readLedger(join(repo, ".weave"), result.report.runId);
   const rejected = events.find((event) => event.type === "contract.change.rejected");
   assert.equal(rejected?.type === "contract.change.rejected" && rejected.reason, "the edited contract does not set CONTRACT_VERSION = 2");
