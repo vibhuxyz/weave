@@ -89,12 +89,22 @@ function phrase(action: Action, tools: readonly ToolEntry[]): string {
   return tools.length === 1 ? `${action} ${one}` : `${action} ${tools.length} ${many}`;
 }
 
+function failedSuffix(tools: readonly ToolEntry[]): string {
+  const failedCount = tools.filter((tool) => tool.status === "failed").length;
+  return failedCount === 0 ? "" : ` (${failedCount} failed)`;
+}
+
 export function groupLabel(tools: readonly ToolEntry[]): string {
   const byAction = new Map<Action, ToolEntry[]>();
   for (const tool of tools) {
     const action = actionOf(tool);
     byAction.set(action, [...(byAction.get(action) ?? []), tool]);
   }
-  const text = [...byAction].map(([action, group]) => phrase(action, group)).join(", ");
+  const text = [...byAction].map(([action, group]) => `${phrase(action, group)}${failedSuffix(group)}`).join(", ");
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+export function runningLabel(tool: ToolEntry): string {
+  const subject = rowSubject(tool);
+  return `${rowVerb(tool, true)} ${subject}${subject.endsWith("…") ? "" : "…"}`;
 }

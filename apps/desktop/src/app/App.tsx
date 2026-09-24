@@ -48,7 +48,7 @@ const TRANSCRIPT_WIDTH = "mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl";
  * page rather than a place to type.
  */
 const COMPOSER_WIDTH = "mx-auto w-full max-w-4xl";
-import { TurnDiffPanel, StreamedTurn, StreamStatusLine } from "@/agent/components";
+import { collectTasks, TurnDiffPanel, StreamedTurn, StreamStatusLine, TasksPanel } from "@/agent/components";
 import type { BlockAction } from "@/agent/normalize";
 import { collectTurnDiffs } from "@/agent/diff";
 import { Sidebar } from "./Sidebar";
@@ -176,6 +176,9 @@ export function App() {
   } = useAcpChat(server, { onProjectDeleted: (dir) => forget(dir) });
 
   const { enrichedEngines } = useHarnesses({ engines, onRefreshEngines: refreshEngines });
+  const [isTasksOpen, setIsTasksOpen] = useState(false);
+  const tasks = useMemo(() => (isTasksOpen ? collectTasks(turns) : null), [isTasksOpen, turns]);
+  const openTasks = useCallback(() => setIsTasksOpen(true), []);
   const otherEngineChoices = useMemo(
     () => enrichedEngines.filter((e) => e.installed && e.id !== engineId).map((e) => ({ id: e.id, label: e.label })),
     [enrichedEngines, engineId],
@@ -1306,6 +1309,7 @@ export function App() {
               onSend={send}
               onUpdatePlan={updateTurnPlan}
               onExitPlanMode={exitPlanMode}
+              onOpenTasks={openTasks}
               onOpenDiff={(path) => {
                 setDiffFocusPath(path);
                 setDiffTurnId((cur) => (cur === turn.id && !path ? null : turn.id));
@@ -1340,8 +1344,9 @@ export function App() {
           )}
 
           <RunPanel onCancel={cancelRun} />
+          {tasks && <TasksPanel tasks={tasks} onClose={() => setIsTasksOpen(false)} />}
 
-          {busy && turns.at(-1)?.role === "user" && <StreamStatusLine turn={null} />}
+          {busy && turns.at(-1)?.role === "user" && <StreamStatusLine turn={null} onOpenTasks={openTasks} />}
         </div>
         )}
 

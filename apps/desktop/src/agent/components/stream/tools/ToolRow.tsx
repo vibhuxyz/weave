@@ -2,11 +2,12 @@ import { memo, useState } from "react";
 import type { ChatTurn, ToolEntry } from "@/features/chat/hooks";
 import { cleanOutput, toolRunState } from "@/features/chat/components";
 import { Shimmer } from "@/shared/ui/ai-elements";
+import { CommandLine } from "./CommandLine";
 import { MAX_OUTPUT_CHARS } from "./constants";
 import { DiffStat } from "./DiffStat";
 import { DisclosureHeader } from "../DisclosureHeader";
 import { diffTotalsOf } from "./tool-diff";
-import { actionOf, commandOf, rowSubject, rowVerb } from "./tool-label";
+import { actionOf, commandOf, rowSubject, rowVerb, runningLabel } from "./tool-label";
 
 function outputOf(tool: ToolEntry): string {
   const cleaned = tool.output ? cleanOutput(tool.output) : "";
@@ -31,10 +32,10 @@ function ToolRowView({ tool, turn, onOpenDiff }: { readonly tool: ToolEntry; rea
   return (
     <li className="flex flex-col gap-2 px-4 py-3">
       <DisclosureHeader open={open} onToggle={() => setOpen((value) => !value)}>
-        {isRunning ? <Shimmer>{`${rowVerb(tool, isRunning)} ${rowSubject(tool)}…`}</Shimmer> : label}
+        {isRunning ? <Shimmer>{runningLabel(tool)}</Shimmer> : label}
       </DisclosureHeader>
       {open && isShell && (
-        <pre className="max-h-24 overflow-auto whitespace-pre-wrap rounded-lg bg-agent-code-bg px-3 py-2 font-mono text-agent-text text-xs">$ {commandOf(tool)}</pre>
+        <CommandLine command={commandOf(tool)} className="max-h-24" />
       )}
       {open && output && (
         <pre className="max-h-80 overflow-auto whitespace-pre-wrap font-mono text-agent-text-muted text-xs">{output}</pre>

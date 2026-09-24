@@ -5,7 +5,7 @@ import type { ChatTurn, TurnPlan } from "@/features/chat/hooks";
 import { type BlockAction, messageToBlocks } from "@/agent/normalize";
 import { turnDiff } from "@/agent/diff";
 import { BlockErrorBoundary } from "../BlockErrorBoundary";
-import { TurnDiffBar } from "../TurnDiffBar";
+import { FilesChanged } from "./FilesChanged";
 import { InteractiveBlocks } from "./InteractiveBlocks";
 import { StreamStatusLine } from "./StreamStatusLine";
 import { ThoughtRow } from "./ThoughtRow";
@@ -27,6 +27,7 @@ export interface StreamedTurnProps {
   readonly onUpdatePlan?: (turnId: string, plan: TurnPlan) => void;
   readonly onExitPlanMode?: (intent?: PlanExitIntent) => void;
   readonly onOpenDiff?: (path?: string) => void;
+  readonly onOpenTasks?: () => void;
 }
 
 export function StreamedTurn(props: StreamedTurnProps) {
@@ -71,10 +72,10 @@ export function StreamedTurn(props: StreamedTurnProps) {
       <InteractiveBlocks blocks={viewModel.blocks} handlers={handlers} />
       {!showsStatus && diff.files.length > 0 && (
         <BlockErrorBoundary>
-          <TurnDiffBar diff={diff} onOpenDiff={props.onOpenDiff} active={props.diffOpen} projectDir={props.projectDir} />
+          <FilesChanged diff={diff} projectDir={props.projectDir} isActive={props.diffOpen} onOpenDiff={props.onOpenDiff} />
         </BlockErrorBoundary>
       )}
-      {showsStatus && <StreamStatusLine turn={turn} />}
+      {showsStatus && <StreamStatusLine turn={turn} onOpenTasks={props.onOpenTasks} />}
     </div>
   );
 }

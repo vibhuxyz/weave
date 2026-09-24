@@ -6,7 +6,7 @@ import { MAX_ROWS_PER_GROUP } from "./constants";
 import { DiffStat } from "./DiffStat";
 import { DisclosureHeader } from "../DisclosureHeader";
 import { diffTotalsOf } from "./tool-diff";
-import { groupLabel, rowSubject, rowVerb } from "./tool-label";
+import { groupLabel, runningLabel } from "./tool-label";
 import { ToolRow } from "./ToolRow";
 
 export function ToolGroup({
@@ -27,7 +27,7 @@ export function ToolGroup({
     <div className="flex flex-col gap-2">
       <DisclosureHeader open={open} onToggle={() => setOpen((value) => !value)}>
         {running ? (
-          <Shimmer>{`${rowVerb(running, true)} ${rowSubject(running)}…`}</Shimmer>
+          <Shimmer>{runningLabel(running)}</Shimmer>
         ) : (
           <>
             {groupLabel(tools)}
