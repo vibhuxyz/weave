@@ -21,6 +21,7 @@ export interface Workspace {
   readonly kind: WorkspaceKind;
   readonly scripts: readonly string[];
   readonly internalDependencies: readonly string[];
+  readonly dependencies: readonly string[];
   readonly entrypoints: readonly string[];
 }
 

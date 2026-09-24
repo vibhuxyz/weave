@@ -67,6 +67,7 @@ export function workspacesOf(manifests: readonly PackageManifest[], filePaths: R
       kind: kindOf(manifest),
       scripts: Object.keys(manifest.scripts).sort(),
       internalDependencies: manifest.dependencies.filter((dependency) => names.has(dependency) && dependency !== manifest.name),
+      dependencies: manifest.dependencies,
       entrypoints: entrypointsOf(manifest, filePaths),
     }))
     .sort((a, b) => a.dir.localeCompare(b.dir));

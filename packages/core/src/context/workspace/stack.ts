@@ -16,6 +16,10 @@ const FRAMEWORK_BY_PACKAGE: Readonly<Record<string, string>> = {
 
 const MIN_FILES_FOR_LANGUAGE = 1;
 
+export function frameworksOf(dependencies: readonly string[]): readonly string[] {
+  return [...new Set(dependencies.flatMap((name) => FRAMEWORK_BY_PACKAGE[name] ?? []))].sort();
+}
+
 export function stackOf(paths: readonly string[], dependencies: readonly string[], packageManager: string | null): Stack {
   const counts = new Map<string, number>();
   for (const path of paths) {
@@ -23,6 +27,6 @@ export function stackOf(paths: readonly string[], dependencies: readonly string[
     if (language) counts.set(language, (counts.get(language) ?? 0) + 1);
   }
   const languages = [...counts].filter(([, count]) => count >= MIN_FILES_FOR_LANGUAGE).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([language]) => language);
-  const frameworks = [...new Set(dependencies.flatMap((name) => FRAMEWORK_BY_PACKAGE[name] ?? []))].sort();
+  const frameworks = frameworksOf(dependencies);
   return { languages, frameworks, packageManager };
 }
