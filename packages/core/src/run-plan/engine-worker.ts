@@ -11,6 +11,7 @@ export interface EngineWorkerContext {
   readonly weaveDir: string;
   readonly model: ProjectModel | null;
   readonly runAttempt?: AttemptRunner;
+  readonly routes?: ReadonlyMap<string, readonly string[]>;
 }
 
 interface RelayDeps {
@@ -30,7 +31,8 @@ function toOutcome(relayed: RelayResult): WorkerOutcome {
 
 function relayWith(deps: RelayDeps, input: WorkerInput, briefing: string): Promise<RelayResult> {
   const { task, ledger, signal } = input;
-  return relayTask({ task, engines: deps.engines, weaveDir: deps.context.weaveDir, ledger, model: deps.context.model, runAttempt: deps.runAttempt, signal, briefing });
+  const engines = deps.context.routes?.get(task.id) ?? deps.engines;
+  return relayTask({ task, engines, weaveDir: deps.context.weaveDir, ledger, model: deps.context.model, runAttempt: deps.runAttempt, signal, briefing });
 }
 
 async function followUpdates(deps: RelayDeps, input: WorkerInput, first: RelayResult): Promise<RelayResult> {

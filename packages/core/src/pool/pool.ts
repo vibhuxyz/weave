@@ -4,6 +4,7 @@ import { nextStep, type ScheduledState, type SkippedTask } from "../scheduler/in
 import { runOneTask } from "./run-one.ts";
 import type { PoolContext, PoolOptions, PoolReport, PoolTaskReport } from "./types.ts";
 
+const RUN_STOP_KEY = "";
 const NEVER_REACHED_REASON = "never became ready: a dependency cycle or an unknown dependency";
 
 function notRunReport(taskId: string, status: "skipped" | "cancelled", reason: string): PoolTaskReport {
@@ -14,6 +15,8 @@ interface PoolState {
   readonly states: Map<string, ScheduledState>;
   readonly reports: Map<string, PoolTaskReport>;
   readonly running: Map<string, Promise<PoolTaskReport>>;
+  readonly controllers: Map<string, AbortController>;
+  readonly stopReasons: Map<string, string>;
 }
 
 function record(pool: PoolState, report: PoolTaskReport): void {
@@ -31,24 +34,49 @@ function skip(pool: PoolState, ctx: PoolContext, skipped: readonly SkippedTask[]
 
 function cancelPending(pool: PoolState, ctx: PoolContext, ready: readonly string[]): void {
   for (const taskId of ready) {
-    const reason = "run cancelled before the task started";
+    const reason = pool.stopReasons.get(RUN_STOP_KEY) ?? "run cancelled before the task started";
     ctx.ledger.append("pool.task.settled", { taskId, status: "cancelled", reason, installMs: 0, agentMs: 0, wallMs: 0 });
     record(pool, notRunReport(taskId, "cancelled", reason));
   }
 }
 
 function launch(pool: PoolState, ctx: PoolContext, task: TaskContract): void {
+  const controller = linkedController(ctx.signal);
   pool.states.set(task.id, "running");
+  pool.controllers.set(task.id, controller);
   ctx.coordinator.taskStarted(task.id);
-  pool.running.set(task.id, runOneTask(task, ctx));
+  ctx.budget?.taskStarted(task.id);
+  pool.running.set(task.id, runOneTask(task, { ...ctx, signal: controller.signal }));
+}
+
+function admitted(pool: PoolState, ctx: PoolContext, taskId: string): boolean {
+  const admission = ctx.budget?.admits(taskId) ?? { ok: true };
+  if (!admission.ok) skip(pool, ctx, [{ taskId, reason: admission.reason }]);
+  return admission.ok;
+}
+
+function settle(pool: PoolState, ctx: PoolContext, report: PoolTaskReport): void {
+  pool.running.delete(report.taskId);
+  pool.controllers.delete(report.taskId);
+  const stopReason = pool.stopReasons.get(report.taskId) ?? pool.stopReasons.get(RUN_STOP_KEY);
+  record(pool, report.status === "cancelled" && stopReason ? { ...report, reason: stopReason } : report);
+  ctx.budget?.taskSettled(report.taskId);
+  ctx.coordinator.taskSettled(report.taskId, report.status);
+}
+
+function byPriority(ready: readonly string[], priorityOf: ((taskId: string) => number) | undefined): readonly string[] {
+  if (!priorityOf) return ready;
+  return ready.map((taskId, index) => ({ taskId, index, priority: priorityOf(taskId) }))
+    .sort((a, b) => b.priority - a.priority || a.index - b.index)
+    .map((entry) => entry.taskId);
 }
 
 function launchReady(pool: PoolState, ctx: PoolContext, ready: readonly string[], capacity: number): void {
   const tasksById = new Map(ctx.coordinator.tasks().map((task) => [task.id, task]));
-  for (const taskId of ready) {
+  for (const taskId of byPriority(ready, ctx.priorityOf)) {
     if (pool.running.size >= capacity) return;
     const task = tasksById.get(taskId);
-    if (task && ctx.coordinator.claim(task)) launch(pool, ctx, task);
+    if (task && admitted(pool, ctx, taskId) && ctx.coordinator.claim(task)) launch(pool, ctx, task);
   }
 }
 
@@ -71,10 +99,7 @@ async function drive(pool: PoolState, ctx: PoolContext, capacity: number): Promi
     if (!ctx.signal.aborted) launchReady(pool, ctx, step.ready, capacity);
     if (pool.running.size === 0) return;
     const settled = await Promise.race([...pool.running.values(), ctx.coordinator.nextChange()]);
-    if (!settled) continue;
-    pool.running.delete(settled.taskId);
-    record(pool, settled);
-    ctx.coordinator.taskSettled(settled.taskId, settled.status);
+    if (settled) settle(pool, ctx, settled);
   }
 }
 
@@ -86,6 +111,26 @@ function invalidateConsumers(pool: PoolState, ctx: PoolContext): void {
     ctx.ledger.append("consumer.invalidated", { taskId, reason });
     record(pool, { ...report, status: "failed", reason });
   }
+}
+
+function bindBudget(pool: PoolState, options: PoolOptions, run: AbortController): () => void {
+  const budget = options.budget;
+  if (!budget) return () => undefined;
+  budget.bind({
+    stopTask: (taskId, reason) => {
+      pool.stopReasons.set(taskId, reason);
+      pool.controllers.get(taskId)?.abort();
+    },
+    stopRun: (reason) => {
+      pool.stopReasons.set(RUN_STOP_KEY, reason);
+      run.abort();
+    },
+  });
+  const unwatch = budget.watch(options.ledger);
+  return () => {
+    unwatch();
+    budget.dispose();
+  };
 }
 
 export async function runPool(options: PoolOptions): Promise<PoolReport> {
@@ -102,14 +147,18 @@ export async function runPool(options: PoolOptions): Promise<PoolReport> {
     inspectHarvest: options.inspectHarvest,
     attempt: options.attempt ?? 0,
     coordinator,
+    budget: options.budget,
+    priorityOf: options.priorityOf,
   };
   const capacity = Math.max(1, Math.floor(options.concurrency));
-  const pool: PoolState = { states: new Map(), reports: new Map(), running: new Map() };
+  const pool: PoolState = { states: new Map(), reports: new Map(), running: new Map(), controllers: new Map(), stopReasons: new Map() };
   const stopWatching = coordinator.watch(options.ledger);
+  const stopBudget = bindBudget(pool, options, controller);
   try {
     await drive(pool, ctx, capacity);
   } finally {
     stopWatching();
+    stopBudget();
   }
   invalidateConsumers(pool, ctx);
   return {

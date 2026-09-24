@@ -1,4 +1,4 @@
-import type { ResourceRef, TaskContract } from "@weave/protocol";
+import type { ResourceRef } from "@weave/protocol";
 import { normalizeResource } from "./overlap.ts";
 
 const GLOB_CHARS = /[*?[\]{}!]/;
@@ -14,7 +14,12 @@ function resourceKey(resource: ResourceRef): string {
   return `${resource.kind}:${resource.id}`;
 }
 
-export function claimsForTask(task: Pick<TaskContract, "allowedPaths" | "owns">): readonly ResourceRef[] {
+export interface ClaimingTask {
+  readonly allowedPaths?: readonly string[];
+  readonly owns?: readonly ResourceRef[];
+}
+
+export function claimsForTask(task: ClaimingTask): readonly ResourceRef[] {
   const declared = (task.owns ?? []).map(normalizeResource);
   const fromPaths = (task.allowedPaths ?? []).map(claimForPath);
   const unique = new Map([...declared, ...fromPaths].map((resource) => [resourceKey(resource), resource]));

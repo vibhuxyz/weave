@@ -1,5 +1,6 @@
 import type { PermissionPolicy } from "@weave/agent";
 import type { RunConfig, WeaveEvent } from "@weave/protocol";
+import type { Budgets, HistoryStats, OrchestrationDecision } from "../adaptive/index.ts";
 import type { Contract } from "../contracts/index.ts";
 import type { Decision } from "../decide/index.ts";
 import type { VerifyWorkspace } from "../integrator/index.ts";
@@ -8,6 +9,12 @@ import type { RunWorker } from "../pool/index.ts";
 import type { RunPlanReport } from "../run-plan/index.ts";
 
 export type TurnRunner = (prompt: string, signal?: AbortSignal) => Promise<string>;
+
+export interface AdaptiveOptions {
+  readonly budgets?: Budgets;
+  readonly stats?: HistoryStats;
+  readonly msPerMicroUsd?: number;
+}
 
 export interface PlanAndRunOptions {
   readonly request: string;
@@ -22,6 +29,7 @@ export interface PlanAndRunOptions {
   readonly shouldInstall?: boolean;
   readonly maxWorkers?: number;
   readonly onEvent?: (event: WeaveEvent) => void;
+  readonly adaptive?: AdaptiveOptions;
 }
 
 export type PlanAndRunResult =
@@ -33,6 +41,7 @@ export type PlanAndRunResult =
       readonly decision: Decision;
       readonly tasks: readonly PlannedTask[];
       readonly report: RunPlanReport;
+      readonly orchestration: OrchestrationDecision | null;
     };
 
 export interface PlanningInput {

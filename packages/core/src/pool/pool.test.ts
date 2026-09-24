@@ -124,3 +124,16 @@ test("cancelling stops running workers, cancels queued tasks and skips dependent
   ]);
   assert.deepEqual(await listWeaveWorktrees(repo), []);
 });
+
+test("with a priority, the ready task that heads the longest path starts first", async () => {
+  const { base } = await setup();
+  const order: string[] = [];
+  const recordOrder: RunWorker = async (input) => {
+    order.push(input.task.id);
+    return writesOwnFile(input);
+  };
+  const tasks = [task("SHORT"), task("HEAD"), task("TAIL", { dependencies: [{ task: "HEAD", requiredOutputs: [] }] })];
+  const priorities: Readonly<Record<string, number>> = { SHORT: 1, HEAD: 10, TAIL: 5 };
+  await runPool({ ...base, tasks, concurrency: 1, runWorker: recordOrder, priorityOf: (taskId) => priorities[taskId] ?? 0 });
+  assert.deepEqual(order, ["HEAD", "TAIL", "SHORT"]);
+});

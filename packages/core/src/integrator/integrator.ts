@@ -23,8 +23,10 @@ async function mergeOne(
   }
   if (attempt.status === "merge-error") return report(candidate, { status: "merge-error", commit: null, rungs: [], detail: attempt.detail });
   if (!options.canVerify) return report(candidate, { status: "merged", commit: attempt.commit, rungs: [], detail: "merged; not verified" });
+  const verifyStarted = performance.now();
   const verified = await options.verify(worktree.path, options.baseCommit);
   return report(candidate, {
+    verifyMs: Math.round(performance.now() - verifyStarted),
     status: verified.ok ? "merged" : "verify-failed",
     commit: attempt.commit,
     rungs: verified.rungs,
@@ -38,8 +40,8 @@ function isBreaking(merge: MergeReport): boolean {
 
 function logMerge(options: IntegrateOptions, merge: MergeReport): void {
   if (merge.status === "not-run") return;
-  const { taskId, status, commit, detail } = merge;
-  options.ledger.append("merge.finished", { taskId, status, commit, rungs: [...merge.rungs], detail });
+  const { taskId, status, commit, detail, verifyMs } = merge;
+  options.ledger.append("merge.finished", { taskId, status, commit, rungs: [...merge.rungs], detail, ...(verifyMs === undefined ? {} : { verifyMs }) });
 }
 
 async function installIfWanted(options: IntegrateOptions, worktree: Worktree): Promise<void> {

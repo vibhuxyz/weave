@@ -80,6 +80,8 @@ export async function runPlan(options: RunPlanOptions): Promise<RunPlanResult> {
       inspectHarvest: options.inspectHarvest,
       concurrency: options.concurrency,
       signal: options.signal,
+      budget: options.budget,
+      priorityOf: options.priorityOf,
     }),
   });
 

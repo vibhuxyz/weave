@@ -178,6 +178,7 @@ export type WeaveEvent =
       commit: string | null;
       rungs: VerificationRung[];
       detail: string;
+      verifyMs?: number;
     })
   | (BaseEvent & {
       type: "integration.finished";
@@ -192,6 +193,23 @@ export type WeaveEvent =
   | (BaseEvent & { type: "ownership.blocked"; taskId: string; conflicts: string[] })
   | (BaseEvent & { type: "ownership.released"; taskId: string })
   | (BaseEvent & { type: "dependency.added"; taskId: string; on: string; outputs: string[]; reason: string })
-  | (BaseEvent & { type: "consumer.invalidated"; taskId: string; reason: string });
+  | (BaseEvent & { type: "consumer.invalidated"; taskId: string; reason: string })
+  | (BaseEvent & {
+      type: "orchestration.decided";
+      workers: number;
+      reason: string;
+      benefitMs: { timeSaved: number; coordination: number; mergeRisk: number; verification: number; startup: number; total: number };
+      estimatedCostMicroUsd: string;
+      tasks: { taskId: string; kind: string; sizeUnits: number; engines: string[]; estimatedMs: number }[];
+    })
+  | (BaseEvent & {
+      type: "budget.exceeded";
+      scope: "project" | "run" | "task" | "employee" | "engine";
+      key: string;
+      dimension: "cost" | "tokens" | "time";
+      limit: string;
+      spent: string;
+      action: "stop-task" | "stop-run" | "skip-task";
+    });
 
 export type WeaveEventType = WeaveEvent["type"];

@@ -9,7 +9,8 @@ export type DecisionReason =
   | "disjoint-paths"
   | "no-contract"
   | "single-component"
-  | "components-with-contract";
+  | "components-with-contract"
+  | "adaptive";
 
 export interface Decision {
   mode: "sequential" | "parallel";
