@@ -14,3 +14,5 @@ export interface ScheduleStep {
   readonly skipped: readonly SkippedTask[];
   readonly isFinished: boolean;
 }
+
+export type AvailableOutputs = ReadonlyMap<string, ReadonlySet<string>>;

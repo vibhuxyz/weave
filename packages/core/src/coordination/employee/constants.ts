@@ -1,0 +1,11 @@
+export const EVENT_FENCE_LANGUAGE = "weave-event";
+export const MAX_EVENT_TEXT_CHARS = 2_000;
+export const MAX_NAME_CHARS = 100;
+export const MAX_ARTIFACT_FILES = 20;
+export const MAX_ARTIFACT_PATH_CHARS = 300;
+export const MAX_ARTIFACT_FILE_CHARS = 20_000;
+export const MAX_PENDING_EVENT_CHARS = 64_000;
+export const MAX_INBOX_PROMPT_BYTES = 24_000;
+export const MAX_INBOX_FILE_BYTES = 8_000;
+export const MAX_INBOX_LISTED_EVENTS = 40;
+export const OUTPUT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;

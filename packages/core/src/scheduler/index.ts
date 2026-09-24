@@ -1,2 +1,2 @@
 export { nextStep, topologicalOrder } from "./scheduler.ts";
-export type { ScheduleStep, ScheduledState, SchedulableTask, SkippedTask } from "./types.ts";
+export type { AvailableOutputs, ScheduleStep, ScheduledState, SchedulableTask, SkippedTask } from "./types.ts";

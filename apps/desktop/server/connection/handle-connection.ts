@@ -9,9 +9,8 @@ import {
   formatSkillCatalog,
   discoverRules,
   formatRulesBlock,
-  BUILTIN_SKILLS,
-  formatBuiltinSkillsBlock,
   resolveCatalog,
+  planAndRun,
   type NormalizedPlugin,
 } from "@weave/core";
 import type { TaskContract, AuthMethod } from "@weave/protocol";
@@ -19,6 +18,8 @@ import { DesktopSessionManager, killStaleSupervisors, registerLiveSupervisor, un
 import { PendingPermissions } from "../permissions/index.ts";
 import { PendingQuestions } from "../questions/index.ts";
 import { ActiveSetup, announceSetupRequired } from "../setup/index.ts";
+import { createSkillSelector } from "../chat/index.ts";
+import { createRunController } from "../parallel-run/index.ts";
 import { handleClientMessage } from "./dispatch.ts";
 import { CompactionController } from "../compaction/index.ts";
 import { ReplayGate } from "../history/index.ts";
@@ -76,6 +77,9 @@ const KNOWN_CLIENT_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   "restore-chat",
   "delete-project",
   "set-auto-archive",
+  "start-run",
+  "read-file",
+  "cancel-run",
 ]);
 
 function parseClientMessage(raw: unknown): ClientMessage | null {
@@ -151,6 +155,7 @@ export async function handleConnection(
   const pendingPermissions = new PendingPermissions();
   const pendingQuestions = new PendingQuestions();
   const activeSetup = new ActiveSetup();
+  const runs = createRunController(planAndRun);
   const replayGate = new ReplayGate();
   const compaction = new CompactionController((sessionId, supportsCompaction) =>
     send({ type: "session-capabilities", sessionId, supportsCompaction }),
@@ -176,9 +181,9 @@ export async function handleConnection(
     replayGate,
   });
 
-  const [ruleCatalog, builtinSkillCatalog, skillCatalog] = await Promise.all([
+  const selectBuiltinSkills = createSkillSelector(projectDir, dataDir);
+  const [ruleCatalog, skillCatalog] = await Promise.all([
     discoverRules(storage.ruleDirs).then(formatRulesBlock),
-    Promise.resolve(formatBuiltinSkillsBlock(BUILTIN_SKILLS)),
     discoverSkills(storage.skillDirs).then(formatSkillCatalog),
   ]);
 
@@ -244,6 +249,7 @@ export async function handleConnection(
         activeSetup,
         compaction,
         history,
+        runs,
         projectDir,
         dataDir,
         chats,
@@ -254,7 +260,7 @@ export async function handleConnection(
         ledger,
         continuationTaskId,
         ruleCatalog,
-        builtinSkillCatalog,
+        selectBuiltinSkills,
         skillCatalog,
         pluginsById,
         authMethodsByEngine,
@@ -278,6 +284,7 @@ export async function handleConnection(
     pendingPermissions.cancelAll();
     pendingQuestions.cancelAll();
     activeSetup.cancel();
+    runs.cancel();
     if (sessionMgr.supervisor) {
       unregisterLiveSupervisor(sessionMgr.supervisor);
       sessionMgr.supervisor.killAll();

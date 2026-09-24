@@ -1,5 +1,6 @@
 import type { PermissionPolicy } from "@weave/agent";
 import type { RunConfig, TaskContract } from "@weave/protocol";
+import type { BudgetManager } from "../adaptive/index.ts";
 import type { IntegrationReport, VerifyWorkspace } from "../integrator/index.ts";
 import type { InspectHarvest, PoolReport, RunWorker } from "../pool/index.ts";
 import type { Ledger } from "../shared/index.ts";
@@ -18,6 +19,8 @@ export interface RunPlanOptions {
   readonly ledger?: Ledger;
   readonly inspectHarvest?: InspectHarvest;
   readonly revise?: Reviser;
+  readonly budget?: BudgetManager;
+  readonly priorityOf?: (taskId: string) => number;
 }
 
 export interface RevisionInput {

@@ -25,15 +25,19 @@ import {
   useTextareaAutosize,
 } from "@/shared/hooks";
 import { cn, flattenConfigValues, planExitTarget, splitConfigOptions, type PlanExitIntent } from "@/shared/lib";
-import { Message, MessageContent } from "@/shared/ui/ai-elements";
 import { isAuthRequiredError } from "@weave/protocol";
 import { ENGINES, DEFAULT_ENGINE_ID, tokenReportingFor } from "@weave/agent/browser";
 import { EnginePicker } from '@/features/engines/components';
 import { SettingsView } from '@/features/settings';
 import { ChatSkeleton, ContextPanel, EngineSetupPanel, hasSelectableModes, ModePicker, PermissionCard, QuestionCard, UserMessage, type ContextPanelTab } from '@/features/chat/components';
+import { parseRunCommand, RunPanel } from '@/features/runs';
+import { FileViewer, useFileStore } from '@/features/files';
+import { LocalPathOpenerContext } from '@/shared/ui/ai-elements';
 
 /** Inspector width: the spec's 400px to start, dragged from its left edge. */
 const INSPECTOR_DEFAULT_WIDTH = 400;
+const INSPECTOR_MAX_WIDTH = 720;
+const CONTEXT_PANEL_WIDTH = 288;
 
 /**
  * The transcript widens with the window rather than sitting at one cap: a
@@ -48,7 +52,8 @@ const TRANSCRIPT_WIDTH = "mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl";
  * page rather than a place to type.
  */
 const COMPOSER_WIDTH = "mx-auto w-full max-w-4xl";
-import { DepthPicker, TurnDiffPanel, type DepthLevel, AgentMessage, AgentStatusLine, ThinkingBlock } from "@/agent/components";
+import { collectTasks, PlanPanel, planProgressOf, planSignatureOf, TurnDiffPanel, StreamedTurn, StreamStatusLine, TasksPanel } from "@/agent/components";
+import type { BlockAction } from "@/agent/normalize";
 import { collectTurnDiffs } from "@/agent/diff";
 import { Sidebar } from "./Sidebar";
 import { CreateProjectDialog, toneColor } from '@/features/projects/components';
@@ -65,7 +70,7 @@ import {
 import { EngineAuthPanel } from "@/features/auth";
 import { HomeView } from "@/home/canvas/ui";
 import { basename } from '@/features/projects/lib';
-import { useAcpChat, type ChatImageAttachment } from '@/features/chat/hooks';
+import { latestPlanEntries, useAcpChat, type ChatImageAttachment } from '@/features/chat/hooks';
 import {
   AutoCompactSetting,
   CompactionNoticeRow,
@@ -170,9 +175,19 @@ export function App() {
     newChat,
     openChat,
     updateTurnPlan,
+    startRun,
+    cancelRun,
+    openFile,
   } = useAcpChat(server, { onProjectDeleted: (dir) => forget(dir) });
 
   const { enrichedEngines } = useHarnesses({ engines, onRefreshEngines: refreshEngines });
+  const [isTasksOpen, setIsTasksOpen] = useState(false);
+  const tasks = useMemo(() => (isTasksOpen ? collectTasks(turns) : null), [isTasksOpen, turns]);
+  const openTasks = useCallback(() => setIsTasksOpen(true), []);
+  const otherEngineChoices = useMemo(
+    () => enrichedEngines.filter((e) => e.installed && e.id !== engineId).map((e) => ({ id: e.id, label: e.label })),
+    [enrichedEngines, engineId],
+  );
   const startupSplash = useStartupSplash({
     project,
     connection,
@@ -541,15 +556,6 @@ export function App() {
   const [diffTurnId, setDiffTurnId] = useState<string | null>(null);
   /** A single file the chat asked the inspector to open. */
   const [diffFocusPath, setDiffFocusPath] = useState<string | undefined>();
-  /** How much of each run the cards render — a composer setting. */
-  const [depth, setDepth] = usePersistedState<DepthLevel>(
-    "berd:chat:depth",
-    "normal",
-    (value, defaults) =>
-      value === "brief" || value === "normal" || value === "deep"
-        ? value
-        : defaults,
-  );
   const [contextTab, setContextTab] = useState<ContextPanelTab>("Context");
 
   // Turns that touched files, for the side-panel diff reader.
@@ -558,7 +564,17 @@ export function App() {
     view === "chat" &&
     diffTurnId !== null &&
     turnDiffEntries.some((entry) => entry.turnId === diffTurnId);
-  const sidePanelOpen = view === "chat" && (contextOpen || diffPanelOpen);
+  const openFilePath = useFileStore((state) => state.openPath);
+  const isFileExpanded = useFileStore((state) => state.isExpanded);
+  const filePanelOpen = view === "chat" && openFilePath !== null;
+  const planEntries = useMemo(() => latestPlanEntries(turns), [turns]);
+  const planSignature = planSignatureOf(planEntries);
+  const planProgress = planProgressOf(planEntries);
+  const [closedPlanSignature, setClosedPlanSignature] = useState<string | null>(null);
+  const [isPlanExpanded, setIsPlanExpanded] = useState(false);
+  const planPanelOpen = view === "chat" && !filePanelOpen && planEntries.length > 0 && closedPlanSignature !== planSignature;
+  const openPlan = useCallback(() => setClosedPlanSignature(null), []);
+  const sidePanelOpen = view === "chat" && (contextOpen || diffPanelOpen || filePanelOpen || planPanelOpen);
 
   // A different chat has its own turns — drop the diff the panel was reading.
   useEffect(() => {
@@ -590,9 +606,13 @@ export function App() {
     storageKey: "berd:inspector:width",
     defaultWidth: INSPECTOR_DEFAULT_WIDTH,
     minWidth: 320,
-    maxWidth: 720,
+    maxWidth: INSPECTOR_MAX_WIDTH,
     edge: "left",
   });
+
+  const fileWidth = isFileExpanded ? INSPECTOR_MAX_WIDTH : inspectorResize.width;
+  const planWidth = isPlanExpanded ? INSPECTOR_MAX_WIDTH : inspectorResize.width;
+  const inspectorWidth = filePanelOpen ? fileWidth : planPanelOpen ? planWidth : diffPanelOpen ? inspectorResize.width : CONTEXT_PANEL_WIDTH;
 
   const onTranscriptScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -862,12 +882,33 @@ export function App() {
     );
   };
 
+  const handleBlockAction = (action: BlockAction) => {
+    switch (action.type) {
+      case "send_message":
+        send(action.text);
+        return;
+      case "cancel_run":
+        cancel();
+        return;
+      case "continue_with_engine":
+        handleSelectEngine(action.engineId);
+        return;
+    }
+  };
+
   const submit = () => {
     // A turn is already in flight — the button shows Stop, and Enter must
     // agree with it. Without this guard an impatient second Enter appends a
     // duplicate bubble and queues a second prompt behind a stuck one.
     if (busy || !ready) return;
     if (!draft.trim() && imageAttachments.length === 0) return;
+    const runRequest = parseRunCommand(draft);
+    if (runRequest !== null) {
+      startRun(runRequest);
+      setDraft("");
+      resetComposerHeight();
+      return;
+    }
     // Standing agents (`always` + manually toggled) plus this message's
     // @-mentions ride every prompt, so the persona can't drift over a chat.
     // The server merges this with the skills catalog into one <system> block.
@@ -1019,6 +1060,14 @@ export function App() {
             onClick={() => {
               // While a diff is up, the toggle puts the panel back on context
               // rather than leaving the reader stuck open.
+              if (filePanelOpen) {
+                useFileStore.getState().close();
+                return;
+              }
+              if (planPanelOpen) {
+                setClosedPlanSignature(planSignature);
+                return;
+              }
               if (diffPanelOpen) {
                 setDiffTurnId(null);
                 setContextOpen(true);
@@ -1241,6 +1290,7 @@ export function App() {
             onOpenProject={openProject}
           />
         ) : (
+        <LocalPathOpenerContext.Provider value={openFile}>
         <div
           ref={scrollRef}
           onScroll={onTranscriptScroll}
@@ -1262,6 +1312,7 @@ export function App() {
               <UserMessage
                 key={turn.id}
                 text={turn.text}
+                createdAt={turn.createdAt}
                 mentions={turn.mentions}
                 images={turn.images}
                 onEdit={editPrompt}
@@ -1271,78 +1322,30 @@ export function App() {
             ) : (
             // The run card owns the column: full width, like the user
             // request above it — not a content-width chat bubble.
-            <Message key={turn.id} from={turn.role} className="max-w-full">
-              <MessageContent className="w-full">
-                {(
-                  <>
-                    {busy && turn === turns.at(-1) && (
-                      <AgentStatusLine
-                        turn={turn}
-                        running={busy}
-                        configValues={configValues}
-                        projectDir={activeDir}
-                      />
-                    )}
-                    {(turn.thought ||
-                      (busy &&
-                        turn === turns.at(-1) &&
-                        !turn.text &&
-                        turn.tools.length === 0)) && (
-                      <ThinkingBlock
-                        text={turn.thought}
-                        streaming={
-                          busy && !turn.text && turn.tools.length === 0
-                        }
-                      />
-                    )}
-                    {(turn.text || turn.tools.length > 0) && (
-                      <AgentMessage
-                      turn={turn}
-                      projectDir={activeDir ?? ""}
-                      git={git}
-                      configValues={configValues}
-                      engineId={engineId!}
-                      engineLabel={engineLabel!}
-                      running={busy}
-                      onAction={(action) => {
-                        switch (action.type) {
-                          case "send_message":
-                            send(action.text);
-                            break;
-                          case "cancel_run":
-                            cancel();
-                            break;
-                          case "continue_with_engine":
-                            // Same path as picking an engine from the
-                            // EnginePicker: switch live if connected, else
-                            // start fresh with it (CONTINUATION.md §10
-                            // Slice 6 — `bindEngine` builds the brief from
-                            // the checkpoint this action came from).
-                            handleSelectEngine(action.engineId);
-                            break;
-                        }
-                      }}
-                      onSend={send}
-                      onUpdatePlan={updateTurnPlan}
-                      onExitPlanMode={exitPlanMode}
-                      isLatestTurn={turn === turns.at(-1)}
-                      depth={depth}
-                      otherEngines={enrichedEngines
-                        .filter((e) => e.installed && e.id !== engineId)
-                        .map((e) => ({ id: e.id, label: e.label }))}
-                      diffOpen={diffTurnId === turn.id}
-                      onOpenDiff={(path) => {
-                        setDiffFocusPath(path);
-                        setDiffTurnId((cur) =>
-                          cur === turn.id && !path ? null : turn.id,
-                        );
-                      }}
-                    />
-                    )}
-                  </>
-                )}
-              </MessageContent>
-            </Message>
+            <StreamedTurn
+              key={turn.id}
+              turn={turn}
+              projectDir={activeDir ?? null}
+              git={git}
+              configValues={configValues}
+              engineId={engineId ?? ""}
+              engineLabel={engineLabel ?? ""}
+              isRunning={busy && turn === turns.at(-1)}
+              isLatestTurn={turn === turns.at(-1)}
+              otherEngines={otherEngineChoices}
+              diffOpen={diffTurnId === turn.id}
+              onAction={handleBlockAction}
+              onSend={send}
+              onUpdatePlan={updateTurnPlan}
+              onExitPlanMode={exitPlanMode}
+              onOpenTasks={openTasks}
+              planProgress={planProgress}
+              onOpenPlan={openPlan}
+              onOpenDiff={(path) => {
+                setDiffFocusPath(path);
+                setDiffTurnId((cur) => (cur === turn.id && !path ? null : turn.id));
+              }}
+            />
             ),
           )}
 
@@ -1371,26 +1374,12 @@ export function App() {
             />
           )}
 
-          {busy && turns.at(-1)?.role === "user" && (
-            <Message from="assistant">
-              <MessageContent>
-                <AgentStatusLine
-                  turn={{
-                    id: "pending",
-                    role: "assistant",
-                    text: "",
-                    thought: "",
-                    tools: [],
-                  }}
-                  running={busy}
-                  configValues={configValues}
-                  projectDir={activeDir}
-                />
-                <ThinkingBlock text="" streaming />
-              </MessageContent>
-            </Message>
-          )}
+          <RunPanel onCancel={cancelRun} />
+          {tasks && <TasksPanel tasks={tasks} onClose={() => setIsTasksOpen(false)} />}
+
+          {busy && turns.at(-1)?.role === "user" && <StreamStatusLine turn={null} onOpenTasks={openTasks} planProgress={planProgress} onOpenPlan={openPlan} />}
         </div>
+        </LocalPathOpenerContext.Provider>
         )}
 
         <div
@@ -1994,11 +1983,11 @@ export function App() {
           )}
           style={
             sidePanelOpen
-              ? { width: diffPanelOpen ? inspectorResize.width : 288 }
+              ? { width: inspectorWidth }
               : undefined
           }
         >
-          {sidePanelOpen && diffPanelOpen && (
+          {sidePanelOpen && (diffPanelOpen || filePanelOpen || planPanelOpen) && (
             <div
               onMouseDown={inspectorResize.onResizeStart}
               onDoubleClick={inspectorResize.onResizeDoubleClick}
@@ -2010,10 +1999,19 @@ export function App() {
             </div>
           )}
           <div
-            className="h-fit max-h-full"
-            style={{ width: diffPanelOpen ? inspectorResize.width : 288 }}
+            className={filePanelOpen || planPanelOpen ? "h-full" : "h-fit max-h-full"}
+            style={{ width: inspectorWidth }}
           >
-            {diffPanelOpen ? (
+            {filePanelOpen ? (
+            <FileViewer key={openFilePath} />
+            ) : planPanelOpen ? (
+            <PlanPanel
+              entries={planEntries}
+              isExpanded={isPlanExpanded}
+              onToggleExpanded={() => setIsPlanExpanded((value) => !value)}
+              onClose={() => setClosedPlanSignature(planSignature)}
+            />
+            ) : diffPanelOpen ? (
             <TurnDiffPanel
               entries={turnDiffEntries}
               turnId={diffTurnId!}

@@ -59,6 +59,28 @@ export const AMP_CAPABILITIES: EngineCapabilities = {
   ...UNDOCUMENTED_DEVICE_CAPABILITIES,
 };
 
+export const GEMINI_CAPABILITIES: EngineCapabilities = {
+  ...BASE_ACP_CAPABILITIES,
+  resume: false,
+  mcp: true,
+  planning: false,
+  subagents: false,
+  skills: false,
+  sandbox: true,
+  ...UNDOCUMENTED_DEVICE_CAPABILITIES,
+};
+
+export const OPENCODE_CAPABILITIES: EngineCapabilities = {
+  ...BASE_ACP_CAPABILITIES,
+  resume: false,
+  mcp: true,
+  planning: false,
+  subagents: false,
+  skills: false,
+  sandbox: false,
+  ...UNDOCUMENTED_DEVICE_CAPABILITIES,
+};
+
 export const ANTIGRAVITY_CAPABILITIES: EngineCapabilities = {
   ...BASE_ACP_CAPABILITIES,
   mcp: false,

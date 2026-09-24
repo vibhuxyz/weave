@@ -9,7 +9,7 @@ export { runCommand, runBoot } from "./run-command.ts";
 export { runDiffReview } from "./diff-review.ts";
 export type { RungRun, VerifyOptions, VerifyOutcome } from "./types.ts";
 
-async function execute(
+export async function runDetectedRung(
   entry: DetectedRung,
   cwd: string,
   options: VerifyOptions,
@@ -62,7 +62,7 @@ async function verifyExplicitCommand(
         "is unknown cannot be compared with anything.",
     );
   }
-  const run = await execute(
+  const run = await runDetectedRung(
     {
       rung,
       strength: rungStrength(rung),
@@ -106,7 +106,7 @@ export async function verifyRepo(
     };
   }
 
-  const run = await execute(chosen, cwd, options);
+  const run = await runDetectedRung(chosen, cwd, options);
   options.onRung?.(run);
 
   return {

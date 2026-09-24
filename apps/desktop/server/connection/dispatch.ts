@@ -1,9 +1,10 @@
+import { installedEngines } from "@weave/agent";
 import { readGitStatus } from "@weave/core";
-import { readAttachment, searchProjectFiles } from "../project/index.ts";
+import { readAttachment, readTextFile, searchProjectFiles } from "../project/index.ts";
 import { handleStartAuth, toAuthInputLine } from "../auth/index.ts";
 import { handleStartSetup } from "../dispatch/index.ts";
 import { handleCompact, handleSaveHistory, handlePrompt, handleNewChat, handleOpenChat, handleSwitchEngine, handleSetConfig, handleSetMode } from "../dispatch/index.ts";
-import { errorMessage } from "../shared/index.ts";
+import { errorMessage, uuidV7 } from "../shared/index.ts";
 import { parseProjectDirs } from "../chat/index.ts";
 import { handleChatAction, handleDeleteProject, parseAutoArchiveDays } from "../archive/index.ts";
 import type { ChatAction } from "../archive/index.ts";
@@ -37,7 +38,7 @@ export function handleClientMessage(
     ledger,
     continuationTaskId,
     ruleCatalog,
-    builtinSkillCatalog,
+    selectBuiltinSkills,
     skillCatalog,
     pluginsById,
     authMethodsByEngine,
@@ -47,6 +48,7 @@ export function handleClientMessage(
     activeSetup,
     compaction,
     history,
+    runs,
     send,
     sendChats,
     sendEngineList,
@@ -158,6 +160,24 @@ export function handleClientMessage(
       );
       return;
 
+    case "read-file": {
+      const path: unknown = msg.path;
+      if (typeof path !== "string" || path.length === 0) {
+        send({ type: "error", message: "Cannot read a file: the request has no path." });
+        return;
+      }
+      forwardResult(
+        readTextFile(projectDir, path),
+        send,
+        (result) =>
+          result.ok
+            ? { type: "file-content", path, content: result.content, truncated: result.truncated }
+            : { type: "file-error", path, message: result.reason },
+        `Cannot read ${path}`,
+      );
+      return;
+    }
+
     case "list-files":
       forwardResult(
         searchProjectFiles(projectDir, msg.query),
@@ -232,6 +252,14 @@ export function handleClientMessage(
       return;
     }
 
+    case "start-run":
+      void runs.start({ request: msg.request, projectDir, engineId: sessionMgr.currentEngineId, fallbackEngineIds: installedEngines().map((engine) => engine.id), runKey: uuidV7(Date.now()), send });
+      return;
+
+    case "cancel-run":
+      runs.cancel();
+      return;
+
     case "save-history":
       queueTask(async () => handleSaveHistory({ raw: msg, history, send }));
       return;
@@ -249,7 +277,7 @@ export function handleClientMessage(
           chats,
           continuationTaskId,
           ruleCatalog,
-          builtinSkillCatalog,
+          selectBuiltinSkills,
           skillCatalog,
           decisions,
           send,

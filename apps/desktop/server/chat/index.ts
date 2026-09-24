@@ -3,6 +3,8 @@ export type { ResolvePluginsOptions } from "./resolve-plugins.ts";
 export { composeSystemPrompt, buildPromptBlocks } from "./prompt-composer.ts";
 export type { ComposeSystemOptions } from "./prompt-composer.ts";
 export { summarizeCheckpoint } from "./checkpoint-summary.ts";
+export { createSkillSelector } from "./skill-selector.ts";
+export type { SkillSelector } from "./skill-selector.ts";
 export type { CheckpointSummaryPayload } from "./checkpoint-summary.ts";
 export { ProjectChats, parsePersonaIds } from "./project-chats.ts";
 export { ChatDirectory, isProjectDir, parseProjectDirs } from "./chat-directory.ts";

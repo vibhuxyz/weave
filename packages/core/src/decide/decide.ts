@@ -38,3 +38,7 @@ export function decide(input: DecideInput): Decision {
   if (input.tasks.length <= 1) return sequential("single-task");
   return input.kind === "greenfield" ? decideGreenfield(input) : decideExisting(input);
 }
+
+export function concurrencyFor(decision: Decision, taskCount: number, maxWorkers: number): number {
+  return decision.mode === "parallel" ? Math.max(1, Math.min(taskCount, maxWorkers)) : 1;
+}

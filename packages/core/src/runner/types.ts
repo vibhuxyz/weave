@@ -29,6 +29,7 @@ export interface RunTaskOutcome {
   turnUsage?: Usage | null;
   worktree?: Worktree | null;
   finalMessage: string;
+  stoppedBy: "maxTurns" | "timeoutMs" | "aborted" | null;
 }
 
 export interface RunTaskContext {

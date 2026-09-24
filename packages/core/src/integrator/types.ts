@@ -33,6 +33,7 @@ export interface MergeReport {
   readonly commit: string | null;
   readonly rungs: readonly VerificationRung[];
   readonly detail: string;
+  readonly verifyMs?: number;
 }
 
 export interface IntegrationReport {

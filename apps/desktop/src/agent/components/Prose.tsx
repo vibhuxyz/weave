@@ -26,7 +26,6 @@ export function Prose({
         "[&_h1]:text-agent-text-bright [&_h2]:text-agent-text-bright [&_h3]:text-agent-text-bright [&_h4]:text-agent-text-bright [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h1]:mt-6 [&_h2]:mt-5 [&_h3]:mt-4 [&_h1]:mb-2 [&_h2]:mb-2 [&_h3]:mb-1.5",
         "[&_a]:text-agent-low-fg [&_a]:underline-offset-2",
         "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1 [&_li]:marker:text-agent-text-faint",
-        "[&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-agent-surface-hover [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.85em] [&_:not(pre)>code]:text-agent-accent",
         "[&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-agent-code-border [&_pre]:bg-agent-code-bg [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-6",
         "[&_blockquote]:border-l-2 [&_blockquote]:border-agent-accent/50 [&_blockquote]:pl-3 [&_blockquote]:text-agent-info-fg",
         "[&_table]:my-4 [&_table]:w-full [&_table]:text-xs [&_th]:border-b [&_th]:border-agent-border [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left [&_th]:text-agent-text-muted [&_td]:border-b [&_td]:border-agent-border-subtle [&_td]:px-2 [&_td]:py-1.5",

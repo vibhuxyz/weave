@@ -33,7 +33,8 @@ async function foldStoppedState(weaveDir: string, cwd: string, runId: string, go
   const folded = foldTaskState(events, goal, taskId);
   return {
     ...folded,
-    git: {
+    status: folded.status === "running" || folded.status === "pending" ? "paused" : folded.status,
+    gitState: {
       branch: gitStatus.branch,
       baseCommit: null,
       headCommit,

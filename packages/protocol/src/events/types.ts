@@ -1,3 +1,4 @@
+import type { CoordinationEvent, ResourceRef } from "../coordination/index.ts";
 import type { CheckpointReason } from "../continuation/index.ts";
 import type { VerificationRung } from "../verification/index.ts";
 
@@ -177,6 +178,7 @@ export type WeaveEvent =
       commit: string | null;
       rungs: VerificationRung[];
       detail: string;
+      verifyMs?: number;
     })
   | (BaseEvent & {
       type: "integration.finished";
@@ -184,6 +186,33 @@ export type WeaveEvent =
       branch: string;
       head: string;
       brokenBy: string | null;
-    });
+    })
+  | (BaseEvent & { type: "coordination.event"; event: CoordinationEvent; recipients: string[] })
+  | (BaseEvent & { type: "coordination.rejected"; taskId: string; reason: string })
+  | (BaseEvent & { type: "ownership.claimed"; taskId: string; resources: ResourceRef[] })
+  | (BaseEvent & { type: "ownership.blocked"; taskId: string; conflicts: string[] })
+  | (BaseEvent & { type: "ownership.released"; taskId: string })
+  | (BaseEvent & { type: "dependency.added"; taskId: string; on: string; outputs: string[]; reason: string })
+  | (BaseEvent & { type: "consumer.invalidated"; taskId: string; reason: string })
+  | (BaseEvent & {
+      type: "orchestration.decided";
+      workers: number;
+      reason: string;
+      benefitMs: { timeSaved: number; coordination: number; mergeRisk: number; verification: number; startup: number; total: number };
+      estimatedCostMicroUsd: string;
+      tasks: { taskId: string; kind: string; sizeUnits: number; engines: string[]; estimatedMs: number }[];
+    })
+  | (BaseEvent & {
+      type: "budget.exceeded";
+      scope: "project" | "run" | "task" | "employee" | "engine";
+      key: string;
+      dimension: "cost" | "tokens" | "time";
+      limit: string;
+      spent: string;
+      action: "stop-task" | "stop-run" | "skip-task";
+    })
+  | (BaseEvent & { type: "employee.assigned"; taskId: string; employeeId: string | null; score: number; reasons: string[] })
+  | (BaseEvent & { type: "employee.verified"; taskId: string; employeeId: string; ok: boolean; rungs: { rung: VerificationRung; ok: boolean; wallMs: number }[]; detail: string })
+  | (BaseEvent & { type: "employee.memory.recorded"; taskId: string; employeeId: string; entries: number });
 
 export type WeaveEventType = WeaveEvent["type"];

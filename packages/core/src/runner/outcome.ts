@@ -41,6 +41,7 @@ export function buildSuccessOutcome(input: SuccessOutcomeInput): RunTaskOutcome 
     turnUsage,
     worktree,
     finalMessage: finalMessageOf(tracker),
+    stoppedBy: tracker.stopped,
   };
 }
 
@@ -78,5 +79,6 @@ export function buildFailureOutcome(input: FailureOutcomeInput): RunTaskOutcome 
     turnUsage: null,
     worktree,
     finalMessage: finalMessageOf(tracker),
+    stoppedBy: tracker.stopped,
   };
 }

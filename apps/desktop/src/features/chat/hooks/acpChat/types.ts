@@ -18,8 +18,12 @@ export interface ToolDiff {
   startLine?: number;
 }
 
+export type PlanChangeKind = "added" | "started" | "completed";
+
 export interface ToolEntry {
   id: string;
+  /** Set on entries Weave derives from an ACP plan update, not a real tool call. */
+  planChange?: PlanChangeKind;
   title: string;
   status: ToolCallStatus;
   /** read | edit | delete | move | search | execute | think | fetch | … */
@@ -111,10 +115,15 @@ export interface TurnCheckpoint {
   };
 }
 
+export type TurnSegment =
+  | { readonly id: string; readonly kind: "text"; readonly text: string }
+  | { readonly id: string; readonly kind: "tools"; readonly toolIds: readonly string[] };
+
 export interface ChatTurn {
   id: string;
   role: "user" | "assistant" | "notice";
   text: string;
+  createdAt?: number;
   compaction?: CompactionNotice;
   historyGap?: number;
   checkpoint?: TurnCheckpoint;
@@ -129,6 +138,7 @@ export interface ChatTurn {
   /** The agent's reasoning stream (`agent_thought_chunk`), shown collapsed. */
   thought: string;
   tools: ToolEntry[];
+  segments?: TurnSegment[];
   plan?: TurnPlan;
   /** Token usage for this turn, as far as the engine has reported it. */
   usage?: TurnUsage;

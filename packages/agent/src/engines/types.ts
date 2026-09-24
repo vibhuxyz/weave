@@ -46,8 +46,11 @@ export interface EngineSetup {
   readonly description: string;
 }
 
+export type EngineRuntime = "node" | "native";
+
 export interface EngineDescriptor {
   id: string;
+  runtime?: EngineRuntime;
   label: string;
   packageName: string;
   binName: string;

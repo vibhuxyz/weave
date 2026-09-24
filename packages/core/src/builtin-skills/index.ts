@@ -18,9 +18,3 @@ export const BUILTIN_SKILLS: readonly BuiltinSkill[] = [
   securitySkill,
   testingSkill,
 ];
-
-export function formatBuiltinSkillsBlock(entries: readonly BuiltinSkill[]): string {
-  if (entries.length === 0) return "";
-  const body = entries.map((s) => `## ${s.name}\n${s.body}`).join("\n\n");
-  return ["<builtin-skills>", body, "</builtin-skills>"].join("\n");
-}

@@ -15,10 +15,10 @@
   },
   "dependencies": {
     "@weave/protocol": "workspace:*",
-    "@weave/agent": "workspace:*"
+    "@weave/agent": "workspace:*",
+    "typescript": "~5.9.3"
   },
   "devDependencies": {
-    "typescript": "~5.9.3",
     "@types/node": "^22.10.2"
   }
 }

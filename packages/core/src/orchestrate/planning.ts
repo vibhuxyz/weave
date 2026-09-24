@@ -20,6 +20,8 @@ export async function planTasks(
     rungs: input.rungs,
     blueprint: base?.blueprint ?? null,
     contract: base?.contract ?? null,
+    projectContext: input.projectContext ?? null,
+    employees: input.employeeRoster ?? null,
     cwd: input.repoRoot,
     runTurn: input.runTurn,
     signal: input.signal,

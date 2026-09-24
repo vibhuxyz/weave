@@ -1,5 +1,30 @@
 # UI Architecture & Implementation Guide — Agent Response Cards
 
+> **Current design (2026-09-24) — supersedes the card layout below.** The boxed
+> response card (`AgentMessage`, `AgentHeader`, `WorkingRow`, the Overview/Activity
+> tabs, `ToolSteps`, `TurnDiffBar`) and the Brief/Normal/Deep depth control (§10)
+> were removed. The rest of this document is kept as history; the normalizer
+> (`messageToBlocks`) and the interactive blocks still apply.
+>
+> An assistant turn now renders as a Claude Code-style stream (`agent/components/stream/`):
+>
+> | Piece | What it shows | Code |
+> |---|---|---|
+> | Segments | Narration and tool calls in the order they streamed; the turn records `segments` (`acpChat/turn-segments.ts`). Turns saved before this show tools, then text. | `TurnSegments.tsx`, `segments.ts` |
+> | Tool group | One gray row per run of consecutive tool calls: "Ran 2 commands (1 failed), read MVP.md +12 -3 ›". Expands to a bordered list. | `tools/ToolGroup.tsx`, `tools/tool-label.ts` |
+> | Tool row | "Ran bun install ›"; expands to a colored `$ command` line and the output (capped at 8,000 chars). Edits link to the diff. | `tools/ToolRow.tsx`, `tools/CommandLine.tsx`, `tools/command-tokens.ts` |
+> | Thought | Collapsed "Thought ›" row. | `ThoughtRow.tsx` |
+> | Interactive blocks | Plan approval, checkpoint, safety ask, error, permission — unchanged components. | `InteractiveBlocks.tsx` |
+> | Files changed | "Edited 6 files +386 -0 ›" card, first 3 files, then "Show N more"; rows open the diff inspector. | `FilesChanged.tsx` |
+> | Status line | "✳ 19m 12s · 30.0k tokens · 1 running task · Running tools…" while the turn runs. | `StreamStatusLine.tsx` |
+> | User message | Right-aligned gray bubble; under it "just now" (then "7 min. ago", hours, a date), copy, and re-send (opens the prompt for editing and sends it as a new turn; ACP cannot rewind). Replayed history has no send time, so it shows only the buttons. | `features/chat/components/UserMessage.tsx`, `agent/lib/sent-at.ts` |
+> | File links | File paths in replies — inline code like `docs/uiupdate.md` or `src/App.tsx:12`, and markdown links to local files — render as blue underlined links (`shared/lib/local-path.ts` decides what counts as a path). Identifiers such as `onEvent` stay code chips. | `shared/ui/ai-elements/local-path-link.tsx` |
+> | File viewer | Clicking a file link opens it in the right inspector: tab with close, breadcrumb, markdown rendered with a source toggle, other files as numbered source; expand widens the panel. The server reads it via `read-file` (inside the project only, symlinks resolved, binaries refused, first 1 MB). | `features/files/`, `server/project/read-text-file.ts` |
+> | Task list | When an engine updates its task list (ACP `plan` — Claude Code todos, Codex plans), the stream gets "Added task / Started task / Completed task" rows grouped with tool calls ("Used a tool, added 3 tasks"), and a docked **Plan** panel lists the tasks (dashed circle pending, ring in progress, check done). It opens when the task list changes, stays closed if dismissed until it changes again, and "N/M tasks" in the status line reopens it. Plan cards stay in the stream only when they wait for approval. | `features/chat/hooks/acpChat/plan-changes.ts`, `agent/components/plan/` |
+> | Background tasks | Opened from "N running tasks": running first, then a collapsible "Finished N" list (last 100, clearable); each card shows the command, kind and state, and expands to its output. | `agent/components/tasks/` |
+>
+> Parallel runs (`/parallel <request>`) show their per-worker lanes in `features/runs/` — see [MVP.3](MVP.md).
+
 > Reference screenshots: `/Users/vibhu/Downloads/ui/` (2026-09-03)  
 > Last updated: 2026-09-03
 
@@ -491,7 +516,7 @@ type CheckpointBlock = BaseBlock & {
 
 ---
 
-## 10. Brief / Normal / Deep — Presentation Depth (Not Agent Config)
+## 10. Brief / Normal / Deep — Presentation Depth (Not Agent Config) — removed 2026-09-24
 
 **Rule:** Depth controls *presentation* only. It does not change what the agent does, does not trigger new LLM calls, and does not change token usage.
 

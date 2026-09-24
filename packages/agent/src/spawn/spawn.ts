@@ -44,24 +44,18 @@ function resolveExtraEnv(engine: EngineDescriptor): Record<string, string> {
   return extraEnv;
 }
 
-function resolveSpawnCommand(
+export function resolveSpawnCommand(
   cwd: string,
   entry: string,
   engineArgs: string[],
-  sandboxed?: boolean,
+  options: { sandboxed?: boolean; runtime?: EngineDescriptor["runtime"] } = {},
 ): { spawnBin: string; spawnArgs: string[] } {
-  const node = resolveNodeBinary();
-  if (sandboxed && process.platform === "darwin") {
-    const profile = buildMacOsSandboxProfile(cwd);
-    return {
-      spawnBin: "/usr/bin/sandbox-exec",
-      spawnArgs: ["-p", profile, node, entry, ...engineArgs],
-    };
+  const command = options.runtime === "native" ? [entry, ...engineArgs] : [resolveNodeBinary(), entry, ...engineArgs];
+  if (options.sandboxed && process.platform === "darwin") {
+    return { spawnBin: "/usr/bin/sandbox-exec", spawnArgs: ["-p", buildMacOsSandboxProfile(cwd), ...command] };
   }
-  return {
-    spawnBin: node,
-    spawnArgs: [entry, ...engineArgs],
-  };
+  const [spawnBin = entry, ...spawnArgs] = command;
+  return { spawnBin, spawnArgs };
 }
 
 function attachStderrDrain(child: ChildProcess): () => string {
@@ -120,7 +114,7 @@ export function spawnAgent(
   const entry = resolveEngineEntry(engine);
   const engineArgs = resolveEngineArgs(engine, resolvedOptions);
   const extraEnv = resolveExtraEnv(engine);
-  const { spawnBin, spawnArgs } = resolveSpawnCommand(cwd, entry, engineArgs, resolvedOptions.sandboxed);
+  const { spawnBin, spawnArgs } = resolveSpawnCommand(cwd, entry, engineArgs, { sandboxed: resolvedOptions.sandboxed, runtime: engine.runtime });
 
   const child = spawn(spawnBin, spawnArgs, {
     cwd,

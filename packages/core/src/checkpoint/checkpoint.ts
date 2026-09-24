@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { CheckpointReason, TaskState, WeaveEvent } from "@weave/protocol";
+import type { CheckpointReason, TaskState, TaskStateV1, WeaveEvent } from "@weave/protocol";
 import { isNotFound } from "../shared/index.ts";
+import { upgradeTaskState } from "../state/index.ts";
 
 export interface Checkpoint {
   schemaVersion: 1;
@@ -30,7 +31,7 @@ export function shouldCheckpoint(
       return { checkpoint: false };
 
     case "file.written":
-      return state.files.modified.length > 0
+      return state.changedFiles.modified.length > 0
         ? { checkpoint: true, reason: "file_milestone" }
         : { checkpoint: false };
 
@@ -83,9 +84,15 @@ export async function writeCheckpoint(
   return checkpoint;
 }
 
+type StoredCheckpoint = Omit<Checkpoint, "state"> & { state: TaskState | TaskStateV1 };
+
+function upgraded(stored: StoredCheckpoint): Checkpoint {
+  return { ...stored, state: upgradeTaskState(stored.state) };
+}
+
 export async function readLatest(weaveDir: string, taskId: string): Promise<Checkpoint | null> {
   try {
-    return JSON.parse(await readFile(latestFile(weaveDir, taskId), "utf8")) as Checkpoint;
+    return upgraded(JSON.parse(await readFile(latestFile(weaveDir, taskId), "utf8")) as StoredCheckpoint);
   } catch (error) {
     if (isNotFound(error)) return null;
     throw error;
@@ -99,7 +106,7 @@ export async function readCheckpoint(
 ): Promise<Checkpoint | null> {
   try {
     const file = join(checkpointsDir(weaveDir, taskId), `${seq}.json`);
-    return JSON.parse(await readFile(file, "utf8")) as Checkpoint;
+    return upgraded(JSON.parse(await readFile(file, "utf8")) as StoredCheckpoint);
   } catch (error) {
     if (isNotFound(error)) return null;
     throw error;

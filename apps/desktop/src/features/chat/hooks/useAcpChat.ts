@@ -32,9 +32,13 @@ import {
   type CompactionCapabilities,
 } from "@/features/chat/compaction";
 import { buildHistoryArchive, restoreArchivedTurns } from "./acpChat/history-archive";
+import { appendTextSegment, appendToolSegment } from "./acpChat/turn-segments";
+import { latestPlanEntries, planChangeEntries, planChanges } from "./acpChat/plan-changes";
 import { useArchiveChannel } from "./acpChat/use-archive-channel";
 import type { ArchiveChannelOptions } from "./acpChat/use-archive-channel";
 import { useQuestionChannel } from "./question";
+import { useRunChannel } from "@/features/runs";
+import { useFileChannel } from "@/features/files";
 import {
   applyCompactionSettled,
   applyCompactionStarted,
@@ -70,9 +74,12 @@ export type {
   TurnCheckpoint,
   TurnPersona,
   TurnPlan,
+  TurnSegment,
   TurnUsage,
+  PlanChangeKind,
 } from "./acpChat/types";
 export { splitAttachments } from "./acpChat/messageParsing";
+export { latestPlanEntries } from "./acpChat/plan-changes";
 export type { SessionModes, SessionModeInfo, TerminalKeyName, SetupConsent, ConsentLink } from "../../../../server/index.ts";
 
 const OPEN_CHAT_TIMEOUT_MS = 20_000;
@@ -154,6 +161,8 @@ export function useAcpChat(server: ChatServerEndpoint | null, options: ArchiveCh
   const socketRef = useRef<WebSocket | null>(null);
   const archive = useArchiveChannel(socketRef, options);
   const questionChannel = useQuestionChannel(socketRef);
+  const runChannel = useRunChannel(socketRef);
+  const fileChannel = useFileChannel(socketRef);
   const [state, setState] = useState<ConnectionState>("idle");
   const [cwd, setCwd] = useState<string | null>(null);
   const [engineId, setEngineId] = useState<string | null>(null);
@@ -287,11 +296,11 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
   }, [openingSessionId]);
 
   const withAssistantTurn = useCallback(
-    (mutate: (turn: ChatTurn) => ChatTurn) => {
+    (mutate: (turn: ChatTurn, history: readonly ChatTurn[]) => ChatTurn) => {
       setTurns((current) => {
         const last = current.at(-1);
         if (last?.role === "assistant") {
-          return [...current.slice(0, -1), mutate(last)];
+          return [...current.slice(0, -1), mutate(last, current.slice(0, -1))];
         }
         const fresh: ChatTurn = {
           id: crypto.randomUUID(),
@@ -301,7 +310,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           tools: [],
           personas: personasRef.current,
         };
-        return [...current, mutate(fresh)];
+        return [...current, mutate(fresh, current)];
       });
     },
     [],
@@ -402,6 +411,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           withAssistantTurn((turn) => ({
             ...turn,
             text: turn.text + chunk,
+            segments: appendTextSegment(turn.segments, chunk),
             sourceEventIds: sourceEventIds
               ? [...(turn.sourceEventIds ?? []), ...sourceEventIds]
               : turn.sourceEventIds,
@@ -427,6 +437,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           const now = replay ? undefined : Date.now();
           withAssistantTurn((turn) => ({
             ...turn,
+            segments: appendToolSegment(turn.segments, update.toolCallId),
             tools: [
               ...turn.tools,
               {
@@ -482,15 +493,20 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           return;
         }
         case "plan": {
-          withAssistantTurn((turn) => {
+          const at = replay ? undefined : Date.now();
+          withAssistantTurn((turn, history) => {
             const nextEntries: PlanItem[] = (update.entries ?? []).map((entry, idx) => ({
               id: `plan-step-${idx + 1}`,
               content: entry.content,
               priority: entry.priority,
               status: entry.status,
             }));
+            const changes = planChanges(latestPlanEntries([...history, turn]), nextEntries);
+            const entries = planChangeEntries(turn.id, turn.tools.length, changes, at);
             return {
               ...turn,
+              tools: [...turn.tools, ...entries],
+              segments: entries.reduce((segments, entry) => appendToolSegment(segments, entry.id), turn.segments ?? []),
               plan: {
                 entries: nextEntries,
                 approved: turn.plan?.approved ?? false,
@@ -582,6 +598,8 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
         const message = JSON.parse(String(event.data)) as ServerMessage;
         if (archive.handleMessage(message)) return;
         if (questionChannel.handleMessage(message)) return;
+        if (runChannel.handleMessage(message)) return;
+        if (fileChannel.handleMessage(message)) return;
         switch (message.type) {
           case "ready":
             setState("ready");
@@ -1011,7 +1029,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       clearTimeout(retry);
       socket?.close();
     };
-  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset]);
+  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset, runChannel.handleMessage, fileChannel.handleMessage]);
 
   const latestUsage = latestContextUsage(turns);
   const contextUsed = latestUsage?.contextTokens;
@@ -1065,6 +1083,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           id: promptId,
           role: "user",
           text: stripSystemPreamble(trimmed),
+          createdAt: Date.now(),
           mentions: opts?.mentions?.length ? opts.mentions : undefined,
           personas: personasRef.current,
           images: images?.map((image) => ({
@@ -1321,6 +1340,9 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     answerPermission,
     question: questionChannel.question,
     answerQuestion: questionChannel.answer,
+    startRun: runChannel.startRun,
+    cancelRun: runChannel.cancelRun,
+    openFile: fileChannel.openFile,
     modes,
     setMode,
     engineSetup,

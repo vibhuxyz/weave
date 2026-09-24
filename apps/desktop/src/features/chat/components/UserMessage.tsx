@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CheckIcon, CopyIcon, ImageOffIcon, PencilIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, ImageOffIcon, RotateCcwIcon } from "lucide-react";
 import { Button } from "@/shared/ui";
 import { AgentAvatar } from '@/features/agents/components';
 import { useCopyToClipboard } from "@/shared/hooks";
 import { cn } from "@/shared/lib";
+import { sentAgo, useNow, type SentAgo } from "@/agent/lib";
+import { formatDate, formatRelativeTime } from "@/shared/i18n";
 import type { ChatImageAttachment } from '@/features/chat/hooks';
 
 /**
@@ -13,8 +15,34 @@ import type { ChatImageAttachment } from '@/features/chat/hooks';
  * primitive. The bubble becomes an editor in place and Send appends a fresh
  * prompt; the original turn stays in the transcript.
  */
+const SENT_AT_REFRESH_MS = 30_000;
+const RELATIVE_STYLE = { numeric: "auto", style: "short" } as const;
+const DATE_STYLE = { month: "short", day: "numeric" } as const;
+
+function sentAtText(ago: SentAgo, createdAt: number): string {
+  switch (ago.unit) {
+    case "just-now":
+      return "just now";
+    case "minute":
+    case "hour":
+      return formatRelativeTime(-ago.count, ago.unit, RELATIVE_STYLE);
+    case "date":
+      return formatDate(createdAt, DATE_STYLE);
+    default: {
+      const unreachable: never = ago;
+      return unreachable;
+    }
+  }
+}
+
+function SentAt({ createdAt }: { readonly createdAt: number }) {
+  const now = useNow(true, SENT_AT_REFRESH_MS);
+  return <time dateTime={new Date(createdAt).toISOString()}>{sentAtText(sentAgo(createdAt, now), createdAt)}</time>;
+}
+
 export function UserMessage({
   text,
+  createdAt,
   mentions,
   images,
   onEdit,
@@ -22,6 +50,7 @@ export function UserMessage({
   onViewImage,
 }: {
   text: string;
+  createdAt?: number;
   mentions?: string[];
   images?: ChatImageAttachment[];
   /** Fallback when there is nowhere to send from: refill the composer. */
@@ -80,11 +109,11 @@ export function UserMessage({
   return (
     // Right aligned and shrink-wrapped: the bubble is as wide as the prompt,
     // up to 80% of the column. Attachments sit ABOVE it, unframed — they are
-    // what the user showed, not a field inside what they wrote — and the hover
-    // actions hang below, absolutely placed so they reserve no height.
+    // what the user showed, not a field inside what they wrote — and the time,
+    // copy and re-send actions sit on one line below it.
     <div
       data-user-message
-      className="group relative flex w-full flex-col items-end gap-1.5"
+      className="flex w-full flex-col items-end gap-1.5"
     >
       {!editing && images && images.length > 0 && (
         <div className="flex max-w-[80%] flex-wrap justify-end gap-2">
@@ -179,10 +208,8 @@ export function UserMessage({
         <div
           className={cn(
             "flex w-fit min-w-0 max-w-[80%] flex-col gap-1.5",
-            "rounded-[18px] px-4 py-2.5",
-            "border border-message-user-border",
-            "bg-message-user-surface bg-(image:--message-user-glow)",
-            "text-message-user-fg shadow-(--message-user-shadow)",
+            "rounded-2xl px-4 py-2.5",
+            "bg-agent-surface-hover text-agent-text-bright",
           )}
         >
           {mentions && mentions.length > 0 && (
@@ -190,7 +217,7 @@ export function UserMessage({
               {mentions.map((name) => (
                 <span
                   key={name}
-                  className="flex items-center gap-1 rounded-md bg-white/15 px-1.5 py-0.5 text-message-user-fg text-xs"
+                  className="flex items-center gap-1 rounded-md bg-white/10 px-1.5 py-0.5 text-agent-text text-xs"
                 >
                   <AgentAvatar name={name} size="sm" className="size-4" />
                   {name}
@@ -212,7 +239,7 @@ export function UserMessage({
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}
-              className="mr-auto rounded text-message-user-fg-muted text-xs transition-colors hover:text-message-user-fg"
+              className="mr-auto rounded text-agent-text-muted text-xs transition-colors hover:text-agent-text-bright"
             >
               {expanded ? "Show less" : "Show more"}
             </button>
@@ -221,20 +248,25 @@ export function UserMessage({
       )}
 
       {!editing && (
-        <div className="absolute top-full right-0 z-10 mt-0.5 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <div className="flex items-center gap-1 pr-1 text-agent-text-faint text-sm">
+          {createdAt !== undefined && (
+            <span className="mr-1">
+              <SentAt createdAt={createdAt} />
+            </span>
+          )}
           <ActionButton
             label={isCopied ? "Copied" : "Copy"}
             onClick={() => copyToClipboard(text)}
           >
             {isCopied ? (
-              <CheckIcon className="size-3.5 text-agent-success" />
+              <CheckIcon className="size-4 text-agent-success" />
             ) : (
-              <CopyIcon className="size-3.5" />
+              <CopyIcon className="size-4" />
             )}
           </ActionButton>
           {(onResend || onEdit) && (
             <ActionButton label="Edit & re-send" onClick={startEditing}>
-              <PencilIcon className="size-3.5" />
+              <RotateCcwIcon className="size-4" />
             </ActionButton>
           )}
         </div>
@@ -305,8 +337,8 @@ function ActionButton({
       aria-label={label}
       onClick={onClick}
       className={cn(
-        "rounded p-1 text-muted-foreground transition-colors",
-        "hover:bg-secondary hover:text-foreground",
+        "rounded p-1 text-agent-text-faint transition-colors",
+        "hover:bg-agent-surface-hover hover:text-agent-text",
       )}
     >
       {children}

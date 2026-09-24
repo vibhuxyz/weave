@@ -1,8 +1,10 @@
 import { join, resolve } from "node:path";
 import {
   compilePolicyPaths,
+  confineToTaskDir,
   getEngine,
   openSession,
+  withPolicy,
   type PermissionPolicy,
 } from "@weave/agent";
 import type { RunConfig, TaskContract, TaskResult, WeaveEvent } from "@weave/protocol";
@@ -40,7 +42,7 @@ async function openTaskSession(
   let session: Session | undefined;
   session = await openSession({
     task: ctx.task,
-    policy: options.policy,
+    policy: ctx.task.policy ? withPolicy(ctx.task.policy, options.policy ?? confineToTaskDir) : options.policy,
     engineId: options.config?.engine,
     resumeSessionId: options.resumeSessionId ?? null,
     sink: createRunTaskSink({

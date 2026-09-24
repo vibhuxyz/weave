@@ -4,29 +4,23 @@ import type { EngineDescriptor } from "@weave/agent";
 import type { Checkpoint } from "../checkpoint/index.ts";
 import type { TaskState } from "@weave/protocol";
 import { EMPTY_GIT_STATE } from "@weave/protocol";
+import { emptyTaskState } from "../state/index.ts";
 import { buildBrief } from "./handoff.ts";
 
 const NEXT_ENGINE = { id: "codex", label: "Codex" } as EngineDescriptor;
 
 function baseState(overrides: Partial<TaskState> = {}): TaskState {
   return {
-    schemaVersion: 1,
-    taskId: "T1",
-    goal: "Build a Todo API",
+    ...emptyTaskState("T1", "Build a Todo API"),
     atSeq: 42,
+    status: "paused",
     completed: ["Scaffold server"],
-    inProgress: { description: "Implementing POST /todos" },
+    currentStep: "Implementing POST /todos",
+    nextStep: "Add tests",
     remaining: ["Add tests"],
-    files: {
-      read: [],
-      modified: ["apps/api/src/server.ts", "packages/db/schema.prisma"],
-      created: [],
-      deleted: [],
-    },
+    changedFiles: { modified: ["apps/api/src/server.ts", "packages/db/schema.prisma"], created: [], deleted: [] },
     commands: [{ command: "tsc --noEmit", ok: true, wallMs: 1200 }],
     verification: [{ rung: "typecheck", status: "passed", wallMs: 1200 }],
-    decisions: [],
-    errors: [],
     inFlight: [
       {
         toolCallId: "tc-2",
@@ -36,7 +30,7 @@ function baseState(overrides: Partial<TaskState> = {}): TaskState {
         startedAtSeq: 40,
       },
     ],
-    git: { branch: "weave/T1", baseCommit: "abc123f0", headCommit: "abc123f0", dirty: ["apps/api/src/server.ts"] },
+    gitState: { branch: "weave/T1", baseCommit: "abc123f0", headCommit: "abc123f0", dirty: ["apps/api/src/server.ts"] },
     ...overrides,
   };
 }
@@ -103,12 +97,13 @@ test("buildBrief is reproducible: same checkpoint, same string", () => {
 test("buildBrief on an empty task still renders every required section", () => {
   const state = baseState({
     completed: [],
-    inProgress: null,
-    files: { read: [], modified: [], created: [], deleted: [] },
+    currentStep: null,
+    nextStep: null,
+    changedFiles: { modified: [], created: [], deleted: [] },
     commands: [],
     verification: [],
     inFlight: [],
-    git: EMPTY_GIT_STATE,
+    gitState: EMPTY_GIT_STATE,
   });
   const brief = buildBrief(checkpointOf(state), NEXT_ENGINE);
   assert.match(brief, /CHANGED\n {2}\(no files changed\)/);

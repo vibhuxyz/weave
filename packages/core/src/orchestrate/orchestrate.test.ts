@@ -44,7 +44,9 @@ test("existing repo: one prompt becomes a graph that runs unedited, in parallel 
     await writeFile(join(task.cwd, task.allowedPaths?.[0] ?? "x"), task.id);
     return { status: "ok" };
   };
-  const result = await planAndRun({ request: "add three math helpers", repoRoot: repo, runTurn, runWorker: worker, verify: verifyOk, shouldInstall: false });
+  const streamed: number[] = [];
+  const onEvent = (event: { readonly seq: number }) => streamed.push(event.seq);
+  const result = await planAndRun({ request: "add three math helpers", repoRoot: repo, runTurn, runWorker: worker, verify: verifyOk, shouldInstall: false, onEvent });
   assert.equal(result.status, "ran");
   if (result.status !== "ran") return;
   assert.equal(result.kind, "existing");
@@ -52,9 +54,11 @@ test("existing repo: one prompt becomes a graph that runs unedited, in parallel 
   assert.equal(result.report.status, "ok");
   assert.equal(turns.length, 1);
   assert.match(turns[0] ?? "", /Verification rungs this project supports: .*tests/);
+  assert.match(turns[0] ?? "", /<project-context source="Weave project model[^"]*">[\s\S]*Search terms: three, math, helper/);
   const events = await readLedger(join(repo, ".weave"), result.report.runId);
   const planned = events.find((event) => event.type === "plan.created");
   assert.equal(planned?.type === "plan.created" && planned.concurrency, 3);
+  assert.deepEqual(streamed, events.map((event) => event.seq));
 });
 
 test("greenfield: blueprint, committed contract, locked contract, then parallel components", async () => {

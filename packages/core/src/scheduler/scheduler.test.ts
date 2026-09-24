@@ -40,3 +40,16 @@ test("topological order respects dependencies and is stable", () => {
   assert.deepEqual(topologicalOrder(GRAPH), ["T1", "T2", "T3", "T4"]);
   assert.deepEqual(topologicalOrder([{ id: "B", dependencies: [after("A")] }, { id: "A" }]), ["A", "B"]);
 });
+
+test("a task starts early once a running producer published every required output", () => {
+  const tasks: readonly SchedulableTask[] = [
+    { id: "DB" },
+    { id: "API", dependencies: [{ task: "DB", requiredOutputs: ["schema"] }] },
+    { id: "UI", dependencies: [after("DB")] },
+  ];
+  const states = new Map<string, ScheduledState>([["DB", "running"]]);
+  assert.deepEqual(nextStep(tasks, states).ready, []);
+  const published = new Map([["DB", new Set(["schema"])]]);
+  assert.deepEqual(nextStep(tasks, states, published).ready, ["API"]);
+  assert.deepEqual(nextStep(tasks, new Map([["DB", "failed"]]), published).skipped.map((entry) => entry.taskId), ["API", "UI"]);
+});

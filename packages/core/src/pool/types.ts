@@ -1,4 +1,6 @@
 import type { TaskContract } from "@weave/protocol";
+import type { BudgetManager } from "../adaptive/index.ts";
+import type { CoordinationChannel, CoordinationReport, Coordinator } from "../coordination/index.ts";
 import type { Ledger } from "../shared/index.ts";
 import type { Harvest } from "../worktree/index.ts";
 
@@ -6,6 +8,7 @@ export interface WorkerInput {
   readonly task: TaskContract;
   readonly ledger: Ledger;
   readonly signal: AbortSignal;
+  readonly coordination: CoordinationChannel;
 }
 
 export interface WorkerOutcome {
@@ -34,6 +37,9 @@ export interface PoolOptions {
   readonly baseCommit?: string;
   readonly inspectHarvest?: InspectHarvest;
   readonly attempt?: number;
+  readonly coordinator?: Coordinator;
+  readonly budget?: BudgetManager;
+  readonly priorityOf?: (taskId: string) => number;
 }
 
 export type SettledStatus = "ok" | "failed" | "cancelled" | "skipped";
@@ -52,6 +58,7 @@ export interface PoolTaskReport {
 
 export interface PoolReport {
   readonly tasks: readonly PoolTaskReport[];
+  readonly coordination: CoordinationReport;
 }
 
 export interface PoolContext {
@@ -64,4 +71,7 @@ export interface PoolContext {
   readonly baseCommit: string | undefined;
   readonly inspectHarvest: InspectHarvest | undefined;
   readonly attempt: number;
+  readonly coordinator: Coordinator;
+  readonly budget: BudgetManager | undefined;
+  readonly priorityOf: ((taskId: string) => number) | undefined;
 }

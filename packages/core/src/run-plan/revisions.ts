@@ -20,7 +20,13 @@ function dependenciesWithin(tasks: readonly TaskContract[]): readonly TaskContra
 
 function replaceReports(pool: PoolReport, rerun: PoolReport): PoolReport {
   const rerunById = new Map(rerun.tasks.map((entry) => [entry.taskId, entry]));
-  return { tasks: pool.tasks.map((entry) => rerunById.get(entry.taskId) ?? entry) };
+  return {
+    tasks: pool.tasks.map((entry) => rerunById.get(entry.taskId) ?? entry),
+    coordination: {
+      addedDependencies: [...pool.coordination.addedDependencies, ...rerun.coordination.addedDependencies],
+      escalations: [...pool.coordination.escalations, ...rerun.coordination.escalations],
+    },
+  };
 }
 
 export async function runWithRevisions(input: RevisionLoopInput): Promise<{ pool: PoolReport; baseCommit: string }> {

@@ -24,9 +24,23 @@ const DEPLOYMENT_COMMAND_PATTERN = new RegExp(
   "i",
 );
 
+const NETWORK_COMMAND_PATTERN = new RegExp(
+  [
+    "(^|[\\s;&|(])(curl|wget|nc|ncat|ssh|scp|rsync|ftp|telnet)\\s",
+    "git\\s+(push|pull|fetch|clone)\\b",
+    "(npm|pnpm|yarn|bun)\\s+(install|add|i|update|upgrade)\\b",
+    "pip3?\\s+install\\b",
+  ].join("|"),
+  "i",
+);
+
 export function compilePolicyPaths(policy: TaskPolicy | undefined): { allowedPaths?: string[] } {
   const write = policy?.filesystem?.write;
   return write && write.length > 0 ? { allowedPaths: write } : {};
+}
+
+function isNetworkDisabled(policy: TaskPolicy, command: string): boolean {
+  return policy.network?.allowed === false && NETWORK_COMMAND_PATTERN.test(command);
 }
 
 function isGitCommitDisabled(policy: TaskPolicy, command: string): boolean {
@@ -53,6 +67,9 @@ export function withPolicy(
     }
     if (isDeploymentDisabled(policy, command)) {
       return { decision: "reject", reason: "policy: deployment commands disabled for this task" };
+    }
+    if (isNetworkDisabled(policy, command)) {
+      return { decision: "reject", reason: "policy: network commands disabled for this task" };
     }
     return baseDecision;
   };
