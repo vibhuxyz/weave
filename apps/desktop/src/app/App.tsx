@@ -25,7 +25,6 @@ import {
   useTextareaAutosize,
 } from "@/shared/hooks";
 import { cn, flattenConfigValues, planExitTarget, splitConfigOptions, type PlanExitIntent } from "@/shared/lib";
-import { Message, MessageContent } from "@/shared/ui/ai-elements";
 import { isAuthRequiredError } from "@weave/protocol";
 import { ENGINES, DEFAULT_ENGINE_ID, tokenReportingFor } from "@weave/agent/browser";
 import { EnginePicker } from '@/features/engines/components';
@@ -49,7 +48,8 @@ const TRANSCRIPT_WIDTH = "mx-auto w-full max-w-4xl xl:max-w-5xl 2xl:max-w-6xl";
  * page rather than a place to type.
  */
 const COMPOSER_WIDTH = "mx-auto w-full max-w-4xl";
-import { DepthPicker, TurnDiffPanel, type DepthLevel, AgentMessage, AgentStatusLine, ThinkingBlock } from "@/agent/components";
+import { TurnDiffPanel, StreamedTurn, StreamStatusLine } from "@/agent/components";
+import type { BlockAction } from "@/agent/normalize";
 import { collectTurnDiffs } from "@/agent/diff";
 import { Sidebar } from "./Sidebar";
 import { CreateProjectDialog, toneColor } from '@/features/projects/components';
@@ -176,6 +176,10 @@ export function App() {
   } = useAcpChat(server, { onProjectDeleted: (dir) => forget(dir) });
 
   const { enrichedEngines } = useHarnesses({ engines, onRefreshEngines: refreshEngines });
+  const otherEngineChoices = useMemo(
+    () => enrichedEngines.filter((e) => e.installed && e.id !== engineId).map((e) => ({ id: e.id, label: e.label })),
+    [enrichedEngines, engineId],
+  );
   const startupSplash = useStartupSplash({
     project,
     connection,
@@ -544,15 +548,6 @@ export function App() {
   const [diffTurnId, setDiffTurnId] = useState<string | null>(null);
   /** A single file the chat asked the inspector to open. */
   const [diffFocusPath, setDiffFocusPath] = useState<string | undefined>();
-  /** How much of each run the cards render — a composer setting. */
-  const [depth, setDepth] = usePersistedState<DepthLevel>(
-    "berd:chat:depth",
-    "normal",
-    (value, defaults) =>
-      value === "brief" || value === "normal" || value === "deep"
-        ? value
-        : defaults,
-  );
   const [contextTab, setContextTab] = useState<ContextPanelTab>("Context");
 
   // Turns that touched files, for the side-panel diff reader.
@@ -863,6 +858,20 @@ export function App() {
     setImageLibrary((cur) =>
       cur.map((a) => (a.previewUrl === previewUrl ? { ...a, prompt } : a)),
     );
+  };
+
+  const handleBlockAction = (action: BlockAction) => {
+    switch (action.type) {
+      case "send_message":
+        send(action.text);
+        return;
+      case "cancel_run":
+        cancel();
+        return;
+      case "continue_with_engine":
+        handleSelectEngine(action.engineId);
+        return;
+    }
   };
 
   const submit = () => {
@@ -1281,78 +1290,27 @@ export function App() {
             ) : (
             // The run card owns the column: full width, like the user
             // request above it — not a content-width chat bubble.
-            <Message key={turn.id} from={turn.role} className="max-w-full">
-              <MessageContent className="w-full">
-                {(
-                  <>
-                    {busy && turn === turns.at(-1) && (
-                      <AgentStatusLine
-                        turn={turn}
-                        running={busy}
-                        configValues={configValues}
-                        projectDir={activeDir}
-                      />
-                    )}
-                    {(turn.thought ||
-                      (busy &&
-                        turn === turns.at(-1) &&
-                        !turn.text &&
-                        turn.tools.length === 0)) && (
-                      <ThinkingBlock
-                        text={turn.thought}
-                        streaming={
-                          busy && !turn.text && turn.tools.length === 0
-                        }
-                      />
-                    )}
-                    {(turn.text || turn.tools.length > 0) && (
-                      <AgentMessage
-                      turn={turn}
-                      projectDir={activeDir ?? ""}
-                      git={git}
-                      configValues={configValues}
-                      engineId={engineId!}
-                      engineLabel={engineLabel!}
-                      running={busy}
-                      onAction={(action) => {
-                        switch (action.type) {
-                          case "send_message":
-                            send(action.text);
-                            break;
-                          case "cancel_run":
-                            cancel();
-                            break;
-                          case "continue_with_engine":
-                            // Same path as picking an engine from the
-                            // EnginePicker: switch live if connected, else
-                            // start fresh with it (CONTINUATION.md §10
-                            // Slice 6 — `bindEngine` builds the brief from
-                            // the checkpoint this action came from).
-                            handleSelectEngine(action.engineId);
-                            break;
-                        }
-                      }}
-                      onSend={send}
-                      onUpdatePlan={updateTurnPlan}
-                      onExitPlanMode={exitPlanMode}
-                      isLatestTurn={turn === turns.at(-1)}
-                      depth={depth}
-                      otherEngines={enrichedEngines
-                        .filter((e) => e.installed && e.id !== engineId)
-                        .map((e) => ({ id: e.id, label: e.label }))}
-                      diffOpen={diffTurnId === turn.id}
-                      onOpenDiff={(path) => {
-                        setDiffFocusPath(path);
-                        setDiffTurnId((cur) =>
-                          cur === turn.id && !path ? null : turn.id,
-                        );
-                      }}
-                    />
-                    )}
-                  </>
-                )}
-              </MessageContent>
-            </Message>
+            <StreamedTurn
+              key={turn.id}
+              turn={turn}
+              projectDir={activeDir ?? null}
+              git={git}
+              configValues={configValues}
+              engineId={engineId ?? ""}
+              engineLabel={engineLabel ?? ""}
+              isRunning={busy && turn === turns.at(-1)}
+              isLatestTurn={turn === turns.at(-1)}
+              otherEngines={otherEngineChoices}
+              diffOpen={diffTurnId === turn.id}
+              onAction={handleBlockAction}
+              onSend={send}
+              onUpdatePlan={updateTurnPlan}
+              onExitPlanMode={exitPlanMode}
+              onOpenDiff={(path) => {
+                setDiffFocusPath(path);
+                setDiffTurnId((cur) => (cur === turn.id && !path ? null : turn.id));
+              }}
+            />
             ),
           )}
 
@@ -1383,25 +1341,7 @@ export function App() {
 
           <RunPanel onCancel={cancelRun} />
 
-          {busy && turns.at(-1)?.role === "user" && (
-            <Message from="assistant">
-              <MessageContent>
-                <AgentStatusLine
-                  turn={{
-                    id: "pending",
-                    role: "assistant",
-                    text: "",
-                    thought: "",
-                    tools: [],
-                  }}
-                  running={busy}
-                  configValues={configValues}
-                  projectDir={activeDir}
-                />
-                <ThinkingBlock text="" streaming />
-              </MessageContent>
-            </Message>
-          )}
+          {busy && turns.at(-1)?.role === "user" && <StreamStatusLine turn={null} />}
         </div>
         )}
 

@@ -26,5 +26,6 @@ export type {
   TurnCheckpoint,
   TurnPersona,
   TurnPlan,
+  TurnSegment,
   TurnUsage,
 } from "./useAcpChat";

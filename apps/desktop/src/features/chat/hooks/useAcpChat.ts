@@ -32,6 +32,7 @@ import {
   type CompactionCapabilities,
 } from "@/features/chat/compaction";
 import { buildHistoryArchive, restoreArchivedTurns } from "./acpChat/history-archive";
+import { appendTextSegment, appendToolSegment } from "./acpChat/turn-segments";
 import { useArchiveChannel } from "./acpChat/use-archive-channel";
 import type { ArchiveChannelOptions } from "./acpChat/use-archive-channel";
 import { useQuestionChannel } from "./question";
@@ -71,6 +72,7 @@ export type {
   TurnCheckpoint,
   TurnPersona,
   TurnPlan,
+  TurnSegment,
   TurnUsage,
 } from "./acpChat/types";
 export { splitAttachments } from "./acpChat/messageParsing";
@@ -404,6 +406,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           withAssistantTurn((turn) => ({
             ...turn,
             text: turn.text + chunk,
+            segments: appendTextSegment(turn.segments, chunk),
             sourceEventIds: sourceEventIds
               ? [...(turn.sourceEventIds ?? []), ...sourceEventIds]
               : turn.sourceEventIds,
@@ -429,6 +432,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           const now = replay ? undefined : Date.now();
           withAssistantTurn((turn) => ({
             ...turn,
+            segments: appendToolSegment(turn.segments, update.toolCallId),
             tools: [
               ...turn.tools,
               {

@@ -111,6 +111,10 @@ export interface TurnCheckpoint {
   };
 }
 
+export type TurnSegment =
+  | { readonly id: string; readonly kind: "text"; readonly text: string }
+  | { readonly id: string; readonly kind: "tools"; readonly toolIds: readonly string[] };
+
 export interface ChatTurn {
   id: string;
   role: "user" | "assistant" | "notice";
@@ -129,6 +133,7 @@ export interface ChatTurn {
   /** The agent's reasoning stream (`agent_thought_chunk`), shown collapsed. */
   thought: string;
   tools: ToolEntry[];
+  segments?: TurnSegment[];
   plan?: TurnPlan;
   /** Token usage for this turn, as far as the engine has reported it. */
   usage?: TurnUsage;

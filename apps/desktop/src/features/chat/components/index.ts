@@ -6,5 +6,6 @@ export { SetupConsentCard } from "./SetupConsentCard";
 export { hasSelectableModes, ModePicker } from "./ModePicker";
 export { PermissionCard } from "./PermissionCard";
 export { QuestionCard } from "./question";
-export { cleanOutput, ToolSteps } from "./ToolSteps";
+export { cleanOutput } from "./clean-output";
+export { toolRunState } from "./ToolStatusIcon";
 export { UserMessage } from "./UserMessage";
