@@ -25,6 +25,8 @@ export { compressToolOutput } from "./compress/index.ts";
 export { engineWorker, runPlan } from "./run-plan/index.ts";
 export type { RunPlanOptions, RunPlanReport, RunPlanResult } from "./run-plan/index.ts";
 export { detectProjectKind, planAndRun } from "./orchestrate/index.ts";
+export { buildProjectModel, queryProject, renderProjectContext } from "./context/index.ts";
+export type { ProjectAnswer, ProjectModel } from "./context/index.ts";
 export type { PlanAndRunOptions, PlanAndRunResult, TurnRunner } from "./orchestrate/index.ts";
 
 export { matchGlob, firstMatch } from "@weave/agent/browser";

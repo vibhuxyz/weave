@@ -25,7 +25,7 @@ desktop, that is a signal to think — not to create `packages/utils`.
 | ✅ | **MVP.2** planner · blueprint · contracts · decide | Acceptance passed live on greenfield + existing (2026-09-24); per-stack contract, drift check and contract-change loop built and tested | `core/{planner,blueprint,contracts,decide,orchestrate}/` |
 | 🟨 | **MVP.3** lanes in the UI | Built and unit-tested (`/parallel <request>`); not yet run live against a real engine | `apps/desktop/{server/parallel-run,src/features/runs}/` |
 | ⬜ | **V2.1** ownership · event bus · dynamic deps | Not started | `core/{ownership,bus,state,scheduler}.ts` |
-| ⬜ | **V2.2** project intelligence | Not started | `core/context/` |
+| 🟨 | **V2.2** project intelligence | Deterministic model + query built and tested; embeddings, generated docs and diff-driven updates not started | `core/context/` |
 | ⬜ | **V2.3** the full dashboard | Not started | `apps/desktop` |
 | ⬜ | **V3.1** routing · budgets · adaptive scale | Not started | `core/{routing,budget,scale,critpath}.ts` |
 | ⬜ | **V3.2** supervisor · policy · replay CLI | Not started | `core/{supervisor,policy,replay}.ts` — `checkpoint.ts` pulled forward to [V1.2](CONTINUATION.md) |
