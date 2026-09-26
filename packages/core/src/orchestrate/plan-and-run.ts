@@ -4,7 +4,8 @@ import type { PlannedTaskFact, VerificationRung } from "@weave/protocol";
 import { concurrencyFor, decide, type Decision, type WorkerCount } from "../decide/index.ts";
 import { availableRungs, intake } from "../intake/index.ts";
 import type { PlannedTask, ProjectKind } from "../planner/index.ts";
-import { engineWorker, enginesFor, runPlan, type RunPlanResult } from "../run-plan/index.ts";
+import { engineWorker, enginesFor, runPlan, type Reviser, type RunPlanResult } from "../run-plan/index.ts";
+import type { RunWorker } from "../pool/index.ts";
 import { weaveDirFor } from "../runner/index.ts";
 import { choosePlanningEngines, readHistory, type EngineCandidate } from "../adaptive/index.ts";
 import type { EmployeeRegistry, PreparedEmployees } from "../employees/index.ts";
@@ -16,8 +17,9 @@ import { adaptiveSetup, engineCandidates, type AdaptiveSetup } from "./adaptive-
 import { employeeRoutes, employeeSetup, loadRoster, rememberRun, withEmployeeVerification } from "./employee-setup.ts";
 import { contractReviser } from "./contract-revision.ts";
 import { contractDriftInspector } from "./drift-inspector.ts";
-import { withPlannerWorkspace } from "./planner-turn.ts";
+import { openCoordinatorTurn, withPlannerWorkspace } from "./planner-turn.ts";
 import { fastPlan, planTasks } from "./planning.ts";
+import { coordinatorReviser } from "../replan/index.ts";
 import { chosenEngineRoutes, countWorkers } from "./team/index.ts";
 import { detectProjectKind } from "./project-kind.ts";
 import type { PlanAndRunOptions, PlanAndRunResult, PlanningOutcome, TurnRunner } from "./types.ts";
@@ -158,14 +160,32 @@ interface ExecuteContext {
   readonly model: ProjectModel | null;
   readonly planned: Planned;
   readonly staffing: Staffing;
+  readonly engineCandidates: readonly EngineCandidate[];
+}
+
+function reviserFor(options: PlanAndRunOptions, context: ExecuteContext, runWorker: RunWorker): Reviser {
+  const { repoRoot, weaveDir, ledger, planned, staffing } = context;
+  const contract = planned.contract;
+  const next = contract ? contractReviser({ tasks: staffing.tasks, contract, repoRoot, weaveDir, ledger, runWorker }) : undefined;
+  const turn = options.runTurn;
+  return coordinatorReviser({
+    tasks: staffing.tasks,
+    engineCandidates: context.engineCandidates,
+    goal: planned.intent.goal,
+    ledger,
+    openTurn: async () => turn
+      ? { runTurn: turn, close: async () => undefined }
+      : openCoordinatorTurn({ repoRoot, weaveDir, ledger, engineId: choosePlanningEngines(context.engineCandidates).plannerId }),
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(next ? { next } : {}),
+  });
 }
 
 function execute(options: PlanAndRunOptions, context: ExecuteContext): Promise<RunPlanResult> {
   const { repoRoot, weaveDir, ledger, planned, staffing } = context;
   const { adaptive, employees, tasks } = staffing;
   const runWorker = options.runWorker ?? engineWorker(options.config, options.policy, { weaveDir, model: context.model, routes: staffing.routes, briefings: employees?.briefings });
-  const contract = planned.contract;
-  const drift = contract ? contractDriftInspector(contract, ledger) : undefined;
+  const drift = planned.contract ? contractDriftInspector(planned.contract, ledger) : undefined;
   return runPlan({
     tasks,
     repoRoot,
@@ -181,7 +201,7 @@ function execute(options: PlanAndRunOptions, context: ExecuteContext): Promise<R
     budget: adaptive?.budget,
     priorityOf: adaptive ? (taskId) => adaptive.priorities.get(taskId) ?? 0 : undefined,
     inspectHarvest: employees ? withEmployeeVerification(employees, ledger, drift) : drift,
-    revise: contract ? contractReviser({ tasks, contract, repoRoot, weaveDir, ledger, runWorker }) : undefined,
+    revise: reviserFor(options, context, runWorker),
   });
 }
 
@@ -209,7 +229,7 @@ export async function planAndRun(options: PlanAndRunOptions): Promise<PlanAndRun
   logExecutionPlan(ledger, staffing, defaultEngines);
   if (options.signal?.aborted) return { status: "refused", reason: RUN_STOPPED };
   if (options.approvePlan && !(await options.approvePlan())) return { status: "refused", reason: PLAN_NOT_APPROVED };
-  const ran = await execute(options, { repoRoot, weaveDir, ledger, model, planned, staffing });
+  const ran = await execute(options, { repoRoot, weaveDir, ledger, model, planned, staffing, engineCandidates: candidates });
   if (!ran.ok) return { status: "refused", reason: ran.reason };
   if (staffing.employees) await rememberRun(staffing.employees, ran.value.pool, context);
   return {

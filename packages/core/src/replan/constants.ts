@@ -1,0 +1,10 @@
+export const MAX_TRIGGERS = 12;
+export const MAX_TRIGGER_DETAIL_CHARS = 300;
+export const MAX_RERUN_TASKS = 6;
+export const MAX_GUIDANCE_CHARS = 1_000;
+export const MAX_REASON_CHARS = 500;
+export const MAX_PLAN_BYTES = 6_000;
+export const MAX_EVENTS_BYTES = 4_000;
+export const TASK_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/;
+export const REPLAN_ACTIONS = ["continue", "rerun", "stop"] as const;
+export const COORDINATOR_NOTE_TAG = "coordinator-note";

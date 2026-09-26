@@ -1,7 +1,7 @@
 import { ENGINES } from "@weave/agent";
 import type { PlannedTaskFact, WeaveEvent } from "@weave/protocol";
 import type { RunPlanTask, RunUpdate } from "../shared/index.ts";
-import { MAX_CRITIQUE_ISSUES, MAX_EXECUTION_SLOTS, MAX_DETAIL_CHARS, MAX_DOMAINS, MAX_PLAN_NOTES, MAX_PLAN_WARNINGS, MAX_SCOPE_PATHS, MAX_TASK_OUTPUTS, MAX_TASK_SKILLS, MAX_TASK_SUBTASKS, MAX_TEXT_CHUNK_CHARS, MAX_WARNING_CHARS } from "./constants.ts";
+import { MAX_CRITIQUE_ISSUES, MAX_EXECUTION_SLOTS, MAX_DETAIL_CHARS, MAX_DOMAINS, MAX_PLAN_NOTES, MAX_PLAN_WARNINGS, MAX_REPLAN_RERUNS, MAX_REPLAN_TRIGGERS, MAX_SCOPE_PATHS, MAX_TASK_OUTPUTS, MAX_TASK_SKILLS, MAX_TASK_SUBTASKS, MAX_TEXT_CHUNK_CHARS, MAX_WARNING_CHARS } from "./constants.ts";
 import { toolCallOf, toolPatchOf } from "./tool-update.ts";
 import { workforceUpdate } from "./workforce-events/index.ts";
 
@@ -122,6 +122,22 @@ export function projectRunEvent(event: WeaveEvent): RunUpdate | null {
           machineCapacity: event.machineCapacity,
           affordable: event.affordable,
         },
+      };
+    case "replan.requested":
+      return {
+        kind: "replan-requested",
+        round: event.round,
+        triggers: event.triggers.slice(0, MAX_REPLAN_TRIGGERS).map((trigger) => ({ kind: trigger.kind, taskId: trigger.taskId, detail: capped(trigger.detail, MAX_DETAIL_CHARS) })),
+        hiddenTriggerCount: Math.max(0, event.triggers.length - MAX_REPLAN_TRIGGERS),
+      };
+    case "replan.decided":
+      return {
+        kind: "replan-decided",
+        round: event.round,
+        action: event.action,
+        reason: capped(event.reason, MAX_DETAIL_CHARS),
+        rerun: event.rerun.slice(0, MAX_REPLAN_RERUNS).map((entry) => ({ id: entry.id, engineId: entry.engine ?? null })),
+        warnings: event.warnings.slice(0, MAX_PLAN_WARNINGS).map((warning) => capped(warning, MAX_WARNING_CHARS)),
       };
     case "plan.triaged":
       return event.route === "plan" ? { kind: "planning", planner: engineLabel(event.plannerEngineId), reviewer: engineLabel(event.reviewerEngineId) } : null;

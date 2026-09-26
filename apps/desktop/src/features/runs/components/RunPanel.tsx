@@ -14,6 +14,7 @@ import { outcomeText } from "./outcome-text";
 import { PlanApproval } from "./PlanApproval";
 import { PlanIntent } from "./PlanIntent";
 import { PlanSummary } from "./PlanSummary";
+import { ReplanNotes } from "./ReplanNotes";
 
 interface RunPanelProps {
   readonly onSetUpGitAndRun: (request: string) => void;
@@ -68,6 +69,7 @@ export function RunPanel({ onSetUpGitAndRun, onDecidePlan, permissionRequest, on
           )}
           {hiddenCount > 0 && <span className="text-[11px] text-agent-text-faint">(+{hiddenCount} more lanes)</span>}
           <ArtifactFlow />
+          <ReplanNotes />
           {outcome && <p className="text-agent-text-muted text-xs">{outcomeText(outcome)}</p>}
           {outcome?.status === "needs-git" && (
             <div className="flex flex-wrap items-center gap-2">

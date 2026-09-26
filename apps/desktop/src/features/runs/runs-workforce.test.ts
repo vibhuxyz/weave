@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { RunUpdate } from "../../../server/index.ts";
-import { MAX_LANE_AWAITED, MAX_LANE_NOTES, MAX_RUN_ALERTS, MAX_RUN_ARTIFACTS } from "./constants";
+import { MAX_LANE_AWAITED, MAX_LANE_NOTES, MAX_RUN_ALERTS, MAX_RUN_ARTIFACTS, MAX_RUN_REPLANS } from "./constants";
 import { usdFromMicro } from "./lib";
 import { applyRunMessages } from "./store/apply-run-message";
 import type { RunMessage } from "./types";
@@ -126,4 +126,27 @@ test("an arrival for an output nobody published leaves the artifact list alone",
   const run = applyRunMessages(null, [started, staffed, update({ kind: "awaited-arrived", taskId: "API", output: "ghost", producer: "DB" })]);
   assert.deepEqual(run?.artifacts, []);
   assert.deepEqual(run?.lanes["API"]?.awaited, [{ output: "ghost", producer: "DB", hasArrived: true }]);
+});
+
+test("a replan shows what woke the coordinator, then what it decided", () => {
+  const asked = applyRunMessages(null, [
+    started,
+    staffed,
+    update({ kind: "replan-requested", round: 1, triggers: [{ kind: "worker-failed", taskId: "DB", detail: "crashed" }], hiddenTriggerCount: 0 }),
+  ]);
+  assert.deepEqual(asked?.replans.map((entry) => [entry.round, entry.action]), [[1, null]]);
+
+  const decided = applyRunMessages(asked, [
+    update({ kind: "replan-decided", round: 1, action: "rerun", reason: "engine crash", rerun: [{ id: "DB", engineId: "codex" }], warnings: [] }),
+    update({ kind: "replan-decided", round: 9, action: "continue", reason: "for a round nobody asked about", rerun: [], warnings: [] }),
+  ]);
+  assert.deepEqual(decided?.replans.map((entry) => [entry.round, entry.action, entry.rerun]), [[1, "rerun", [{ id: "DB", engineId: "codex" }]]]);
+
+  const repeated = applyRunMessages(decided, [update({ kind: "replan-requested", round: 1, triggers: [], hiddenTriggerCount: 0 })]);
+  assert.equal(repeated?.replans.length, 1);
+  assert.equal(repeated?.replans[0]?.action, "rerun");
+
+  const many = applyRunMessages(decided, Array.from({ length: MAX_RUN_REPLANS + 2 }, (_, index) =>
+    update({ kind: "replan-requested", round: index + 2, triggers: [], hiddenTriggerCount: 0 })));
+  assert.equal(many?.replans.length, MAX_RUN_REPLANS);
 });

@@ -1,6 +1,7 @@
 import type { PermissionPolicy } from "@weave/agent";
 import { DEFAULT_ENGINE_ID } from "@weave/agent";
 import type { RunConfig } from "@weave/protocol";
+import { moveToFront } from "../adaptive/index.ts";
 import type { ProjectModel } from "../context/index.ts";
 import { hasLiveUpdates, renderBriefing, renderUpdateBriefing } from "../coordination/index.ts";
 import type { RunWorker, WorkerInput, WorkerOutcome } from "../pool/index.ts";
@@ -30,9 +31,14 @@ function toOutcome(relayed: RelayResult): WorkerOutcome {
   return { status, error: relayed.error ?? undefined, finalMessage: relayed.finalMessage };
 }
 
+function engineChainFor(deps: RelayDeps, task: WorkerInput["task"]): readonly string[] {
+  const chain = deps.context.routes?.get(task.id) ?? deps.engines;
+  return task.engine !== undefined && chain.includes(task.engine) ? moveToFront(chain, task.engine) : chain;
+}
+
 function relayWith(deps: RelayDeps, input: WorkerInput, briefing: string): Promise<RelayResult> {
   const { task, ledger, signal } = input;
-  const engines = deps.context.routes?.get(task.id) ?? deps.engines;
+  const engines = engineChainFor(deps, task);
   return relayTask({ task, engines, weaveDir: deps.context.weaveDir, ledger, model: deps.context.model, runAttempt: deps.runAttempt, signal, briefing });
 }
 

@@ -12,6 +12,10 @@ export interface ChosenEngine {
   readonly refusal: string | null;
 }
 
+export function moveToFront(chain: readonly string[], engineId: string): readonly string[] {
+  return [engineId, ...chain.filter((id) => id !== engineId)];
+}
+
 function missingCapabilities(candidate: EngineCandidate, task: RoutableTask): readonly string[] {
   return requiredCapabilities(task).filter((capability) => candidate.capabilities[capability] !== true);
 }
@@ -27,5 +31,5 @@ export function withChosenEngine(input: ChosenEngineInput): ChosenEngine {
   if (missing.length > 0) {
     return { chain: input.chain, refusal: `engine ${chosen} does not declare ${missing.join(", ")}; ${input.chain[0] ?? "the configured engine"} runs it instead` };
   }
-  return { chain: [chosen, ...input.chain.filter((id) => id !== chosen)], refusal: null };
+  return { chain: moveToFront(input.chain, chosen), refusal: null };
 }

@@ -73,6 +73,22 @@ function engineTurn(cwd: string, ledger: Ledger, engineId: string | undefined): 
   return { run, close };
 }
 
+export async function openCoordinatorTurn(input: PlannerWorkspaceInput): Promise<{ readonly runTurn: TurnRunner; readonly close: () => Promise<void> }> {
+  const worktree = await createWorktree({
+    repoRoot: input.repoRoot,
+    weaveDir: input.weaveDir,
+    taskId: PLANNER_WORKTREE_ID,
+    runId: input.ledger.runId,
+    baseRef: input.baseRef,
+  });
+  const coordinator = engineTurn(worktree.path, input.ledger, input.engineId);
+  const close = async (): Promise<void> => {
+    coordinator.close();
+    await removeWorktree(input.repoRoot, worktree, { deleteBranch: true });
+  };
+  return { runTurn: coordinator.run, close };
+}
+
 export async function withPlannerWorkspace<T>(
   input: PlannerWorkspaceInput,
   work: (runTurn: TurnRunner, reviewTurn: TurnRunner) => Promise<T>,

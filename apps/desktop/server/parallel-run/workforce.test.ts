@@ -53,6 +53,20 @@ test("a request, a milestone and a published output each become their own lane u
   assert.deepEqual(projectRunEvent(contract)?.kind === "artifact" ? projectRunEvent(contract) : null, { kind: "artifact", taskId: "T1", artifact: { name: "api-contract", version: 1, summary: "todos table", kind: "contract", isUpdate: false } });
 });
 
+test("a replan becomes a request update and a decision update, both capped", () => {
+  const triggers = Array.from({ length: 8 }, (_, index) => ({ kind: "worker-failed", taskId: `T${index}`, detail: "it  crashed" }));
+  const requested = projectRunEvent(eventOf({ type: "replan.requested", round: 1, triggers }));
+  assert.equal(requested?.kind === "replan-requested" ? requested.triggers.length : 0, 6);
+  assert.equal(requested?.kind === "replan-requested" ? requested.hiddenTriggerCount : 0, 2);
+  assert.deepEqual(requested?.kind === "replan-requested" ? requested.triggers[0] : null, { kind: "worker-failed", taskId: "T0", detail: "it  crashed" });
+
+  const decided = projectRunEvent(eventOf({ type: "replan.decided", round: 1, action: "rerun", reason: "engine crash", rerun: [{ id: "DB", engine: "codex" }, { id: "API" }], warnings: ["w"] }));
+  assert.deepEqual(decided, {
+    kind: "replan-decided", round: 1, action: "rerun", reason: "engine crash",
+    rerun: [{ id: "DB", engineId: "codex" }, { id: "API", engineId: null }], warnings: ["w"],
+  });
+});
+
 test("orchestration decisions and budget overruns become run updates", () => {
   const decided = eventOf({ type: "orchestration.decided", workers: 2, reason: "history", benefitMs: { timeSaved: 5000, coordination: 1, mergeRisk: 1, verification: 1, startup: 1, total: 4996 }, estimatedCostMicroUsd: "120000", tasks: [] });
   assert.deepEqual(projectRunEvent(decided), { kind: "orchestration", workers: 2, reason: "history", estimatedCostMicroUsd: "120000", timeSavedMs: 5000 });

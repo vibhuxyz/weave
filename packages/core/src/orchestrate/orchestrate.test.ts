@@ -165,3 +165,53 @@ test("a plan that is not approved stops after planning: nothing runs and no work
   assert.ok(seen.indexOf("plan.created") < seen.indexOf("asked"), seen.join(","));
   assert.equal(await exists(join(repo, "add.js")), false);
 });
+
+test("exit: a failed worker wakes the coordinator, which reruns only that task, on another engine", async () => {
+  const repo = await repoWith({ "package.json": JSON.stringify({ scripts: { test: "node --test" } }) });
+  const plan = {
+    tasks: [
+      { id: "DB", title: "db", prompt: "write the schema", allowedPaths: ["db.js"], produces: ["schema"], subtasks: ["design it", "write it"] },
+      { id: "API", title: "api", prompt: "write the api", allowedPaths: ["api.js"], subtasks: ["route it", "wire it"] },
+      { id: "UI", title: "ui", prompt: "write the ui", allowedPaths: ["ui.js"], subtasks: ["render it", "call the api"] },
+    ],
+  };
+  const decision = {
+    action: "rerun",
+    reason: "the crash reads like an engine problem, so DB moves to codex",
+    rerun: [{ id: "DB", engine: "codex", guidance: "the schema you wrote was fine; write it again and commit it" }],
+  };
+  const prompts: string[] = [];
+  const runTurn: TurnRunner = async (prompt) => {
+    prompts.push(prompt);
+    return fenced(prompt.includes("You are the coordinator of a team that is part-way through a run") ? decision : plan);
+  };
+  const engines: string[] = [];
+  const attempts = new Map<string, number>();
+  const worker: RunWorker = async ({ task }) => {
+    const attempt = (attempts.get(task.id) ?? 0) + 1;
+    attempts.set(task.id, attempt);
+    if (task.engine) engines.push(`${task.id}:${task.engine}`);
+    if (task.id === "DB" && attempt === 1) return { status: "failed", error: "the engine crashed" };
+    await writeFile(join(task.cwd, task.allowedPaths?.[0] ?? "x"), `${task.id}${attempt}`);
+    return { status: "ok" };
+  };
+  const result = await planAndRun({
+    request: "build a todo app", repoRoot: repo, config: { engine: "claude-code", fallbackEngines: ["codex"] },
+    machineCapacity: 8, runTurn, runWorker: worker, verify: verifyOk, shouldInstall: false,
+  });
+  assert.equal(result.status, "ran");
+  if (result.status !== "ran") return;
+
+  assert.deepEqual([...attempts.entries()].sort(), [["API", 1], ["DB", 2], ["UI", 1]]);
+  assert.deepEqual(engines, ["DB:codex"]);
+  assert.deepEqual(result.report.pool.tasks.map((entry) => [entry.taskId, entry.status]).sort(), [["API", "ok"], ["DB", "ok"], ["UI", "ok"]]);
+  assert.equal(result.report.status, "ok");
+
+  const events = await readLedger(join(repo, ".weave"), result.report.runId);
+  const requested = events.find((event) => event.type === "replan.requested");
+  assert.deepEqual(requested?.type === "replan.requested" ? requested.triggers.map((trigger) => [trigger.kind, trigger.taskId]) : null, [["worker-failed", "DB"]]);
+  const decided = events.find((event) => event.type === "replan.decided");
+  assert.deepEqual(decided?.type === "replan.decided" ? decided.rerun : null, [{ id: "DB", engine: "codex" }]);
+  assert.equal(events.filter((event) => event.type === "replan.requested").length, 1);
+  assert.match(prompts.at(-1) ?? "", /- DB \[failed\] db · produces: schema · outcome: the engine crashed/);
+});

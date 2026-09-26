@@ -201,6 +201,19 @@ export type WeaveEvent =
         endMs: number;
       }[];
     })
+  | (BaseEvent & {
+      type: "replan.requested";
+      round: number;
+      triggers: { kind: string; taskId: string; detail: string }[];
+    })
+  | (BaseEvent & {
+      type: "replan.decided";
+      round: number;
+      action: "continue" | "rerun" | "stop";
+      reason: string;
+      rerun: { id: string; engine?: string }[];
+      warnings: string[];
+    })
   | (BaseEvent & { type: "plan.triaged"; route: "fast" | "plan"; reason: string; plannerEngineId: string | null; reviewerEngineId: string | null })
   | (BaseEvent & { type: "plan.reviewed"; attempts: number; classification: PlanClassificationFact | null; warnings: string[]; critique: PlanCritiqueFact | null })
   | (BaseEvent & {

@@ -86,6 +86,19 @@ export interface RunArtifact {
   readonly isUpdate: boolean;
 }
 
+export type RunReplanAction = "continue" | "rerun" | "stop";
+
+export interface RunReplanTrigger {
+  readonly kind: string;
+  readonly taskId: string;
+  readonly detail: string;
+}
+
+export interface RunReplanRerun {
+  readonly id: string;
+  readonly engineId: string | null;
+}
+
 export const RUN_TOOL_KINDS = ["read", "edit", "delete", "move", "search", "execute", "think", "fetch", "switch_mode", "other"] as const;
 
 export type RunToolKind = (typeof RUN_TOOL_KINDS)[number];
@@ -139,6 +152,15 @@ export type RunUpdate =
   | { readonly kind: "contract-changed"; readonly version: number; readonly requestedBy: string; readonly rerun: readonly string[] }
   | { readonly kind: "employee-assigned"; readonly taskId: string; readonly employeeId: string | null; readonly reasons: readonly string[] }
   | { readonly kind: "employee-verified"; readonly taskId: string; readonly ok: boolean; readonly rungs: readonly RungResult[]; readonly detail: string }
+  | { readonly kind: "replan-requested"; readonly round: number; readonly triggers: readonly RunReplanTrigger[]; readonly hiddenTriggerCount: number }
+  | {
+      readonly kind: "replan-decided";
+      readonly round: number;
+      readonly action: RunReplanAction;
+      readonly reason: string;
+      readonly rerun: readonly RunReplanRerun[];
+      readonly warnings: readonly string[];
+    }
   | { readonly kind: "subtask"; readonly taskId: string; readonly subtask: string; readonly index: number | null }
   | { readonly kind: "artifact"; readonly taskId: string; readonly artifact: RunArtifact }
   | { readonly kind: "awaiting"; readonly taskId: string; readonly output: string; readonly producer: string | null; readonly reason: string }

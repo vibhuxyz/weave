@@ -11,3 +11,4 @@ export const PLANNER_TASK_ID = "planner";
 export const PLAN_ASSIGNMENT_REASON = "named in the plan";
 export const MAX_RUN_ARTIFACTS = 12;
 export const MAX_LANE_AWAITED = 4;
+export const MAX_RUN_REPLANS = 6;

@@ -1,5 +1,5 @@
 import type { ChatTurn } from "@/features/chat/hooks";
-import type { BudgetAlert, NoteTone, RunArtifact, RunClassification, RunCritique, RunExecutionPlan, RunOutcome, RunPlanTask, RunTaskStatus, RunUpdate, RunWorkerCount, RungResult, ServerMessage } from "../../../server/index.ts";
+import type { BudgetAlert, NoteTone, RunArtifact, RunClassification, RunReplanAction, RunReplanRerun, RunReplanTrigger, RunCritique, RunExecutionPlan, RunOutcome, RunPlanTask, RunTaskStatus, RunUpdate, RunWorkerCount, RungResult, ServerMessage } from "../../../server/index.ts";
 
 export type RunMessage = Extract<ServerMessage, { readonly type: "run-started" | "run-update" | "run-finished" }>;
 
@@ -104,6 +104,16 @@ export interface RunArtifactEntry {
   readonly deliveredTo: readonly string[];
 }
 
+export interface ReplanEntry {
+  readonly round: number;
+  readonly triggers: readonly RunReplanTrigger[];
+  readonly hiddenTriggerCount: number;
+  readonly action: RunReplanAction | null;
+  readonly reason: string;
+  readonly rerun: readonly RunReplanRerun[];
+  readonly warnings: readonly string[];
+}
+
 export interface RunState {
   readonly runKey: string;
   readonly approval: PlanApproval;
@@ -115,6 +125,7 @@ export interface RunState {
   readonly workerCount: RunWorkerCount | null;
   readonly artifacts: readonly RunArtifactEntry[];
   readonly hiddenArtifactCount: number;
+  readonly replans: readonly ReplanEntry[];
   readonly lanes: Readonly<Record<string, Lane>>;
   readonly laneOrder: readonly string[];
   readonly stream: readonly StreamBlock[];

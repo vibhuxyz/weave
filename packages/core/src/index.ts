@@ -31,6 +31,8 @@ export { compressToolOutput } from "./compress/index.ts";
 export { engineWorker, runPlan } from "./run-plan/index.ts";
 export type { RunPlanOptions, RunPlanReport, RunPlanResult } from "./run-plan/index.ts";
 export { detectProjectKind, engineCandidates, planAndRun } from "./orchestrate/index.ts";
+export { coordinatorReviser, decideReplan, replanTriggers } from "./replan/index.ts";
+export type { ReplanAction, ReplanDecision, ReplanTrigger, ReplanTriggerKind } from "./replan/index.ts";
 export { analyzeImpact, buildProjectModel, generateProjectDocs, queryProject, renderProjectContext, searchVectors, updateProjectModel, writeProjectDocs } from "./context/index.ts";
 export { buildSkillRegistry, renderSkills, resolveSkills } from "./skills/index.ts";
 export type { RegisteredSkill, SkillTriggers } from "./skills/index.ts";

@@ -1,7 +1,8 @@
 import type { BudgetAlert, RunUpdate } from "../../../../server/index.ts";
-import { MAX_RUN_ALERTS, MAX_RUN_ARTIFACTS, PLANNER_TASK_ID } from "../constants";
+import { MAX_RUN_ALERTS, MAX_RUN_ARTIFACTS, MAX_RUN_REPLANS, PLANNER_TASK_ID } from "../constants";
 import type { Lane, RunMessage, RunState } from "../types";
 import { withArtifact, withDelivery } from "./artifacts";
+import { withReplanDecision, withReplanRequest } from "./replans";
 import { applyLaneUpdate, emptyLane } from "./lane";
 import { applyStreamUpdate } from "./stream";
 
@@ -9,7 +10,7 @@ type LaneUpdate = Extract<RunUpdate, { readonly taskId: string }>;
 type PlanUpdate = Extract<RunUpdate, { readonly kind: "plan" }>;
 
 function startedRun(runKey: string, request: string): RunState {
-  return { runKey, request, approval: "none", plan: null, review: null, planning: null, execution: null, workerCount: null, artifacts: [], hiddenArtifactCount: 0, lanes: {}, laneOrder: [], stream: [], hiddenBlockCount: 0, contractVersion: null, integration: null, orchestration: null, budgetAlerts: [], hiddenAlertCount: 0, outcome: null };
+  return { runKey, request, approval: "none", plan: null, review: null, planning: null, execution: null, workerCount: null, artifacts: [], hiddenArtifactCount: 0, replans: [], lanes: {}, laneOrder: [], stream: [], hiddenBlockCount: 0, contractVersion: null, integration: null, orchestration: null, budgetAlerts: [], hiddenAlertCount: 0, outcome: null };
 }
 
 function withPlan(run: RunState, update: PlanUpdate): RunState {
@@ -52,6 +53,10 @@ function applyUpdate(run: RunState, update: RunUpdate): RunState {
       return { ...run, execution: update.plan };
     case "worker-count":
       return { ...run, workerCount: update.count };
+    case "replan-requested":
+      return withReplanRequest(run, update, MAX_RUN_REPLANS);
+    case "replan-decided":
+      return withReplanDecision(run, update);
     case "awaiting-approval":
       return { ...run, approval: "waiting" };
     case "plan-approved":
