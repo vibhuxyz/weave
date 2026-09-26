@@ -43,7 +43,7 @@ export interface SidebarProps {
 
 const NAV = [
   { id: "home", label: "Home", icon: HomeIcon, view: "home" as const },
-  { id: "agents", label: "Agents", icon: BotIcon, view: "agents" as const },
+  { id: "agents", label: "Employees", icon: BotIcon, view: "agents" as const },
   { id: "skills", label: "Skills", icon: BookOpenIcon, view: "skills" as const },
   { id: "project", label: "Project", icon: NetworkIcon, view: "project" as const },
 ] as const;

@@ -136,3 +136,24 @@ export function runningLabel(tool: ToolEntry): string {
   const subject = rowSubject(tool);
   return `${rowVerb(tool, true)} ${subject}${subject.endsWith("…") ? "" : "…"}`;
 }
+
+export function actionColor(action: Action): string {
+  switch (action) {
+    case "read":
+    case "searched":
+    case "fetched":
+      return "text-agent-medium-fg";
+    case "ran":
+      return "text-agent-text-bright";
+    case "edited":
+    case "created":
+    case "deleted":
+      return "text-agent-success";
+    case "added-task":
+    case "started-task":
+    case "completed-task":
+      return "text-agent-info-fg";
+    default:
+      return "text-agent-text-muted";
+  }
+}

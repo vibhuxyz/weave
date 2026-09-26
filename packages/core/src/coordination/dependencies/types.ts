@@ -19,5 +19,6 @@ export type ArtifactKind = "artifact" | "contract";
 export interface ArtifactInput {
   readonly name: string;
   readonly summary: string;
+  readonly provides: readonly string[];
   readonly files: readonly { readonly path: string; readonly content: string }[];
 }

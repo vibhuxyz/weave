@@ -1,5 +1,5 @@
 import { wordsOf } from "../context/index.ts";
-import type { RegisteredSkill, ResolvedSkill, SkillQuery } from "./types.ts";
+import type { RegisteredSkill, ResolvedSkill, SkillPick, SkillQuery } from "./types.ts";
 
 const STACK_WEIGHT = 3;
 const LAYER_WEIGHT = 2;
@@ -7,6 +7,7 @@ const KEYWORD_WEIGHT = 2;
 const PATH_WEIGHT = 3;
 const MIN_SCORE = 3;
 const DEFAULT_LIMIT = 5;
+const REQUESTED_REASON = "requested by the plan";
 
 function globRegex(glob: string): RegExp {
   const body = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*\*\/?/g, "\u0000").replace(/\*/g, "[^/]*").replaceAll("\u0000", ".*");
@@ -44,4 +45,19 @@ export function resolveSkills(skills: readonly RegisteredSkill[], query: SkillQu
     .filter((resolved) => !refined.has(resolved.skill.name))
     .sort((a, b) => b.score - a.score || a.skill.id.localeCompare(b.skill.id))
     .slice(0, limit);
+}
+
+export function pickSkills(skills: readonly RegisteredSkill[], query: SkillQuery, requested: readonly string[]): SkillPick {
+  const byName = new Map(skills.map((skill) => [skill.name.toLowerCase(), skill]));
+  const wanted = [...new Set(requested.map((name) => name.toLowerCase()))];
+  const pinned = wanted.flatMap((name) => {
+    const skill = byName.get(name);
+    return skill ? [{ skill, score: 0, reasons: [REQUESTED_REASON] }] : [];
+  });
+  const pinnedIds = new Set(pinned.map((resolved) => resolved.skill.id));
+  const scored = resolveSkills(skills, query).filter((resolved) => !pinnedIds.has(resolved.skill.id));
+  return {
+    chosen: [...pinned, ...scored].slice(0, Math.max(DEFAULT_LIMIT, pinned.length)),
+    unknown: wanted.filter((name) => !byName.has(name)),
+  };
 }

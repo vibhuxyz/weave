@@ -1,6 +1,6 @@
 import { frameworksOf, layerOf, renderProjectContext, type ProjectAnswer } from "../context/index.ts";
 import { briefOf } from "../handoff/index.ts";
-import { renderSkills, resolveSkills, type ResolvedSkill } from "../skills/index.ts";
+import { pickSkills, renderSkills, type SkillPick } from "../skills/index.ts";
 import { TASK_NOTES_INSTRUCTION } from "../state/index.ts";
 import { MAX_TASK_BYTES, MAX_WORKER_CONTEXT_BYTES, SECTION_BUDGETS } from "./constants.ts";
 import type { ContextSection, ContextSectionName, ContextSources, WorkerContext } from "./types.ts";
@@ -40,22 +40,39 @@ export interface SkillSelectionInput {
   readonly registry: ContextSources["skills"];
   readonly text: string;
   readonly allowedPaths?: readonly string[];
+  readonly requested?: readonly string[];
 }
 
-export function selectSkills(input: SkillSelectionInput): readonly ResolvedSkill[] {
+export function selectSkills(input: SkillSelectionInput): SkillPick {
   const { model, answer } = input;
   const paths = [...answer.files.map((file) => file.path), ...(input.allowedPaths ?? [])];
   const touched = new Set([answer.application?.name, ...answer.files.map((file) => file.workspace)]);
   const workspaces = [...model.applications, ...model.packages].filter((workspace) => touched.has(workspace.name));
   const packages = workspaces.length > 0 ? [...new Set(workspaces.flatMap((workspace) => workspace.dependencies))] : model.dependencies.external.map((entry) => entry.name);
-  return resolveSkills(input.registry.skills, {
+  return pickSkills(input.registry.skills, {
     text: input.text,
     paths,
     languages: model.stack.languages,
     frameworks: workspaces.length > 0 ? frameworksOf(packages) : model.stack.frameworks,
     packages,
     layers: [...new Set(answer.files.map((file) => layerOf(file.path, "source")))],
-  });
+  }, input.requested ?? []);
+}
+
+function milestoneLines(task: ContextSources["task"]): readonly string[] {
+  const subtasks = task.subtasks ?? [];
+  if (subtasks.length === 0) return [];
+  const done = new Set(task.subtasksDone ?? []);
+  const listed = subtasks.map((subtask, index) => `${index + 1}. ${subtask}${done.has(subtask) ? " — already reported as done" : ""}`);
+  return [
+    "Milestones Weave tracks for you. Report each one with a subtask.completed event the moment it is done, wording it exactly as listed here:",
+    ...listed,
+  ];
+}
+
+function verificationLine(task: ContextSources["task"]): readonly string[] {
+  if (task.verify) return [`Your work must pass ${task.verifyRung ?? "verification"}: run ${task.verify} before you finish.`];
+  return task.verifyRung ? [`Your work must pass ${task.verifyRung} before it can merge.`] : [];
 }
 
 function taskSection(sources: ContextSources): Rendered {
@@ -63,10 +80,14 @@ function taskSection(sources: ContextSources): Rendered {
   const goal = capBytes(task.goal, MAX_TASK_BYTES);
   const lines = [
     "<task>",
+    `You are worker ${task.id} on this run's team. Other workers may be changing their own copies of this repository at the same time; the paths and outputs below are how you stay out of their way.`,
     escaped(goal.text, "task"),
     ...(task.allowedPaths?.length ? [`You may write only: ${task.allowedPaths.join(", ")}`] : []),
     ...(task.readOnlyPaths?.length ? [`Read but never edit: ${task.readOnlyPaths.join(", ")}`] : []),
     ...(task.dependencies?.length ? [`Depends on: ${task.dependencies.map((dependency) => `${dependency.task} (${dependency.requiredOutputs.join(", ") || "all"})`).join("; ")}`] : []),
+    ...(task.produces?.length ? [`Publish these outputs as soon as each one exists, before the rest of your task: ${task.produces.join(", ")}`] : []),
+    ...milestoneLines(task),
+    ...verificationLine(task),
     TASK_NOTES_INSTRUCTION,
     "</task>",
   ];
@@ -75,7 +96,7 @@ function taskSection(sources: ContextSources): Rendered {
 
 export function renderWorkerContext(sources: ContextSources): WorkerContext {
   const { answer } = sources;
-  const skills = selectSkills({ model: sources.model, answer, registry: sources.skills, text: sources.task.goal, allowedPaths: sources.task.allowedPaths });
+  const { chosen: skills, unknown: unknownSkills } = selectSkills({ model: sources.model, answer, registry: sources.skills, text: sources.task.goal, allowedPaths: sources.task.allowedPaths, requested: sources.task.skills });
   const code = wrapEntries("code-excerpts", sources.snippets.map((snippet) => `### ${snippet.path}:${snippet.startLine} (${snippet.symbol})\n\`\`\`\n${snippet.text}\n\`\`\``), SECTION_BUDGETS.code);
   const rules = wrapEntries("project-rules", sources.rules.map((rule) => `## ${rule.name} (${rule.sourcePath})\n${rule.body}`), SECTION_BUDGETS.rules);
   const project = renderProjectContext(answer, SECTION_BUDGETS.project - 200);
@@ -92,5 +113,5 @@ export function renderWorkerContext(sources: ContextSources): WorkerContext {
   const sections = candidates.filter((section) => section.text.length > 0);
   const prompt = capBytes(sections.map((section) => section.text).join("\n\n"), MAX_WORKER_CONTEXT_BYTES).text;
   const report: readonly ContextSection[] = sections.map((section) => ({ name: section.name, bytes: Buffer.byteLength(section.text, "utf8"), isCut: section.isCut }));
-  return { prompt, contextVersion: sources.model.revision, skills: skills.map((resolved) => resolved.skill.id), sections: report };
+  return { prompt, contextVersion: sources.model.revision, skills: skills.map((resolved) => resolved.skill.id), unknownSkills, sections: report };
 }

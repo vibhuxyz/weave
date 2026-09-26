@@ -259,7 +259,11 @@ export function handleClientMessage(
     }
 
     case "start-run":
-      void runs.start({ request: msg.request, projectDir, engineId: sessionMgr.currentEngineId, fallbackEngineIds: installedEngines().map((engine) => engine.id), runKey: uuidV7(Date.now()), send });
+      void runs.start({ request: msg.request, projectDir, engineId: sessionMgr.currentEngineId, fallbackEngineIds: installedEngines().map((engine) => engine.id), runKey: uuidV7(Date.now()), setUpGit: msg.setUpGit === true, send });
+      return;
+
+    case "decide-run-plan":
+      if (typeof msg.runKey === "string") runs.decide(msg.runKey, msg.approved === true);
       return;
 
     case "cancel-run":

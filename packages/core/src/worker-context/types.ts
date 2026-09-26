@@ -9,6 +9,12 @@ export interface WorkerTask {
   readonly allowedPaths?: readonly string[];
   readonly readOnlyPaths?: readonly string[];
   readonly dependencies?: readonly TaskDependencyRef[];
+  readonly produces?: readonly string[];
+  readonly subtasks?: readonly string[];
+  readonly subtasksDone?: readonly string[];
+  readonly skills?: readonly string[];
+  readonly verify?: string;
+  readonly verifyRung?: string;
 }
 
 export interface CodeSnippet {
@@ -40,5 +46,6 @@ export interface WorkerContext {
   readonly prompt: string;
   readonly contextVersion: number;
   readonly skills: readonly string[];
+  readonly unknownSkills: readonly string[];
   readonly sections: readonly ContextSection[];
 }

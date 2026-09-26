@@ -3,11 +3,13 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import * as acp from "@agentclientprotocol/sdk";
 import type { SessionUpdate, TaskContract } from "@weave/protocol";
 import {
+  findRejectOption,
   firstMatch,
   isInside,
   isPlanModeExit,
   relativeInside,
   toAcpResponse,
+  type PermissionDecision,
   type PermissionPolicy,
 } from "../permissions/index.ts";
 import type { QuestionAsker, SessionSink } from "./types.ts";
@@ -114,6 +116,11 @@ export class SessionClient implements acp.Client {
       });
     }
 
+    const effectiveDecision: PermissionDecision =
+      decision.decision === "reject" && !decision.optionId && !isPlanModeExit(params)
+        ? { ...decision, optionId: findRejectOption(params) ?? undefined }
+        : decision;
+
     this.sink.onPermission(
       params.toolCall.title ?? params.toolCall.toolCallId ?? "tool call",
       params.options.map((option) => ({
@@ -121,11 +128,11 @@ export class SessionClient implements acp.Client {
         name: option.name,
         kind: option.kind,
       })),
-      decision.decision === "allow"
-        ? { decision: "allow", optionId: decision.optionId, reason: decision.reason }
-        : { decision: "reject", reason: decision.reason },
+      effectiveDecision.decision === "allow"
+        ? { decision: "allow", optionId: effectiveDecision.optionId, reason: effectiveDecision.reason }
+        : { decision: "reject", optionId: effectiveDecision.optionId, reason: effectiveDecision.reason },
     );
-    return toAcpResponse(decision);
+    return toAcpResponse(effectiveDecision);
   }
 
   async unstable_createElicitation(

@@ -1,7 +1,8 @@
 import type { TaskState, WeaveEvent } from "@weave/protocol";
 import { writeCheckpoint } from "../checkpoint/index.ts";
+import { reportedSubtasks } from "../coordination/index.ts";
 import { briefOf } from "../handoff/index.ts";
-import { readLedger } from "../shared/index.ts";
+import { isNotFound, readLedger } from "../shared/index.ts";
 import { foldTaskState } from "../state/index.ts";
 import { buildWorkerContext } from "../worker-context/index.ts";
 import { afterAttempt } from "./lifecycle.ts";
@@ -10,22 +11,37 @@ import type { AttemptOutcome, AttemptRecord, RelayOptions, RelayResult } from ".
 const DEFAULT_MAX_ATTEMPTS = 4;
 const FALLBACK_BRIEF_BYTES = 4_000;
 
-async function currentState(options: RelayOptions): Promise<TaskState> {
-  const { task, ledger, weaveDir, model } = options;
-  const events = (await readLedger(weaveDir, ledger.runId)).filter((event: WeaveEvent) => event.taskId === task.id);
+async function taskEvents(options: RelayOptions): Promise<readonly WeaveEvent[]> {
+  const { task, ledger, weaveDir } = options;
+  const events = await readLedger(weaveDir, ledger.runId).catch((error: unknown): readonly WeaveEvent[] => {
+    if (isNotFound(error)) return [];
+    throw error;
+  });
+  return events.filter((event: WeaveEvent) => event.taskId === task.id);
+}
+
+function stateFrom(options: RelayOptions, events: readonly WeaveEvent[]): TaskState {
+  const { task, model } = options;
   const dependencies = (task.dependencies ?? []).map((dependency) => ({ task: dependency.task, requiredOutputs: [...(dependency.requiredOutputs ?? [])] }));
   return foldTaskState(events, task.prompt, task.id, { dependencies, contextVersion: model?.revision ?? null });
 }
 
-async function promptFor(options: RelayOptions, state: TaskState | null): Promise<string> {
+async function currentState(options: RelayOptions): Promise<TaskState> {
+  return stateFrom(options, await taskEvents(options));
+}
+
+async function promptFor(options: RelayOptions, state: TaskState | null, subtasksDone: readonly string[]): Promise<string> {
   const { task, model } = options;
   if (!model) return state ? `${task.prompt}\n\n<task-state>\n${briefOf(state, FALLBACK_BRIEF_BYTES)}\n</task-state>` : task.prompt;
   const context = await buildWorkerContext({
     root: task.cwd,
     model,
     state,
-    task: { id: task.id, goal: task.prompt, allowedPaths: task.allowedPaths, readOnlyPaths: task.readOnlyPaths, dependencies: task.dependencies?.map((dependency) => ({ task: dependency.task, requiredOutputs: [...(dependency.requiredOutputs ?? [])] })) },
+    task: { id: task.id, goal: task.prompt, allowedPaths: task.allowedPaths, readOnlyPaths: task.readOnlyPaths, produces: task.produces, subtasks: task.subtasks, subtasksDone, skills: task.skills, verify: task.verify, verifyRung: task.verifyRung, dependencies: task.dependencies?.map((dependency) => ({ task: dependency.task, requiredOutputs: [...(dependency.requiredOutputs ?? [])] })) },
   });
+  if (state === null && context.unknownSkills.length > 0) {
+    options.ledger.append("error", { where: "worker-context.skills", message: `Task ${task.id} asked for unknown skills: ${context.unknownSkills.join(", ")}` });
+  }
   return context.prompt;
 }
 
@@ -46,8 +62,9 @@ export async function relayTask(options: RelayOptions): Promise<RelayResult> {
   for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex += 1) {
     const engineId = engines[engineCursor];
     if (!engineId) break;
-    const resumed = attemptIndex === 0 ? null : await currentState(options);
-    const prompt = withBriefing(await promptFor(options, resumed), options.briefing);
+    const events = await taskEvents(options);
+    const resumed = attemptIndex === 0 ? null : stateFrom(options, events);
+    const prompt = withBriefing(await promptFor(options, resumed, reportedSubtasks(events, task.id)), options.briefing);
     ledger.append("attempt.started", { taskId: task.id, attemptIndex, engineId, sessionId: "" });
     last = await runAttempt({ engineId, attemptIndex, task: { ...task, prompt }, ledger, signal });
     const { move, reason } = afterAttempt(last);

@@ -1,8 +1,9 @@
-import { isRecord, parseJsonBlock, readList, readString, type FieldContext } from "../shared/index.ts";
-import { MAX_PLAN_TASKS, MAX_REASON_CHARS } from "./constants.ts";
+import { isRecord, parseJsonBlock, readList, readOptionalString, readString, readStringList, type FieldContext } from "../shared/index.ts";
+import { MAX_GOAL_CHARS, MAX_NOTES, MAX_NOTE_CHARS, MAX_PLAN_TASKS, MAX_REASON_CHARS } from "./constants.ts";
 import { validateGraph } from "./graph.ts";
+import { parseClassification } from "./parse-classification.ts";
 import { parseTask } from "./parse-task.ts";
-import type { ParsePlanResult } from "./types.ts";
+import type { ParsePlanResult, PlanIntent } from "./types.ts";
 
 function fail(...issues: string[]): ParsePlanResult {
   return { ok: false, issues };
@@ -27,7 +28,13 @@ export function parsePlan(text: string, cwd: string): ParsePlanResult {
   const tasks = readList(ctx, "tasks", MAX_PLAN_TASKS, (raw, where, taskIssues) =>
     parseTask(raw, where, taskIssues, cwd),
   );
+  const intent: PlanIntent = {
+    goal: readOptionalString(ctx, "goal", MAX_GOAL_CHARS),
+    assumptions: readStringList(ctx, "assumptions", { maxItems: MAX_NOTES, maxChars: MAX_NOTE_CHARS }),
+    risks: readStringList(ctx, "risks", { maxItems: MAX_NOTES, maxChars: MAX_NOTE_CHARS }),
+  };
+  const classification = parseClassification(parsed.value.classification, issues);
   if (tasks.length === 0 && issues.length === 0) issues.push('Plan must contain at least one task or "noChangeNeeded"');
   if (issues.length === 0) issues.push(...validateGraph(tasks));
-  return issues.length > 0 ? fail(...issues) : { ok: true, plan: { status: "ready", tasks } };
+  return issues.length > 0 ? fail(...issues) : { ok: true, plan: { status: "ready", tasks, classification, intent } };
 }

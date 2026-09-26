@@ -12,12 +12,12 @@ import { engineWorker } from "./engine-worker.ts";
 const schemaUpdate: CoordinationEvent = {
   id: "e1", version: 1, seq: 1, occurredAt: "2026-01-01T00:00:00Z", correlationId: "e1", from: "DB",
   type: "artifact.updated",
-  data: { artifact: { name: "schema", version: 2, summary: "orders gained currency", files: [{ path: "db/schema.sql", content: "currency text" }] } },
+  data: { artifact: { name: "schema", version: 2, summary: "orders gained currency", provides: [], files: [{ path: "db/schema.sql", content: "currency text" }] } },
 };
 
 function scriptedChannel(batches: readonly InboxBatch[]): CoordinationChannel {
   const queue = [...batches];
-  return { taskId: "API", publish: () => ({ ok: false, reason: "not used" }), drain: () => queue.shift() ?? { events: [], droppedCount: 0 } };
+  return { taskId: "API", publish: () => ({ ok: false, reason: "not used" }), drain: () => queue.shift() ?? { events: [], droppedCount: 0 }, awaited: () => [] };
 }
 
 test("an update that arrives while an employee works becomes its next prompt turn", async () => {

@@ -48,7 +48,7 @@ export function FileViewer() {
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        <FileBody view={view} isRendered={isMarkdown && !isSource} />
+        <FileBody view={view} isRendered={isMarkdown && !isSource} filename={name} />
       </div>
     </aside>
   );

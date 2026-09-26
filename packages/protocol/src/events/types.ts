@@ -1,8 +1,38 @@
 import type { CoordinationEvent, ResourceRef } from "../coordination/index.ts";
 import type { CheckpointReason } from "../continuation/index.ts";
+import type { TaskComplexity } from "../task/index.ts";
 import type { VerificationRung } from "../verification/index.ts";
 
 export type EventSeq = number;
+
+export interface PlanCritiqueFact {
+  outcome: "approved" | "revised" | "kept";
+  issues: { type: string; taskIds: string[]; reason: string }[];
+}
+
+export interface PlanClassificationFact {
+  taskType: string;
+  scope: string;
+  risk: "low" | "medium" | "high";
+  domains: string[];
+}
+
+export interface PlannedTaskFact {
+  id: string;
+  title: string;
+  allowedPaths: string[];
+  dependsOn: string[];
+  readOnlyPaths?: string[];
+  produces?: string[];
+  subtasks?: string[];
+  skills?: string[];
+  complexity?: TaskComplexity;
+  employee?: string;
+  engine?: string;
+  verifyRung?: VerificationRung;
+}
+
+export type WorkerLimit = "plan" | "setting" | "machine" | "budget";
 
 interface BaseEvent {
   runId: string;
@@ -155,12 +185,44 @@ export type WeaveEvent =
   | (BaseEvent & { type: "contract.changed"; version: number; requestedBy: string; affects: string[]; rerun: string[]; commit: string })
   | (BaseEvent & { type: "contract.change.rejected"; requestedBy: string; reason: string })
   | (BaseEvent & {
+      type: "plan.execution";
+      workers: number;
+      timing: "estimated" | "order-only";
+      estimatedMs: number | null;
+      estimatedCostMicroUsd: string | null;
+      slots: {
+        taskId: string;
+        worker: number;
+        employeeId: string | null;
+        engineId: string | null;
+        fallbackEngineIds: string[];
+        after: string[];
+        startMs: number;
+        endMs: number;
+      }[];
+    })
+  | (BaseEvent & { type: "plan.triaged"; route: "fast" | "plan"; reason: string; plannerEngineId: string | null; reviewerEngineId: string | null })
+  | (BaseEvent & { type: "plan.reviewed"; attempts: number; classification: PlanClassificationFact | null; warnings: string[]; critique: PlanCritiqueFact | null })
+  | (BaseEvent & {
       type: "plan.created";
       kind: "existing" | "greenfield";
       mode: "sequential" | "parallel";
       reason: string;
       concurrency: number;
-      tasks: { id: string; title: string; allowedPaths: string[]; dependsOn: string[] }[];
+      goal: string | null;
+      assumptions: string[];
+      risks: string[];
+      tasks: PlannedTaskFact[];
+    })
+  | (BaseEvent & {
+      type: "plan.workers";
+      workers: number;
+      limitedBy: WorkerLimit;
+      reason: string;
+      requested: number;
+      maxWorkers: number;
+      machineCapacity: number;
+      affordable: number | null;
     })
   | (BaseEvent & {
       type: "pool.task.settled";

@@ -1,2 +1,3 @@
 export { concurrencyFor, decide } from "./decide.ts";
-export type { DecideInput, Decision, DecisionReason } from "./types.ts";
+export { resolveWorkerCount } from "./worker-limits.ts";
+export type { DecideInput, Decision, DecisionReason, WorkerCapacity, WorkerCount } from "./types.ts";

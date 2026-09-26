@@ -1,4 +1,4 @@
-const JSON_FENCE = /```json\r?\n([\s\S]*?)\r?\n```/;
+const JSON_FENCE = /```(?:json)?\s*([\s\S]*?)(?:```|$)/i;
 const MAX_PATTERNED_CHARS = 256;
 
 export type JsonRecord = Record<string, unknown>;
@@ -14,15 +14,53 @@ export interface FieldContext {
 }
 
 export function parseJsonBlock(text: string): JsonBlockResult {
-  const source = (JSON_FENCE.exec(text)?.[1] ?? text).trim();
+  if (!text || text.trim() === "") {
+    return { ok: false, issue: "No output received from the engine" };
+  }
+
+  // 1. Try fenced markdown code block (e.g. ```json ... ``` or ``` ...)
+  const fencedMatch = JSON_FENCE.exec(text);
+  if (fencedMatch?.[1]) {
+    const fencedContent = fencedMatch[1].trim();
+    if (fencedContent) {
+      try {
+        return { ok: true, value: JSON.parse(fencedContent) };
+      } catch {
+        // Fall through to other extraction methods
+      }
+    }
+  }
+
+  // 2. Try whole trimmed text
+  const trimmed = text.trim();
   try {
-    return { ok: true, value: JSON.parse(source) };
+    return { ok: true, value: JSON.parse(trimmed) };
+  } catch {
+    // Fall through
+  }
+
+  // 3. Try finding the outermost balanced { ... } object in the text
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = text.slice(firstBrace, lastBrace + 1).trim();
+    try {
+      return { ok: true, value: JSON.parse(candidate) };
+    } catch {
+      // Fall through
+    }
+  }
+
+  // 4. Return syntax error from parsing the closest candidate or trimmed text
+  try {
+    JSON.parse(trimmed);
   } catch (error) {
     if (error instanceof SyntaxError) {
       return { ok: false, issue: `Output is not valid JSON: ${error.message}` };
     }
     throw error;
   }
+  return { ok: false, issue: "Output is not valid JSON" };
 }
 
 export function isRecord(value: unknown): value is JsonRecord {
@@ -46,6 +84,13 @@ export function readOptionalString(ctx: FieldContext, key: string, maxChars: num
   const value = ctx.record[key];
   if (value === undefined || value === null) return null;
   return readString(ctx, key, maxChars);
+}
+
+export function readChoice<T extends string>(ctx: FieldContext, key: string, choices: readonly T[]): T | null {
+  const value = ctx.record[key];
+  const choice = choices.find((candidate) => candidate === value);
+  if (choice === undefined) ctx.issues.push(`${ctx.where}: "${key}" must be one of ${choices.join(", ")}`);
+  return choice ?? null;
 }
 
 export function readPattern(ctx: FieldContext, key: string, pattern: RegExp): string | null {

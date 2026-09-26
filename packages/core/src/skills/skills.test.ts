@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildSkillRegistry } from "./registry.ts";
 import { renderSkills } from "./render.ts";
-import { resolveSkills } from "./resolve.ts";
+import { renderSkillCatalog } from "./catalog.ts";
+import { pickSkills, resolveSkills } from "./resolve.ts";
 import type { SkillQuery } from "./types.ts";
 
 const BACKEND_PROJECT = { languages: ["TypeScript"], frameworks: ["Express", "PostgreSQL"], packages: ["express", "pg"] } as const;
@@ -37,4 +38,20 @@ test("the skills block keeps its byte budget", () => {
   const block = renderSkills(resolved, 300);
   assert.ok(Buffer.byteLength(block, "utf8") < 500);
   assert.match(block, /more skills left out/);
+});
+
+test("skills the plan asks for come first, and unknown names are reported", () => {
+  const query = { ...BACKEND_PROJECT, text: "Add an endpoint", paths: [], layers: ["api"] } as const;
+  const pick = pickSkills(buildSkillRegistry([]).skills, query, ["Security", "payments-magic", "security"]);
+  assert.equal(pick.chosen[0]?.skill.name, "security");
+  assert.deepEqual(pick.chosen[0]?.reasons, ["requested by the plan"]);
+  assert.equal(pick.chosen.filter((resolved) => resolved.skill.name === "security").length, 1);
+  assert.deepEqual(pick.unknown, ["payments-magic"]);
+});
+
+test("the skill catalog lists every skill name once, sorted", () => {
+  const catalog = renderSkillCatalog(buildSkillRegistry([]));
+  const listed = catalog.split("\n").map((line) => line.slice(2, line.indexOf(":")));
+  assert.deepEqual(listed, [...listed].sort());
+  assert.ok(listed.includes("postgres"));
 });

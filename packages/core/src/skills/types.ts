@@ -34,3 +34,8 @@ export interface ResolvedSkill {
   readonly score: number;
   readonly reasons: readonly string[];
 }
+
+export interface SkillPick {
+  readonly chosen: readonly ResolvedSkill[];
+  readonly unknown: readonly string[];
+}

@@ -37,7 +37,7 @@ const FIND_MUTATING_FLAGS: ReadonlySet<string> = new Set([
 const FOLLOW_FLAGS: ReadonlySet<string> = new Set(["-f", "--follow", "-F"]);
 
 const GIT_READ_ONLY_SUBCOMMANDS: ReadonlySet<string> = new Set([
-  "blame", "describe", "diff", "log", "ls-files", "rev-parse", "shortlog", "show", "status",
+  "blame", "cat-file", "describe", "diff", "log", "ls-files", "ls-tree", "rev-parse", "shortlog", "show", "status",
 ]);
 
 const GIT_OUTPUT_FLAG = "--output";

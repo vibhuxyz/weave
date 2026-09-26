@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { RunUpdate } from "../../../server/index.ts";
-import { MAX_LANE_FILES, MAX_LANE_TOOLS } from "./constants";
+import { MAX_BLOCK_FILES } from "./constants";
+import { workerCapacityText, workerCountText } from "./lib";
 import { parseRunCommand } from "./run-command";
 import { applyRunMessages } from "./store/apply-run-message";
 import { laneCostUsd } from "./store/lane";
@@ -12,9 +13,12 @@ const started: RunMessage = { type: "run-started", runKey: "k1", request: "add h
 const update = (value: RunUpdate): RunMessage => ({ type: "run-update", runKey: "k1", update: value });
 const plan = update({
   kind: "plan",
+  goal: null,
+  assumptions: [],
+  risks: [],
   mode: "parallel",
   reason: "disjoint-paths",
-  tasks: [{ id: "T1", title: "add", dependsOn: [] }, { id: "T2", title: "sub", dependsOn: ["T1"] }],
+  tasks: [{ id: "T1", title: "add", dependsOn: [], allowedPaths: [] }, { id: "T2", title: "sub", dependsOn: ["T1"], allowedPaths: [] }],
 });
 
 test("the plan opens one waiting lane per task, in plan order", () => {
@@ -22,6 +26,27 @@ test("the plan opens one waiting lane per task, in plan order", () => {
   assert.deepEqual(run?.laneOrder, ["T1", "T2"]);
   assert.equal(run?.lanes.T2?.status, "waiting");
   assert.deepEqual(run?.lanes.T2?.dependsOn, ["T1"]);
+});
+
+test("a lane keeps the engine, the read-only paths and the check its plan named", () => {
+  const staffed = update({
+    kind: "plan", goal: null, assumptions: [], risks: [], mode: "parallel", reason: "disjoint-paths",
+    tasks: [{ id: "API", title: "api", dependsOn: [], allowedPaths: ["api/**"], readOnlyPaths: ["contracts/**"], engineId: "codex", employeeId: "backend-engineer", verifyRung: "typecheck" }],
+  });
+  const lane = applyRunMessages(null, [started, staffed])?.lanes.API;
+  assert.deepEqual(lane?.readOnlyPaths, ["contracts/**"]);
+  assert.equal(lane?.plannedEngineId, "codex");
+  assert.equal(lane?.verifyRung, "typecheck");
+  assert.deepEqual(lane?.employee, { employeeId: "backend-engineer", reasons: ["named in the plan"] });
+});
+
+test("the worker count and the constraints behind it reach the plan header", () => {
+  const count = { workers: 2, limitedBy: "machine", reason: "2 workers: this machine can run 2 at a time", requested: 5, maxWorkers: 4, machineCapacity: 2, affordable: null } as const;
+  const run = applyRunMessages(null, [started, plan, update({ kind: "worker-count", count })]);
+  assert.deepEqual(run?.workerCount, count);
+  assert.equal(workerCountText(count), "2 workers, set by this machine");
+  assert.equal(workerCapacityText(count), "plan asks for 5 · project allows 4 · machine fits 2");
+  assert.match(workerCapacityText({ ...count, affordable: 3 }), /cost limits afford 3$/);
 });
 
 test("each lane only takes the updates for its own taskId", () => {
@@ -34,10 +59,10 @@ test("each lane only takes the updates for its own taskId", () => {
     update({ kind: "task-settled", taskId: "T1", status: "ok", reason: null }),
   ]);
   assert.equal(run?.lanes.T1?.status, "ok");
-  assert.equal(run?.lanes.T1?.text, "writing add");
-  assert.deepEqual(run?.lanes.T1?.files, ["add.js"]);
   assert.equal(run?.lanes.T2?.status, "waiting");
-  assert.equal(run?.lanes.T2?.text, "");
+  assert.deepEqual(run?.stream.map((block) => block.taskId), ["T1"]);
+  assert.equal(run?.stream[0]?.turn.text, "writing add");
+  assert.deepEqual(run?.stream[0]?.files, ["add.js"]);
 });
 
 test("cost keeps the finished attempt and adds the re-run's own session cost", () => {
@@ -62,14 +87,11 @@ test("a task outside the plan, like a contract revision, gets its own lane", () 
   assert.equal(run?.contractVersion, 2);
 });
 
-test("lane tools and files stay capped", () => {
-  const tools = Array.from({ length: MAX_LANE_TOOLS + 3 }, (_, index) => update({ kind: "tool", taskId: "T1", title: `tool ${index}` }));
-  const files = Array.from({ length: MAX_LANE_FILES + 2 }, (_, index) => update({ kind: "file", taskId: "T1", path: `f${index}.js` }));
-  const lane = applyRunMessages(null, [started, plan, ...tools, ...files])?.lanes.T1;
-  assert.equal(lane?.tools.length, MAX_LANE_TOOLS);
-  assert.equal(lane?.tools.at(-1)?.title, `tool ${MAX_LANE_TOOLS + 2}`);
-  assert.equal(lane?.files.length, MAX_LANE_FILES);
-  assert.equal(lane?.hiddenFileCount, 2);
+test("files in one stream block stay capped, and the rest are counted", () => {
+  const files = Array.from({ length: MAX_BLOCK_FILES + 2 }, (_, index) => update({ kind: "file", taskId: "T1", path: `f${index}.js` }));
+  const block = applyRunMessages(null, [started, plan, ...files])?.stream[0];
+  assert.equal(block?.files.length, MAX_BLOCK_FILES);
+  assert.equal(block?.hiddenFileCount, 2);
 });
 
 test("updates from another run are ignored, and the outcome ends the run", () => {
@@ -90,5 +112,23 @@ test("only an exact /parallel command starts a run", () => {
 test("with no run, the panel selector returns the same lane list every time, so React does not loop", () => {
   const idle = { run: null };
   assert.equal(selectRunHeader(idle).laneOrder, selectRunHeader(idle).laneOrder);
-  assert.deepEqual(selectRunHeader(idle), { request: null, outcome: null, laneOrder: [] });
+  assert.deepEqual(selectRunHeader(idle), { runKey: null, approval: "none", request: null, outcome: null, laneOrder: [] });
+});
+
+test("planner activity streams into the chat as its own block, without opening a lane", () => {
+  const run = applyRunMessages(null, [
+    started,
+    update({ kind: "planning", planner: "Antigravity", reviewer: "Claude Code" }),
+    update({ kind: "thought", taskId: "planner", text: "Analyzing repository..." }),
+    update({ kind: "tool", taskId: "planner", tool: { id: "t1", title: "Read package.json", toolKind: "read", status: "pending" } }),
+    update({ kind: "text", taskId: "planner", text: '{"tasks": []}' }),
+  ]);
+  assert.equal(run?.planning?.planner, "Antigravity");
+  assert.equal(run?.planning?.reviewer, "Claude Code");
+  assert.deepEqual(run?.stream.map((block) => block.taskId), ["planner"]);
+  assert.equal(run?.stream[0]?.turn.thought, "Analyzing repository...");
+  assert.equal(run?.stream[0]?.turn.text, '{"tasks": []}');
+  assert.equal(run?.stream[0]?.turn.tools[0]?.title, "Read package.json");
+  assert.deepEqual(run?.laneOrder, []);
+  assert.equal(run?.lanes.planner, undefined);
 });

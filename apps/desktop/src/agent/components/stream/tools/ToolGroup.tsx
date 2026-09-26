@@ -6,7 +6,7 @@ import { MAX_ROWS_PER_GROUP } from "./constants";
 import { DiffStat } from "./DiffStat";
 import { DisclosureHeader } from "../DisclosureHeader";
 import { diffTotalsOf } from "./tool-diff";
-import { groupLabel, runningLabel } from "./tool-label";
+import { groupLabel, runningLabel, actionColor, actionOf } from "./tool-label";
 import { ToolRow } from "./ToolRow";
 
 export function ToolGroup({
@@ -25,7 +25,7 @@ export function ToolGroup({
   const hiddenCount = tools.length - visible.length;
   return (
     <div className="flex flex-col gap-2">
-      <DisclosureHeader open={open} onToggle={() => setOpen((value) => !value)}>
+      <DisclosureHeader open={open} onToggle={() => setOpen((value) => !value)} className={running ? actionColor(actionOf(running)) : tools.length > 0 ? actionColor(actionOf(tools[0]!)) : undefined}>
         {running ? (
           <Shimmer>{runningLabel(running)}</Shimmer>
         ) : (

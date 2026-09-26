@@ -71,7 +71,6 @@ export function StreamedTurn(props: StreamedTurnProps) {
   };
   return (
     <div className="flex w-full flex-col gap-4 text-agent-text">
-      {turn.thought && <ThoughtRow text={turn.thought} />}
       <TurnSegments turn={turn} onOpenDiff={props.onOpenDiff} />
       <InteractiveBlocks blocks={viewModel.blocks} handlers={handlers} />
       {!showsStatus && diff.files.length > 0 && (

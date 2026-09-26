@@ -32,7 +32,7 @@ import {
   type CompactionCapabilities,
 } from "@/features/chat/compaction";
 import { buildHistoryArchive, restoreArchivedTurns } from "./acpChat/history-archive";
-import { appendAnswersSegment, appendTextSegment, appendToolSegment } from "./acpChat/turn-segments";
+import { appendAnswersSegment, appendTextSegment, appendThoughtSegment, appendToolSegment } from "./acpChat/turn-segments";
 import { latestPlanEntries, planChangeEntries, planChanges } from "./acpChat/plan-changes";
 import { useArchiveChannel } from "./acpChat/use-archive-channel";
 import type { ArchiveChannelOptions } from "./acpChat/use-archive-channel";
@@ -439,6 +439,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           withAssistantTurn((turn) => ({
             ...turn,
             thought: turn.thought + chunk,
+            segments: appendThoughtSegment(turn.segments, chunk),
             sourceEventIds: sourceEventIds
               ? [...(turn.sourceEventIds ?? []), ...sourceEventIds]
               : turn.sourceEventIds,
@@ -1374,6 +1375,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     question: questionChannel.question,
     answerQuestion: questionChannel.answer,
     startRun: runChannel.startRun,
+    decidePlan: runChannel.decidePlan,
     cancelRun: runChannel.cancelRun,
     openFile: fileChannel.openFile,
     employeeActions,

@@ -8,6 +8,13 @@ export function appendTextSegment(segments: readonly TurnSegment[] | undefined, 
   return [...current, { id: `s${current.length}`, kind: "text", text: chunk }];
 }
 
+export function appendThoughtSegment(segments: readonly TurnSegment[] | undefined, chunk: string): TurnSegment[] {
+  const current = segments ?? [];
+  const last = current.at(-1);
+  if (last?.kind === "thought") return [...current.slice(0, -1), { ...last, text: last.text + chunk }];
+  return [...current, { id: `s${current.length}`, kind: "thought", text: chunk }];
+}
+
 export function appendToolSegment(segments: readonly TurnSegment[] | undefined, toolId: string): TurnSegment[] {
   const current = segments ?? [];
   const last = current.at(-1);

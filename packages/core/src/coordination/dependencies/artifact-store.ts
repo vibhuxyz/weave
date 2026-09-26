@@ -15,6 +15,10 @@ export function artifactKey(producer: string, name: string): string {
   return `${producer}/${name}`;
 }
 
+function satisfies(artifact: Artifact, output: string): boolean {
+  return artifact.name === output || artifact.provides.includes(output);
+}
+
 export class ArtifactStore {
   private readonly latestByKey = new Map<string, StoredArtifact>();
 
@@ -22,7 +26,7 @@ export class ArtifactStore {
     const key = artifactKey(producer, input.name);
     const previous = this.latestByKey.get(key);
     const version = (previous?.artifact.version ?? 0) + 1;
-    const artifact: Artifact = { name: input.name, version, summary: input.summary, files: input.files.map((file) => ({ ...file })) };
+    const artifact: Artifact = { name: input.name, version, summary: input.summary, provides: [...new Set(input.provides)].sort(), files: input.files.map((file) => ({ ...file })) };
     const stored: StoredArtifact = { producer, kind: previous?.kind ?? kind, artifact };
     this.latestByKey.set(key, stored);
     return { ...stored, isUpdate: previous !== undefined };
@@ -38,7 +42,7 @@ export class ArtifactStore {
 
   producersOf(output: string): readonly string[] {
     return [...this.latestByKey.values()]
-      .filter((stored) => stored.artifact.name === output)
+      .filter((stored) => satisfies(stored.artifact, output))
       .map((stored) => stored.producer)
       .sort();
   }
@@ -48,6 +52,7 @@ export class ArtifactStore {
     for (const stored of this.latestByKey.values()) {
       const names = outputs.get(stored.producer) ?? new Set<string>();
       names.add(stored.artifact.name);
+      for (const provided of stored.artifact.provides) names.add(provided);
       outputs.set(stored.producer, names);
     }
     return outputs;

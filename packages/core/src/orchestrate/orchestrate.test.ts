@@ -148,3 +148,20 @@ test("no-change-needed and invalid plans stop before any worker runs", async () 
   assert.match(broken.status === "refused" ? broken.reason : "", /The plan was invalid twice/);
 });
 
+
+test("a plan that is not approved stops after planning: nothing runs and no worker starts", async () => {
+  const repo = await repoWith({ "package.json": JSON.stringify({ scripts: { test: "node --test" } }) });
+  const answer = fenced({ tasks: [{ id: "T1", title: "add", prompt: "write add", allowedPaths: ["add.js"] }] });
+  const workers: string[] = [];
+  const worker: RunWorker = async ({ task }) => (workers.push(task.id), { status: "ok" });
+  const seen: string[] = [];
+  const approvePlan = async () => (seen.push("asked"), false);
+  const result = await planAndRun({
+    request: "add a helper", repoRoot: repo, runTurn: async () => answer, runWorker: worker, verify: verifyOk, shouldInstall: false,
+    onEvent: (event) => seen.push(event.type), approvePlan,
+  });
+  assert.deepEqual(result, { status: "refused", reason: "The plan was not approved, so nothing ran." });
+  assert.deepEqual(workers, []);
+  assert.ok(seen.indexOf("plan.created") < seen.indexOf("asked"), seen.join(","));
+  assert.equal(await exists(join(repo, "add.js")), false);
+});

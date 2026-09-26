@@ -6,10 +6,12 @@ interface RunStore {
   readonly run: RunState | null;
   readonly applyMessages: (messages: readonly RunMessage[]) => void;
   readonly dismiss: () => void;
+  readonly dismissFinished: () => void;
 }
 
 export const useRunStore = create<RunStore>((set) => ({
   run: null,
   applyMessages: (messages) => set((state) => ({ run: applyRunMessages(state.run, messages) })),
   dismiss: () => set({ run: null }),
+  dismissFinished: () => set((state) => (state.run?.outcome ? { run: null } : {})),
 }));

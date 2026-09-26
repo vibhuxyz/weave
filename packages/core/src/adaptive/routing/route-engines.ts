@@ -33,7 +33,7 @@ export function routeTask(input: RouteInput): EngineRoute {
   });
   const rejectedIds = new Set(rejected.map((entry) => entry.engineId));
   const eligible = candidates.filter((candidate) => !rejectedIds.has(candidate.id));
-  const query = { kind: taskKindOf(task), sizeUnits: taskSizeUnits(task) };
+  const query = { kind: taskKindOf(task), sizeUnits: taskSizeUnits(task), ...(task.complexity ? { complexity: task.complexity } : {}) };
   if (eligible.length === 0) {
     const configured = candidates.map((candidate) => estimateAttempt(stats, { ...query, engineId: candidate.id }));
     return { taskId: task.id, engines: candidates.map((candidate) => candidate.id), estimate: estimateChain(configured), rejected, reason: `no engine declares ${required.join(", ")}; keeping the configured order` };

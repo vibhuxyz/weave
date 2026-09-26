@@ -1,7 +1,11 @@
 export const EVENT_FENCE_LANGUAGE = "weave-event";
 export const MAX_EVENT_TEXT_CHARS = 2_000;
 export const MAX_NAME_CHARS = 100;
+export const MAX_SUBTASK_CHARS = 200;
 export const MAX_ARTIFACT_FILES = 20;
+export const MAX_PROVIDED_OUTPUTS = 40;
+export const MAX_AWAITED_CONSUMERS = 10;
+export const MAX_AWAITED_OUTPUTS = 20;
 export const MAX_ARTIFACT_PATH_CHARS = 300;
 export const MAX_ARTIFACT_FILE_CHARS = 20_000;
 export const MAX_PENDING_EVENT_CHARS = 64_000;

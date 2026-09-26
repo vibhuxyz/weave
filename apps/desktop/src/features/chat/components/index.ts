@@ -9,3 +9,13 @@ export { QuestionCard } from "./question";
 export { cleanOutput } from "./clean-output";
 export { toolRunState } from "./ToolStatusIcon";
 export { UserMessage } from "./UserMessage";
+export {
+  PromptCard,
+  PromptCardHeader,
+  PromptCardBody,
+  PromptCardFooter,
+  PromptCardButton,
+  ShortcutKey,
+} from "./PromptCard";
+export type { PromptCardProps, PromptCardHeaderProps } from "./PromptCard";
+

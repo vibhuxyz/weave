@@ -1,9 +1,14 @@
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { MAX_OPTION_SHORTCUTS, useQuestionForm, type AnswerQuestion, type QuestionState } from "@/features/chat/hooks";
+import {
+  PromptCard,
+  PromptCardHeader,
+  PromptCardBody,
+  PromptCardFooter,
+  PromptCardButton,
+} from "../PromptCard";
 import { NoticeList } from "./NoticeList";
 import { shortcutIndexOf } from "./option-shortcut";
-import { QuestionFooter } from "./QuestionFooter";
-import { QuestionHeader } from "./QuestionHeader";
 import { QuestionStepBody } from "./QuestionStepBody";
 
 export function QuestionCard({ state, onAnswer }: { state: QuestionState; onAnswer: AnswerQuestion }) {
@@ -34,54 +39,78 @@ export function QuestionCard({ state, onAnswer }: { state: QuestionState; onAnsw
   };
 
   return (
-    <form
+    <PromptCard
+      as="form"
       onSubmit={submit}
       onKeyDown={pickByShortcut}
       aria-label="The agent has a question"
-      className="dark flex w-full flex-col gap-3 rounded-xl border border-agent-border bg-agent-surface-raised p-4"
     >
-      <QuestionHeader
-        position={hasManySteps ? `${form.stepIndex + 1}/${steps.length}` : null}
-        heading={step?.heading ?? request.message}
+      <PromptCardHeader
+        badge={hasManySteps ? `${form.stepIndex + 1}/${steps.length}` : null}
+        badgeVariant="warn"
+        title={step?.heading ?? request.message}
         isCollapsed={isCollapsed}
-        isDisabled={form.isSending}
         onToggleCollapsed={() => setIsCollapsed(!isCollapsed)}
         onClose={form.decline}
+        closeDisabled={form.isSending}
+        closeLabel="Dismiss question"
       />
       {!isCollapsed && (
         <>
-          {hasManySteps && form.stepIndex === 0 && (
-            <p className="max-h-40 overflow-auto whitespace-pre-wrap text-agent-text-muted text-xs">{request.message}</p>
-          )}
-          {step?.label && <p className="text-agent-text-muted text-xs">{step.label}</p>}
-          {step?.help && <p className="whitespace-pre-wrap text-agent-text-muted text-xs">{step.help}</p>}
-          {step && (
-            <QuestionStepBody
-              key={step.key}
-              step={step}
-              values={form.values}
-              isDisabled={form.isSending}
-              onPick={form.pick}
-              onText={form.setText}
-              onSubmit={form.next}
-            />
-          )}
-          <NoticeList notices={request.notices} />
-          {error && (
-            <p role="alert" className="text-agent-critical text-xs">
-              {error}
-            </p>
-          )}
-          <QuestionFooter
-            canGoBack={form.stepIndex > 0}
-            isLastStep={form.isLastStep}
-            isSending={form.isSending}
-            canContinue={form.canContinue}
-            onBack={form.back}
-            onSkip={form.skip}
-          />
+          <PromptCardBody>
+            {hasManySteps && form.stepIndex === 0 && (
+              <p className="max-h-40 overflow-auto whitespace-pre-wrap text-agent-text-muted text-xs">{request.message}</p>
+            )}
+            {step?.label && <p className="text-agent-text-muted text-xs">{step.label}</p>}
+            {step?.help && <p className="whitespace-pre-wrap text-agent-text-muted text-xs">{step.help}</p>}
+            {step && (
+              <div className="max-h-64 overflow-y-auto pr-0.5">
+                <QuestionStepBody
+                  key={step.key}
+                  step={step}
+                  values={form.values}
+                  isDisabled={form.isSending}
+                  onPick={form.pick}
+                  onText={form.setText}
+                  onSubmit={form.next}
+                />
+              </div>
+            )}
+            <NoticeList notices={request.notices} />
+            {error && (
+              <p role="alert" className="text-agent-critical text-xs">
+                {error}
+              </p>
+            )}
+          </PromptCardBody>
+          <PromptCardFooter>
+            {form.stepIndex > 0 && (
+              <PromptCardButton
+                variant="secondary"
+                disabled={form.isSending}
+                onClick={form.back}
+                className="mr-auto"
+              >
+                Back
+              </PromptCardButton>
+            )}
+            <PromptCardButton
+              variant="secondary"
+              disabled={form.isSending}
+              onClick={form.skip}
+            >
+              Skip
+            </PromptCardButton>
+            <PromptCardButton
+              variant="primary"
+              type="submit"
+              disabled={!form.canContinue}
+            >
+              {form.isSending ? "Sending…" : form.isLastStep ? "Submit" : "Next"}
+            </PromptCardButton>
+          </PromptCardFooter>
         </>
       )}
-    </form>
+    </PromptCard>
   );
 }

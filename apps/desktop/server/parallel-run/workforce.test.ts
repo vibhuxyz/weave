@@ -30,12 +30,27 @@ test("claims are capped with a count of the rest", () => {
 });
 
 test("coordination events summarise blocks, early starts and escalations for the right lane", () => {
-  const blocked = eventOf({ type: "coordination.event", recipients: [], event: { ...ENVELOPE, type: "dependency.blocked", data: { need: { output: "schema", task: "T0" }, reason: "not published" } } });
-  assert.deepEqual(projectRunEvent(blocked), { kind: "blocked", taskId: "T1", reason: "Needs schema from T0: not published" });
+  const asked = eventOf({ type: "coordination.event", recipients: [], event: { ...ENVELOPE, type: "dependency.blocked", data: { need: { output: "schema", task: "T0" }, reason: "not published" } } });
+  assert.deepEqual(projectRunEvent(asked), { kind: "awaiting", taskId: "T1", output: "schema", producer: "T0", reason: "not published" });
   const ready = eventOf({ type: "coordination.event", recipients: ["T3"], event: { ...ENVELOPE, type: "dependency.ready", data: { consumer: "T3", outputs: ["api"] } } });
   assert.deepEqual(projectRunEvent(ready), { kind: "note", taskId: "T3", tone: "info", text: "Can start early: api ready from T1" });
   const escalation = eventOf({ type: "coordination.event", recipients: [], event: { ...ENVELOPE, type: "escalation.created", data: { subject: "cycle", reason: "T1 -> T2 -> T1" } } });
   assert.equal(projectRunEvent(escalation)?.kind, "note");
+});
+
+test("a request, a milestone and a published output each become their own lane update", () => {
+  const arrived = eventOf({ type: "coordination.event", recipients: ["T2"], event: { ...ENVELOPE, type: "dependency.resolved", data: { consumer: "T2", producer: "T1", output: "schema" } } });
+  assert.deepEqual(projectRunEvent(arrived), { kind: "awaited-arrived", taskId: "T2", output: "schema", producer: "T1" });
+
+  const milestone = eventOf({ type: "coordination.event", recipients: ["weave"], event: { ...ENVELOPE, type: "subtask.completed", data: { subtask: "Design the\n Todo schema", index: 1 } } });
+  assert.deepEqual(projectRunEvent(milestone), { kind: "subtask", taskId: "T1", subtask: "Design the Todo schema", index: 1 });
+
+  const artifact = { name: "schema", version: 2, summary: "todos  table", provides: ["Todo"], files: [] };
+  const published = eventOf({ type: "coordination.event", recipients: ["T2"], event: { ...ENVELOPE, type: "artifact.updated", data: { artifact } } });
+  assert.deepEqual(projectRunEvent(published), { kind: "artifact", taskId: "T1", artifact: { name: "schema", version: 2, summary: "todos table", kind: "artifact", isUpdate: true } });
+
+  const contract = eventOf({ type: "coordination.event", recipients: ["T2"], event: { ...ENVELOPE, type: "contract.published", data: { artifact: { ...artifact, name: "api-contract", version: 1 } } } });
+  assert.deepEqual(projectRunEvent(contract)?.kind === "artifact" ? projectRunEvent(contract) : null, { kind: "artifact", taskId: "T1", artifact: { name: "api-contract", version: 1, summary: "todos table", kind: "contract", isUpdate: false } });
 });
 
 test("orchestration decisions and budget overruns become run updates", () => {
@@ -68,7 +83,19 @@ test("a desktop run staffs tasks with employees and streams their assignment and
   const verify: VerifyWorkspace = async () => ({ ok: true, rungs: ["tests"], detail: "ok" });
   const scripted: typeof planAndRun = (options) => planAndRun({ ...options, runTurn, runWorker, verify, shouldInstall: false });
   const sent: ServerMessage[] = [];
-  await createRunController(scripted).start({ request: "add tests", projectDir: repo, engineId: "claude-code", runKey: "k1", send: (message) => sent.push(message) });
+  const runs = createRunController(scripted);
+  await runs.start({
+    request: "add tests",
+    projectDir: repo,
+    engineId: "claude-code",
+    runKey: "k1",
+    send: (message) => {
+      sent.push(message);
+      if (message.type === "run-update" && message.update.kind === "awaiting-approval") {
+        runs.decide("k1", true);
+      }
+    },
+  });
   const kinds = sent.flatMap((message) => (message.type === "run-update" ? [message.update.kind] : []));
   assert.ok(kinds.includes("employee-assigned"), kinds.join(","));
   const assigned = sent.find((message) => message.type === "run-update" && message.update.kind === "employee-assigned");

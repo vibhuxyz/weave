@@ -30,7 +30,7 @@ import { ENGINES, DEFAULT_ENGINE_ID, tokenReportingFor } from "@weave/agent/brow
 import { EnginePicker } from '@/features/engines/components';
 import { SettingsView } from '@/features/settings';
 import { ChatSkeleton, ContextPanel, EngineSetupPanel, hasSelectableModes, ModePicker, PermissionCard, QuestionCard, UserMessage, type ContextPanelTab } from '@/features/chat/components';
-import { parseRunCommand, RunPanel } from '@/features/runs';
+import { parseRunCommand, RunPanel, RunStream, selectIsPlanOpen, selectIsRunActive, useRunStore } from '@/features/runs';
 import { FileViewer, useFileStore } from '@/features/files';
 import { LocalPathOpenerContext } from '@/shared/ui/ai-elements';
 
@@ -110,6 +110,10 @@ export function App() {
   // (header title, sidebar's active row, context panel) fall back to "no
   // project yet" instead of blocking the whole app behind a folder picker.
   const activeDir = project.status === "running" ? project.dir : undefined;
+  const isRunActive = useRunStore(selectIsRunActive);
+  const dismissFinishedRun = useRunStore((state) => state.dismissFinished);
+  const isPlanOpen = useRunStore(selectIsPlanOpen);
+
   const {
     state: connection,
     turns,
@@ -165,6 +169,7 @@ export function App() {
     openChat,
     updateTurnPlan,
     startRun,
+    decidePlan,
     cancelRun,
     openFile,
     employeeActions,
@@ -505,6 +510,7 @@ export function App() {
   }, [modelOption, setConfig]);
 
   const [draft, setDraft] = useState("");
+  const setUpGitAndRun = useCallback((request: string) => startRun(request, { setUpGit: true }), [startRun]);
   const [focusEmployeeId, setFocusEmployeeId] = useState<string | null>(null);
   const openEmployee = useCallback(
     (employeeId: string) => {
@@ -694,7 +700,7 @@ export function App() {
       const el = scrollRef.current;
       el?.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
-  }, [turns]);
+  }, [turns, permissionRequest, question, engineSetup]);
 
   // @-mentioned agents applied to the *next* message only.
   const [mentioned, setMentioned] = useState<Agent[]>([]);
@@ -914,6 +920,7 @@ export function App() {
     // duplicate bubble and queues a second prompt behind a stuck one.
     if (busy || !ready) return;
     if (!draft.trim() && imageAttachments.length === 0) return;
+    dismissFinishedRun();
     const runRequest = parseRunCommand(draft);
     if (runRequest !== null) {
       startRun(runRequest);
@@ -1288,6 +1295,7 @@ export function App() {
           <ProjectView
             actions={projectActions}
             budgetActions={budgetActions}
+            onOpenFile={openFile}
             projectLabel={activeDir && !isChatWorkspaceActive ? basename(activeDir) : undefined}
           />
         ) : view === "skills" ? (
@@ -1316,7 +1324,7 @@ export function App() {
           onScroll={onTranscriptScroll}
           className={cn(
             CHAT_COLUMN_WIDTH,
-            "flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] pt-6 pb-24",
+            "flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] pt-6 pb-6",
           )}
         >
           {isOpeningChat && <ChatSkeleton />}
@@ -1369,32 +1377,8 @@ export function App() {
             ),
           )}
 
-          {engineSetup && (
-            <EngineSetupPanel
-              setup={engineSetup}
-              onStart={startEngineSetup}
-              onCancel={cancelEngineSetup}
-              onKey={sendSetupKey}
-              onSubmitConsent={submitSetupConsent}
-            />
-          )}
+          <RunStream />
 
-          {permissionRequest && (
-            <PermissionCard
-              request={permissionRequest}
-              onAnswer={answerPermission}
-            />
-          )}
-
-          {question && (
-            <QuestionCard
-              key={question.request.requestId}
-              state={question}
-              onAnswer={answerQuestion}
-            />
-          )}
-
-          <RunPanel onCancel={cancelRun} />
           {tasks && <TasksPanel tasks={tasks} onClose={() => setIsTasksOpen(false)} />}
 
           {busy && turns.at(-1)?.role === "user" && <StreamStatusLine turn={null} onOpenTasks={openTasks} planProgress={planProgress} onOpenPlan={openPlan} />}
@@ -1408,7 +1392,7 @@ export function App() {
             // element's edge, so without it the last visible line sits flush
             // against the input. Padding, not margin — mt-auto anchors this to
             // the bottom and a second margin utility would replace it.
-            "relative z-10 mt-auto w-full shrink-0 pt-4 pb-6",
+            "relative z-10 mt-auto w-full shrink-0 pt-4 pb-6 flex flex-col gap-3",
             view === "home"
               ? "ml-auto max-w-md px-[var(--spacing-app-panel-gutter-inline)]"
               : cn(CHAT_COLUMN_WIDTH, "px-[var(--spacing-app-panel-gutter-inline)]"),
@@ -1425,6 +1409,42 @@ export function App() {
                 Jump to latest
               </JumpToLatestButton>
             </div>
+          )}
+
+          {view === "chat" && (
+            <>
+              {engineSetup && (
+                <EngineSetupPanel
+                  setup={engineSetup}
+                  onStart={startEngineSetup}
+                  onCancel={cancelEngineSetup}
+                  onKey={sendSetupKey}
+                  onSubmitConsent={submitSetupConsent}
+                />
+              )}
+
+              {permissionRequest && !isPlanOpen && (
+                <PermissionCard
+                  request={permissionRequest}
+                  onAnswer={answerPermission}
+                />
+              )}
+
+              {question && (
+                <QuestionCard
+                  key={question.request.requestId}
+                  state={question}
+                  onAnswer={answerQuestion}
+                />
+              )}
+
+              <RunPanel
+                onSetUpGitAndRun={setUpGitAndRun}
+                onDecidePlan={decidePlan}
+                permissionRequest={permissionRequest}
+                onAnswerPermission={answerPermission}
+              />
+            </>
           )}
           <div
             onDragOver={(e) => {
@@ -1973,8 +1993,8 @@ export function App() {
                 >
                   <ImagePlusIcon />
                 </ComposerActionButton>
-                {busy || isCompacting ? (
-                  <ComposerSendButton state="stop" onClick={cancel} />
+                {busy || isCompacting || isRunActive ? (
+                  <ComposerSendButton state="stop" onClick={isRunActive ? cancelRun : cancel} />
                 ) : (
                   <ComposerSendButton
                     state="send"

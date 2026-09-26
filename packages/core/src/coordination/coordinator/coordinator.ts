@@ -7,7 +7,9 @@ import type { EmployeeSubmission } from "../employee/index.ts";
 import { Mailboxes, recipientsFor, type InboxBatch } from "../mailbox/index.ts";
 import { OwnershipRegistry, claimsForTask, describeResource } from "../ownership/index.ts";
 import { buildEvent } from "./envelope.ts";
-import { findProducer } from "./find-producer.ts";
+import { latestByOutput } from "./artifact-index.ts";
+import { declaredProducersOf, findProducer, promisedProducersOf } from "./find-producer.ts";
+import { subtaskIndex } from "./subtask-index.ts";
 import type { CoordinationChannel, CoordinationReport, CoordinatorOptions, PublishResult, SettledTaskStatus } from "./types.ts";
 import { watchEmployeeMessages } from "./watch-ledger.ts";
 
@@ -63,7 +65,7 @@ export class Coordinator {
   }
 
   channelFor(taskId: string): CoordinationChannel {
-    return { taskId, publish: (submission) => this.submit(taskId, submission), drain: () => this.drain(taskId) };
+    return { taskId, publish: (submission) => this.submit(taskId, submission), drain: () => this.drain(taskId), awaited: () => this.graph.dependentsOf(taskId) };
   }
 
   claim(task: TaskContract): boolean {
@@ -111,6 +113,8 @@ export class Coordinator {
         return { ok: true, event: this.publishArtifact(taskId, "contract", submission.data.artifact) };
       case "dependency.blocked":
         return { ok: true, event: this.requestDependency(taskId, submission.data.need, submission.data.reason) };
+      case "subtask.completed":
+        return { ok: true, event: this.recordSubtask(taskId, submission.data.subtask) };
       case "task.blocked":
       case "review.requested":
       case "verification.failed":
@@ -153,7 +157,7 @@ export class Coordinator {
       : (published.isUpdate ? "artifact.updated" : "artifact.ready");
     const event = this.emit(producer, { type, data: { artifact: published.artifact } });
     this.lastArtifactEvents.set(artifactKey(producer, published.artifact.name), event);
-    this.resolveNeeds(producer, published.artifact.name);
+    this.resolveNeeds(producer);
     this.notifyChange();
     return event;
   }
@@ -165,7 +169,8 @@ export class Coordinator {
       hasTask: (taskId) => this.graph.has(taskId),
       ownerOf: (resource) => this.ownership.ownerOf(resource),
       publishersOf: (output) => this.artifacts.producersOf(output),
-      declaredProducersOf: (output) => this.declaredProducersOf(output),
+      promisedProducersOf: (output) => promisedProducersOf(this.graph.current(), output),
+      declaredProducersOf: (output) => declaredProducersOf(this.graph.current(), output),
     });
     const routedNeed = found.ok ? { ...need, task: found.producer } : need;
     const request = this.emit(consumer, { type: "dependency.blocked", data: { need: routedNeed, reason } });
@@ -174,9 +179,14 @@ export class Coordinator {
     if (!added.ok) return this.escalate(request, `${consumer} needs ${need.output}`, added.reason);
     if (added.isNew) this.ledger.append("dependency.added", { taskId: consumer, on: found.producer, outputs: [need.output], reason });
     this.openNeeds = [...this.openNeeds, { consumer, producer: found.producer, output: need.output, correlationId: request.correlationId }];
-    this.resolveNeeds(found.producer, need.output);
+    this.resolveNeeds(found.producer);
     this.notifyChange();
     return request;
+  }
+
+  private recordSubtask(taskId: string, subtask: string): CoordinationEvent {
+    const declared = this.graph.current().find((task) => task.id === taskId)?.subtasks ?? [];
+    return this.emit(taskId, { type: "subtask.completed", data: { subtask, index: subtaskIndex(declared, subtask) } });
   }
 
   private escalate(cause: CoordinationEvent, subject: string, reason: string): CoordinationEvent {
@@ -184,22 +194,20 @@ export class Coordinator {
     return cause;
   }
 
-  private resolveNeeds(producer: string, output: string): void {
-    const artifactEvent = this.lastArtifactEvents.get(artifactKey(producer, output));
-    if (!artifactEvent) return;
-    const isResolved = (need: OpenNeed): boolean => need.producer === producer && need.output === output;
-    const resolved = this.openNeeds.filter(isResolved);
-    this.openNeeds = this.openNeeds.filter((need) => !isResolved(need));
-    for (const need of resolved) {
-      if (!this.mailboxes.peek(need.consumer).includes(artifactEvent)) this.mailboxes.deliver(need.consumer, artifactEvent);
-      this.emit(WEAVE_SENDER, { type: "dependency.resolved", data: { consumer: need.consumer, producer, output } }, need.correlationId);
+  private resolveNeeds(producer: string): void {
+    if (!this.openNeeds.some((need) => need.producer === producer)) return;
+    const satisfied = latestByOutput(this.lastArtifactEvents.values(), producer);
+    const resolvable = this.openNeeds.flatMap((need) => {
+      const event = need.producer === producer ? satisfied.get(need.output) : undefined;
+      return event ? [{ need, event }] : [];
+    });
+    if (resolvable.length === 0) return;
+    const resolved = new Set(resolvable.map((entry) => entry.need));
+    this.openNeeds = this.openNeeds.filter((need) => !resolved.has(need));
+    for (const { need, event } of resolvable) {
+      if (!this.mailboxes.peek(need.consumer).includes(event)) this.mailboxes.deliver(need.consumer, event);
+      this.emit(WEAVE_SENDER, { type: "dependency.resolved", data: { consumer: need.consumer, producer, output: need.output } }, need.correlationId);
     }
-  }
-
-  private declaredProducersOf(output: string): readonly string[] {
-    return this.graph.current().flatMap((task) =>
-      (task.dependencies ?? []).filter((dependency) => dependency.requiredOutputs.includes(output)).map((dependency) => dependency.task),
-    );
   }
 
   private emit(from: string, draft: CoordinationDraft, correlationId?: string): CoordinationEvent {

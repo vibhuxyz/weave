@@ -44,8 +44,12 @@ export function useRunChannel(socketRef: RefObject<WebSocket | null>) {
     [socketRef],
   );
 
-  const startRun = useCallback((request: string) => sendMessage({ type: "start-run", request }), [sendMessage]);
+  const startRun = useCallback(
+    (request: string, options: { readonly setUpGit?: boolean } = {}) => sendMessage({ type: "start-run", request, ...(options.setUpGit ? { setUpGit: true } : {}) }),
+    [sendMessage],
+  );
   const cancelRun = useCallback(() => sendMessage({ type: "cancel-run" }), [sendMessage]);
+  const decidePlan = useCallback((runKey: string, approved: boolean) => sendMessage({ type: "decide-run-plan", runKey, approved }), [sendMessage]);
 
-  return { handleMessage, startRun, cancelRun };
+  return { handleMessage, startRun, cancelRun, decidePlan };
 }

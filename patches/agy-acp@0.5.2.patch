@@ -1,6 +1,3 @@
-diff --git a/node_modules/agy-acp/.bun-tag-13cc986070be54fa b/.bun-tag-13cc986070be54fa
-new file mode 100644
-index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/dist/agy/cli.js b/dist/agy/cli.js
 index 00ec8416f1c5a4b6a75527646076df479269a357..bd7fd9f7489b9afe6e5f7aea5f9ecddb4bfa65e6 100644
 --- a/dist/agy/cli.js
@@ -30,3 +27,15 @@ index 00ec8416f1c5a4b6a75527646076df479269a357..bd7fd9f7489b9afe6e5f7aea5f9ecddb
                  if (isIdleCandidate) {
                      // Background work can finish after the TUI looks idle. Stay on this
                      // user turn and keep polling — do not inject a synthetic "continue".
+diff --git a/dist/agy/db/streaming.js b/dist/agy/db/streaming.js
+--- a/dist/agy/db/streaming.js
++++ b/dist/agy/db/streaming.js
+@@ -250,7 +250,7 @@ export class DbTurnPoller {
+             return false;
+         if (this.hasActiveBackgroundTasks)
+             return false;
+-        if (this._latestStepStatus !== 3 || this._latestStepType === null || this._latestStepType === 15) {
++        if (!isTerminalStepStatus(this._latestStepStatus) || this._latestStepType === null || this._latestStepType === 15) {
+             return false;
+         }
+         if (this.hasNewerWake())

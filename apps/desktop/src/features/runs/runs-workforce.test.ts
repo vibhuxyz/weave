@@ -1,14 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { RunUpdate } from "../../../server/index.ts";
-import { MAX_LANE_NOTES, MAX_RUN_ALERTS } from "./constants";
+import { MAX_LANE_AWAITED, MAX_LANE_NOTES, MAX_RUN_ALERTS, MAX_RUN_ARTIFACTS } from "./constants";
 import { usdFromMicro } from "./lib";
 import { applyRunMessages } from "./store/apply-run-message";
 import type { RunMessage } from "./types";
 
 const started: RunMessage = { type: "run-started", runKey: "k1", request: "split the api" };
 const update = (value: RunUpdate): RunMessage => ({ type: "run-update", runKey: "k1", update: value });
-const plan = update({ kind: "plan", mode: "parallel", reason: "disjoint-paths", tasks: [{ id: "T1", title: "api", dependsOn: [] }, { id: "T2", title: "ui", dependsOn: [] }] });
+const plan = update({ kind: "plan", goal: null, assumptions: [], risks: [], mode: "parallel", reason: "disjoint-paths", tasks: [{ id: "T1", title: "api", dependsOn: [], allowedPaths: [] }, { id: "T2", title: "ui", dependsOn: [], allowedPaths: [] }] });
 
 test("a lane records its employee, claims, verification and a block that clears when it starts", () => {
   const run = applyRunMessages(null, [
@@ -62,4 +62,68 @@ test("micro-dollar strings convert to dollars and anything else is refused", () 
   assert.equal(usdFromMicro("250000"), 0.25);
   assert.equal(usdFromMicro("-5"), null);
   assert.equal(usdFromMicro("1e9"), null);
+});
+
+const staffed = update({
+  kind: "plan", goal: null, assumptions: [], risks: [], mode: "parallel", reason: "disjoint-paths",
+  tasks: [
+    { id: "DB", title: "db", dependsOn: [], allowedPaths: ["db/**"], subtasks: ["Design the Todo schema", "Publish the schema", "Write the migration"] },
+    { id: "API", title: "api", dependsOn: [], allowedPaths: ["api/**"], subtasks: ["Sketch the routes", "Use the schema"] },
+  ],
+});
+
+test("milestones count up as the worker reports them, and an unlisted one becomes a note", () => {
+  const run = applyRunMessages(null, [
+    started,
+    staffed,
+    update({ kind: "subtask", taskId: "DB", subtask: "Design the Todo schema", index: 0 }),
+    update({ kind: "subtask", taskId: "DB", subtask: "design the todo schema", index: 0 }),
+    update({ kind: "subtask", taskId: "DB", subtask: "Tidy up the seed data", index: null }),
+  ]);
+  const lane = run?.lanes["DB"];
+  assert.deepEqual(lane?.subtasksDone, ["Design the Todo schema"]);
+  assert.equal(lane?.subtasks.length, 3);
+  assert.deepEqual(lane?.notes.map((note) => note.text), ["Finished Tidy up the seed data, which was not one of its milestones"]);
+  assert.deepEqual(run?.lanes["API"]?.subtasksDone, []);
+});
+
+test("a request shows as asked until the output arrives, then as received", () => {
+  const asked = applyRunMessages(null, [
+    started,
+    staffed,
+    update({ kind: "awaiting", taskId: "API", output: "schema", producer: null, reason: "need the Todo columns" }),
+  ]);
+  assert.deepEqual(asked?.lanes["API"]?.awaited, [{ output: "schema", producer: null, hasArrived: false }]);
+  assert.equal(asked?.lanes["API"]?.status, "waiting");
+
+  const arrived = applyRunMessages(asked, [update({ kind: "awaited-arrived", taskId: "API", output: "schema", producer: "DB" })]);
+  assert.deepEqual(arrived?.lanes["API"]?.awaited, [{ output: "schema", producer: "DB", hasArrived: true }]);
+
+  const many = applyRunMessages(arrived, Array.from({ length: MAX_LANE_AWAITED + 2 }, (_, index) =>
+    update({ kind: "awaiting", taskId: "API", output: `extra${index}`, producer: "DB", reason: "r" })));
+  assert.equal(many?.lanes["API"]?.awaited.length, MAX_LANE_AWAITED);
+});
+
+test("published outputs are listed once each, with who received them", () => {
+  const published = applyRunMessages(null, [
+    started,
+    staffed,
+    update({ kind: "artifact", taskId: "DB", artifact: { name: "schema", version: 1, summary: "todos table", kind: "artifact", isUpdate: false } }),
+    update({ kind: "artifact", taskId: "DB", artifact: { name: "schema", version: 2, summary: "todos table, fixed", kind: "artifact", isUpdate: true } }),
+    update({ kind: "awaited-arrived", taskId: "API", output: "schema", producer: "DB" }),
+    update({ kind: "awaited-arrived", taskId: "API", output: "schema", producer: "DB" }),
+  ]);
+  assert.deepEqual(published?.artifacts.map((entry) => [entry.key, entry.artifact.version, entry.deliveredTo]), [["DB/schema", 2, ["API"]]]);
+  assert.deepEqual(published?.lanes["DB"]?.notes.map((note) => note.text), ["Published artifact schema v1", "Published artifact schema v2"]);
+
+  const overflowing = applyRunMessages(published, Array.from({ length: MAX_RUN_ARTIFACTS + 2 }, (_, index) =>
+    update({ kind: "artifact", taskId: "DB", artifact: { name: `extra${index}`, version: 1, summary: "s", kind: "artifact", isUpdate: false } })));
+  assert.equal(overflowing?.artifacts.length, MAX_RUN_ARTIFACTS);
+  assert.equal(overflowing?.hiddenArtifactCount, 3);
+});
+
+test("an arrival for an output nobody published leaves the artifact list alone", () => {
+  const run = applyRunMessages(null, [started, staffed, update({ kind: "awaited-arrived", taskId: "API", output: "ghost", producer: "DB" })]);
+  assert.deepEqual(run?.artifacts, []);
+  assert.deepEqual(run?.lanes["API"]?.awaited, [{ output: "ghost", producer: "DB", hasArrived: true }]);
 });

@@ -35,6 +35,22 @@ test("a dirty main is refused with the files named, and a clean one returns HEAD
   assert.match(dirty.ok ? "" : dirty.reason, /1 uncommitted change\(s\): M README\.md/);
 });
 
+test("os noise files do not block a run, but a real change next to them does", async () => {
+  const repo = await makeRepo();
+  await writeFile(join(repo, ".DS_Store"), "noise\n");
+  await mkdir(join(repo, "docs"), { recursive: true });
+  await writeFile(join(repo, "docs", ".DS_Store"), "noise\n");
+  await git(repo, "add", "-A");
+  await git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "noise");
+  await writeFile(join(repo, ".DS_Store"), "changed\n");
+  await writeFile(join(repo, "docs", ".DS_Store"), "changed\n");
+  assert.deepEqual(await checkCleanBase(repo), { ok: true, value: await git(repo, "rev-parse", "HEAD") });
+  await writeFile(join(repo, "README.md"), "changed\n");
+  const dirty = await checkCleanBase(repo);
+  assert.equal(dirty.ok, false);
+  assert.match(dirty.ok ? "" : dirty.reason, /1 uncommitted change\(s\): M README\.md/);
+});
+
 test("two runs with the same task id get separate branches and folders", async () => {
   const repo = await makeRepo();
   const weaveDir = join(repo, ".weave");
@@ -71,6 +87,21 @@ test("harvest commits the worker's files, skips node_modules, and lists what cha
   assert.ok(harvest.ok);
   assert.deepEqual(harvest.value.files, ["README.md", "a.txt"]);
   assert.equal(await git(repo, "rev-parse", worktree.branch), harvest.value.commit);
+});
+
+test("harvest still commits when the worker left a gitignored node_modules behind", async () => {
+  const repo = await makeRepo();
+  await writeFile(join(repo, ".gitignore"), ".weave/\nnode_modules\n");
+  await git(repo, "add", "-A");
+  await git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "ignore node_modules");
+  const worktree = await createWorktree({ repoRoot: repo, weaveDir: join(repo, ".weave"), taskId: "T1", runId: "run-a" });
+  await mkdir(join(worktree.path, "node_modules", "left-pad"), { recursive: true });
+  await writeFile(join(worktree.path, "node_modules", "left-pad", "index.js"), "module.exports = 1;\n");
+  await writeFile(join(worktree.path, "app.js"), "console.log(1);\n");
+
+  const harvested = await harvestWorktree(worktree, "T1: app");
+  assert.ok(harvested.ok, harvested.ok ? "" : harvested.reason);
+  assert.deepEqual(harvested.ok ? harvested.value.files : [], ["app.js"]);
 });
 
 test("remove works on a locked worktree and prunes it", async () => {

@@ -1,4 +1,4 @@
-import { HARVEST_AUTHOR_EMAIL, HARVEST_AUTHOR_NAME, HARVEST_EXCLUDES } from "./constants.ts";
+import { HARVEST_AUTHOR_EMAIL, HARVEST_AUTHOR_NAME, HARVEST_EXCLUDED_PATHS } from "./constants.ts";
 import { outputLines, runGit } from "./run-git.ts";
 import type { Harvest, WorktreeResult } from "./types.ts";
 import type { Worktree } from "./worktree.ts";
@@ -17,9 +17,17 @@ async function commitStaged(path: string, message: string): Promise<WorktreeResu
     : { ok: false, reason: `Cannot commit the work in ${path}: ${committed.output.trim()}` };
 }
 
+async function stageWork(path: string): Promise<WorktreeResult<null>> {
+  const added = await runGit(path, ["add", "-A", "--", "."]);
+  if (!added.ok) return { ok: false, reason: `Cannot stage the work in ${path}: ${added.output.trim()}` };
+  const excluded = await runGit(path, ["reset", "--quiet", "--", ...HARVEST_EXCLUDED_PATHS]);
+  if (!excluded.ok) return { ok: false, reason: `Cannot unstage ${HARVEST_EXCLUDED_PATHS.join(", ")} in ${path}: ${excluded.output.trim()}` };
+  return { ok: true, value: null };
+}
+
 export async function harvestWorktree(worktree: Worktree, message: string): Promise<WorktreeResult<Harvest>> {
-  const added = await runGit(worktree.path, ["add", "-A", "--", ".", ...HARVEST_EXCLUDES]);
-  if (!added.ok) return { ok: false, reason: `Cannot stage the work in ${worktree.path}: ${added.output.trim()}` };
+  const added = await stageWork(worktree.path);
+  if (!added.ok) return added;
   const committed = await commitStaged(worktree.path, message);
   if (!committed.ok) return committed;
 

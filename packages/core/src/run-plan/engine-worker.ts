@@ -51,7 +51,7 @@ export function engineWorker(config: RunConfig | undefined, policy: PermissionPo
   const deps: RelayDeps = { engines: enginesFor(config), context, runAttempt: context.runAttempt ?? engineAttemptRunner(config, policy) };
   return async (input) => {
     const employeeBrief = context.briefings?.get(input.task.id);
-    const briefing = [...(employeeBrief ? [employeeBrief] : []), renderBriefing(input.coordination.drain())].join("\n\n");
+    const briefing = [...(employeeBrief ? [employeeBrief] : []), renderBriefing(input.coordination.drain(), input.coordination.awaited())].join("\n\n");
     const first = await relayWith(deps, input, briefing);
     return toOutcome(await followUpdates(deps, input, first));
   };

@@ -17,6 +17,7 @@ export const RESOURCE_KINDS: readonly ResourceKind[] = [
 
 export const EMPLOYEE_EVENT_TYPES: readonly EmployeeEventType[] = [
   "task.blocked",
+  "subtask.completed",
   "artifact.ready",
   "artifact.updated",
   "contract.published",

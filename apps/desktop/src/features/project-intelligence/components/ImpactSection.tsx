@@ -1,5 +1,6 @@
 import type { ProjectQueryResult } from "../types";
-import { Mono, ResultList } from "./ResultList";
+import { FileLink } from "./FileLink";
+import { ResultList } from "./ResultList";
 
 export function ImpactSection({ impact }: { readonly impact: ProjectQueryResult["impact"] }) {
   if (impact.seedFiles.length === 0) return null;
@@ -14,10 +15,10 @@ export function ImpactSection({ impact }: { readonly impact: ProjectQueryResult[
         </p>
       </div>
       <div className="grid gap-6 md:grid-cols-2">
-        <ResultList title="Files that depend on them" list={impact.dependents} empty="Nothing imports them." keyOf={(reach) => reach.id} render={(reach) => <><Mono>{reach.id}</Mono> <span className="text-muted-foreground text-xs">{reach.depth} {reach.depth === 1 ? "step" : "steps"}</span></>} />
-        <ResultList title="Functions that call into them" list={impact.callers} empty="No callers found." keyOf={(reach) => reach.id} render={(reach) => <><Mono>{reach.id}</Mono> <span className="text-muted-foreground text-xs">{reach.depth} {reach.depth === 1 ? "step" : "steps"}</span></>} />
-        <ResultList title="APIs affected" list={impact.apis} empty="No API routes affected." keyOf={(api) => `${api.method} ${api.path} ${api.file}`} render={(api) => <><Mono>{api.method} {api.path}</Mono> <span className="text-muted-foreground text-xs">{api.file}:{api.line}</span></>} />
-        <ResultList title="Tests to run" list={impact.tests} empty="No tests cover them." keyOf={(path) => path} render={(path) => <Mono>{path}</Mono>} />
+        <ResultList title="Files that depend on them" list={impact.dependents} empty="Nothing imports them." keyOf={(reach) => reach.id} render={(reach) => <><FileLink target={reach.id} /> <span className="text-muted-foreground text-xs">{reach.depth} {reach.depth === 1 ? "step" : "steps"}</span></>} />
+        <ResultList title="Functions that call into them" list={impact.callers} empty="No callers found." keyOf={(reach) => reach.id} render={(reach) => <><FileLink target={reach.id} /> <span className="text-muted-foreground text-xs">{reach.depth} {reach.depth === 1 ? "step" : "steps"}</span></>} />
+        <ResultList title="APIs affected" list={impact.apis} empty="No API routes affected." keyOf={(api) => `${api.method} ${api.path} ${api.file}`} render={(api) => <><FileLink target={api.file}>{api.method} {api.path}</FileLink> <span className="text-muted-foreground text-xs">{api.file}:{api.line}</span></>} />
+        <ResultList title="Tests to run" list={impact.tests} empty="No tests cover them." keyOf={(path) => path} render={(path) => <FileLink target={path} />} />
       </div>
     </section>
   );

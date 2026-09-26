@@ -52,3 +52,18 @@ test("a resumed worker also gets the recorded task state, and the output is dete
   assert.match(first.prompt, /<task-state>[\s\S]*OPEN QUESTIONS\n  Which currencies are allowed\?[\s\S]*NEXT STEP\nValidate currency in createSellerPayout[\s\S]*<\/task-state>/);
   assert.deepEqual(first, second);
 });
+
+test("a worker sees the milestones Weave tracks for it, and which ones it already reported", async () => {
+  const root = await repoWithRule();
+  const { model } = await buildProjectModel({ root });
+  const subtasks = ["Add currency to the contract", "Validate currency on the route", "Run the checks"];
+  const task = { ...TASK, subtasks, verify: "bun run typecheck", verifyRung: "typecheck" };
+  const fresh = await buildWorkerContext({ root, task, model });
+  assert.match(fresh.prompt, /Milestones Weave tracks for you\. Report each one with a subtask\.completed event the moment it is done/);
+  assert.match(fresh.prompt, /1\. Add currency to the contract\n2\. Validate currency on the route\n3\. Run the checks/);
+  assert.match(fresh.prompt, /Your work must pass typecheck: run bun run typecheck before you finish\./);
+  assert.doesNotMatch(fresh.prompt, /already reported as done/);
+
+  const resumed = await buildWorkerContext({ root, task: { ...task, subtasksDone: [subtasks[0] ?? ""] }, model });
+  assert.match(resumed.prompt, /1\. Add currency to the contract — already reported as done\n2\. Validate currency on the route/);
+});

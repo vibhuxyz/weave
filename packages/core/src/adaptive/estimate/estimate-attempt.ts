@@ -1,11 +1,13 @@
+import type { TaskComplexity } from "@weave/protocol";
 import type { EngineStats, HistoryStats, OutcomeStats } from "../history/index.ts";
-import { DEFAULT_MS_PER_UNIT, KIND_PRIOR_WEIGHT } from "./constants.ts";
+import { COMPLEXITY_PRIOR_MS, DEFAULT_MS_PER_UNIT, KIND_PRIOR_WEIGHT } from "./constants.ts";
 import type { AttemptEstimate, ChainEstimate } from "./types.ts";
 
 export interface AttemptQuery {
   readonly engineId: string;
   readonly kind: string;
   readonly sizeUnits: number;
+  readonly complexity?: TaskComplexity;
 }
 
 function engineSuccess(engine: OutcomeStats | undefined): number {
@@ -18,19 +20,25 @@ function kindSuccess(engine: EngineStats | undefined, kind: string): number {
   return ((evidence?.successes ?? 0) + KIND_PRIOR_WEIGHT * prior) / ((evidence?.attempts ?? 0) + KIND_PRIOR_WEIGHT);
 }
 
-function fallbackMsPerUnit(stats: HistoryStats): number {
+function learnedAverageMsPerUnit(stats: HistoryStats): number | null {
   const all = [...stats.engines.values()].flatMap((engine) => (engine.msPerUnit === null ? [] : [engine.msPerUnit]));
-  return all.length === 0 ? DEFAULT_MS_PER_UNIT : all.reduce((total, value) => total + value, 0) / all.length;
+  return all.length === 0 ? null : all.reduce((total, value) => total + value, 0) / all.length;
+}
+
+function unlearnedMs(stats: HistoryStats, query: AttemptQuery): number {
+  const average = learnedAverageMsPerUnit(stats);
+  if (average !== null) return average * query.sizeUnits;
+  return query.complexity ? COMPLEXITY_PRIOR_MS[query.complexity] : DEFAULT_MS_PER_UNIT * query.sizeUnits;
 }
 
 export function estimateAttempt(stats: HistoryStats, query: AttemptQuery): AttemptEstimate {
   const engine = stats.engines.get(query.engineId);
   const byKind = engine?.byKind.get(query.kind);
-  const msPerUnit = byKind?.msPerUnit ?? engine?.msPerUnit ?? fallbackMsPerUnit(stats);
+  const learnedMsPerUnit = byKind?.msPerUnit ?? engine?.msPerUnit ?? null;
   const costPerUnit = byKind?.costMicroUsdPerUnit ?? engine?.costMicroUsdPerUnit ?? 0n;
   return {
     engineId: query.engineId,
-    ms: msPerUnit * query.sizeUnits,
+    ms: learnedMsPerUnit === null ? unlearnedMs(stats, query) : learnedMsPerUnit * query.sizeUnits,
     costMicroUsd: costPerUnit * BigInt(query.sizeUnits),
     successProbability: kindSuccess(engine, query.kind),
   };

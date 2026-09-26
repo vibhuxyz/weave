@@ -1,6 +1,6 @@
 import { EMPLOYEE_EVENT_TYPES, RESOURCE_KINDS, type DependencyNeed, type EmployeeEventType, type ResourceKind } from "@weave/protocol";
 import { isRecord, readOptionalString, readPattern, readString, type FieldContext } from "../../shared/index.ts";
-import { MAX_EVENT_TEXT_CHARS, MAX_NAME_CHARS, OUTPUT_NAME_PATTERN } from "./constants.ts";
+import { MAX_EVENT_TEXT_CHARS, MAX_NAME_CHARS, MAX_SUBTASK_CHARS, OUTPUT_NAME_PATTERN } from "./constants.ts";
 import { parseArtifact } from "./parse-artifact.ts";
 import type { EmployeeSubmission, ParseSubmissionResult } from "./types.ts";
 
@@ -45,6 +45,10 @@ function parseData(type: EmployeeEventType, ctx: FieldContext): EmployeeSubmissi
     case "task.blocked": {
       const reason = readString(ctx, "reason", MAX_EVENT_TEXT_CHARS);
       return reason === null ? null : { type, data: { reason } };
+    }
+    case "subtask.completed": {
+      const subtask = readString(ctx, "subtask", MAX_SUBTASK_CHARS);
+      return subtask === null ? null : { type, data: { subtask } };
     }
     case "dependency.blocked": {
       const need = parseNeed(ctx.record["need"], ctx.issues);

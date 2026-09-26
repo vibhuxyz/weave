@@ -1,6 +1,6 @@
 import type { WeaveEvent } from "@weave/protocol";
-import type { RunUpdate } from "../shared/index.ts";
-import { MAX_CLAIMS_SHOWN, MAX_DETAIL_CHARS, MAX_REASONS } from "./constants.ts";
+import type { RunUpdate } from "../../shared/index.ts";
+import { MAX_CLAIMS_SHOWN, MAX_DETAIL_CHARS, MAX_REASONS } from "../constants.ts";
 import { coordinationUpdate, flattened } from "./coordination-update.ts";
 
 function cappedList(items: readonly string[], maxItems: number): readonly string[] {

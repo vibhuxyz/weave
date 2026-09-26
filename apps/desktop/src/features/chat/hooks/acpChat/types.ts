@@ -118,6 +118,7 @@ export interface TurnCheckpoint {
 
 export type TurnSegment =
   | { readonly id: string; readonly kind: "text"; readonly text: string }
+  | { readonly id: string; readonly kind: "thought"; readonly text: string }
   | { readonly id: string; readonly kind: "tools"; readonly toolIds: readonly string[] }
   | { readonly id: string; readonly kind: "answers"; readonly answers: readonly AnsweredQuestion[] };
 

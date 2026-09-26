@@ -1,10 +1,11 @@
 import type { TaskDependency, VerificationRung } from "@weave/protocol";
-import { VERIFICATION_RUNGS } from "@weave/protocol";
+import { TASK_COMPLEXITIES, VERIFICATION_RUNGS } from "@weave/protocol";
 import {
   isRecord,
   isSafeRelativeGlob,
   readList,
   readOptionalString,
+  readChoice,
   readPattern,
   readString,
   readStringList,
@@ -13,10 +14,16 @@ import {
 import {
   COMPONENT_PATTERN,
   EMPLOYEE_REF_PATTERN,
+  ENGINE_REF_PATTERN,
   MAX_DEPENDENCIES_PER_TASK,
   MAX_PATHS_PER_TASK,
+  MAX_PRODUCED_OUTPUTS,
   MAX_PATH_CHARS,
   MAX_REQUIRED_OUTPUTS,
+  MAX_SKILL_NAME_CHARS,
+  MAX_SKILLS_PER_TASK,
+  MAX_SUBTASK_CHARS,
+  MAX_SUBTASKS_PER_TASK,
   MAX_SYMBOLS_PER_TASK,
   MAX_SYMBOL_CHARS,
   MAX_TASK_PROMPT_CHARS,
@@ -74,15 +81,18 @@ function readScope(ctx: FieldContext): Pick<PlannedTask, "allowedPaths" | "readO
   return { allowedPaths, readOnlyPaths: readGlobs(ctx, "readOnlyPaths") };
 }
 
-function readLinks(ctx: FieldContext): Pick<PlannedTask, "dependencies" | "contractSymbols" | "component" | "employee"> {
-  const component = readOptionalString(ctx, "component", MAX_SYMBOL_CHARS);
-  if (component !== null && !COMPONENT_PATTERN.test(component)) {
-    ctx.issues.push(`${ctx.where}: "component" has an invalid format: ${JSON.stringify(component)}`);
-  }
-  const employee = readOptionalString(ctx, "employee", MAX_SYMBOL_CHARS);
-  if (employee !== null && !EMPLOYEE_REF_PATTERN.test(employee)) {
-    ctx.issues.push(`${ctx.where}: "employee" has an invalid format: ${JSON.stringify(employee)}`);
-  }
+function readRef(ctx: FieldContext, key: string, pattern: RegExp): string | null {
+  const value = readOptionalString(ctx, key, MAX_SYMBOL_CHARS);
+  if (value === null) return null;
+  if (pattern.test(value)) return value;
+  ctx.issues.push(`${ctx.where}: "${key}" has an invalid format: ${JSON.stringify(value)}`);
+  return null;
+}
+
+function readLinks(ctx: FieldContext): Pick<PlannedTask, "dependencies" | "contractSymbols" | "component" | "employee" | "engine"> {
+  const component = readRef(ctx, "component", COMPONENT_PATTERN);
+  const employee = readRef(ctx, "employee", EMPLOYEE_REF_PATTERN);
+  const engine = readRef(ctx, "engine", ENGINE_REF_PATTERN);
   return {
     dependencies: readList(ctx, "dependencies", MAX_DEPENDENCIES_PER_TASK, parseDependency),
     contractSymbols: readStringList(ctx, "contractSymbols", {
@@ -90,7 +100,29 @@ function readLinks(ctx: FieldContext): Pick<PlannedTask, "dependencies" | "contr
       maxChars: MAX_SYMBOL_CHARS,
     }),
     ...(component !== null ? { component } : {}),
-    ...(employee !== null && EMPLOYEE_REF_PATTERN.test(employee) ? { employee } : {}),
+    ...(employee !== null ? { employee } : {}),
+    ...(engine !== null ? { engine } : {}),
+  };
+}
+
+function readProduces(ctx: FieldContext): Pick<PlannedTask, "produces"> {
+  const produces = readStringList(ctx, "produces", { maxItems: MAX_PRODUCED_OUTPUTS, maxChars: MAX_SYMBOL_CHARS });
+  return produces.length > 0 ? { produces: [...new Set(produces)] } : {};
+}
+
+function readSubtasks(ctx: FieldContext): Pick<PlannedTask, "subtasks"> {
+  const subtasks = readStringList(ctx, "subtasks", { maxItems: MAX_SUBTASKS_PER_TASK, maxChars: MAX_SUBTASK_CHARS });
+  const unique = [...new Set(subtasks)];
+  if (unique.length < subtasks.length) ctx.issues.push(`${ctx.where}: "subtasks" repeats a milestone; each one must be worded differently`);
+  return unique.length > 0 ? { subtasks: unique } : {};
+}
+
+function readExpertise(ctx: FieldContext): Pick<PlannedTask, "skills" | "complexity"> {
+  const skills = readStringList(ctx, "skills", { maxItems: MAX_SKILLS_PER_TASK, maxChars: MAX_SKILL_NAME_CHARS });
+  const complexity = ctx.record.complexity === undefined ? null : readChoice(ctx, "complexity", TASK_COMPLEXITIES);
+  return {
+    ...(skills.length > 0 ? { skills: [...new Set(skills)] } : {}),
+    ...(complexity !== null ? { complexity } : {}),
   };
 }
 
@@ -112,7 +144,10 @@ export function parseTask(raw: unknown, where: string, issues: string[], cwd: st
   const scope = readScope(ctx);
   const links = readLinks(ctx);
   const verify = readVerify(ctx);
+  const expertise = readExpertise(ctx);
+  const produces = readProduces(ctx);
+  const subtasks = readSubtasks(ctx);
 
   if (issues.length > issuesBefore || id === null || title === null || prompt === null) return null;
-  return { id, title, prompt, cwd, ...scope, ...links, ...verify };
+  return { id, title, prompt, cwd, ...scope, ...links, ...verify, ...expertise, ...produces, ...subtasks };
 }

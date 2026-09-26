@@ -22,6 +22,7 @@ export interface Artifact {
   name: string;
   version: number;
   summary: string;
+  provides: string[];
   files: ArtifactFile[];
 }
 
@@ -35,6 +36,7 @@ export interface CoordinationDataByType {
   "task.started": Record<string, never>;
   "task.blocked": { reason: string };
   "task.completed": { status: "ok" | "failed" | "cancelled" | "skipped" };
+  "subtask.completed": { subtask: string; index: number | null };
   "artifact.ready": { artifact: Artifact };
   "artifact.updated": { artifact: Artifact };
   "contract.published": { artifact: Artifact };
@@ -71,6 +73,7 @@ export type CoordinationDraft = {
 
 export type EmployeeEventType =
   | "task.blocked"
+  | "subtask.completed"
   | "artifact.ready"
   | "artifact.updated"
   | "contract.published"

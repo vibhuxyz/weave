@@ -1,3 +1,4 @@
+export { affordableWorkers } from "./affordable-workers.ts";
 export { BudgetManager } from "./budget-manager.ts";
 export { parseBudgets } from "./parse-budgets.ts";
 export type { BudgetManagerOptions } from "./budget-manager.ts";

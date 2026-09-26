@@ -1,5 +1,5 @@
 import type { CoordinationEvent, TaskContract } from "@weave/protocol";
-import type { DependencyEdge } from "../dependencies/index.ts";
+import type { DependencyEdge, Dependent } from "../dependencies/index.ts";
 import type { EmployeeSubmission } from "../employee/index.ts";
 import type { InboxBatch } from "../mailbox/index.ts";
 import type { Ledger } from "../../shared/index.ts";
@@ -12,6 +12,7 @@ export interface CoordinationChannel {
   readonly taskId: string;
   readonly publish: (submission: EmployeeSubmission) => PublishResult;
   readonly drain: () => InboxBatch;
+  readonly awaited: () => readonly Dependent[];
 }
 
 export interface CoordinatorOptions {

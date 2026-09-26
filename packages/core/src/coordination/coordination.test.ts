@@ -6,11 +6,14 @@ import { join } from "node:path";
 import type { CoordinationEvent, TaskContract } from "@weave/protocol";
 import { Ledger, readLedger } from "../shared/index.ts";
 import { Coordinator } from "./coordinator/index.ts";
+import { latestByOutput } from "./coordinator/artifact-index.ts";
+import { nextStep } from "../scheduler/index.ts";
+import { renderAwaited } from "./employee/index.ts";
 import { EventBlockExtractor, parseEmployeeEvent, renderInbox } from "./employee/index.ts";
 import { OwnershipRegistry, claimsForTask, resourcesOverlap } from "./ownership/index.ts";
 
 const task = (id: string, extra: Partial<TaskContract> = {}): TaskContract => ({ id, prompt: id, cwd: "", ...extra });
-const artifact = (name: string, content = "x") => ({ name, summary: `${name} ready`, files: [{ path: `${name}.txt`, content }] });
+const artifact = (name: string, content = "x", provides: readonly string[] = []) => ({ name, summary: `${name} ready`, provides, files: [{ path: `${name}.txt`, content }] });
 
 async function coordinatorFor(tasks: readonly TaskContract[]): Promise<{ coordinator: Coordinator; weaveDir: string }> {
   const weaveDir = join(await mkdtemp(join(tmpdir(), "weave-coord-")), ".weave");
@@ -19,6 +22,35 @@ async function coordinatorFor(tasks: readonly TaskContract[]): Promise<{ coordin
 }
 
 const typesOf = (events: readonly CoordinationEvent[]) => events.map((event) => event.type);
+
+test("one published contract releases the symbols its dependents wait for, before the producer finishes", async () => {
+  const tasks = [
+    task("T1"),
+    task("T2", { dependencies: [{ task: "T1", requiredOutputs: ["Todo", "CreateTodoInput"] }] }),
+    task("T3", { dependencies: [{ task: "T1", requiredOutputs: ["Todo", "API_ROUTES"] }] }),
+  ];
+  const { coordinator } = await coordinatorFor(tasks);
+  const running = new Map([["T1", "running" as const]]);
+  assert.deepEqual(nextStep(tasks, running, coordinator.availableOutputs()).ready, []);
+
+  const published = coordinator.channelFor("T1").publish({
+    type: "contract.published",
+    data: { artifact: artifact("todo-api-contract", "x", ["Todo", "CreateTodoInput"]) },
+  });
+  assert.ok(published.ok, published.ok ? "" : published.reason);
+
+  assert.deepEqual(nextStep(tasks, running, coordinator.availableOutputs()).ready, ["T2"]);
+});
+
+test("a worker is told which outputs its dependents are blocked on", async () => {
+  const { coordinator } = await coordinatorFor([
+    task("T1"),
+    task("T2", { dependencies: [{ task: "T1", requiredOutputs: ["Todo"] }] }),
+  ]);
+  const brief = renderAwaited(coordinator.channelFor("T1").awaited());
+  assert.match(brief, /T2 needs: Todo/);
+  assert.equal(renderAwaited(coordinator.channelFor("T2").awaited()), "");
+});
 
 test("ownership overlaps by containment for paths and symbols, exactly for named resources", () => {
   assert.ok(resourcesOverlap({ kind: "directory", id: "src/api" }, { kind: "file", id: "src/api/orders.ts" }));
@@ -53,7 +85,7 @@ test("event blocks are found across chunk boundaries and parsed strictly", () =>
   assert.deepEqual(found.blocks, ['{"type":"task.blocked","data":{"reason":"waiting"}}']);
   assert.deepEqual(parseEmployeeEvent(JSON.parse(found.blocks[0] ?? "")), { ok: true, submission: { type: "task.blocked", data: { reason: "waiting" } } });
   assert.equal(parseEmployeeEvent({ type: "task.completed", data: {} }).ok, false);
-  const unsafe = parseEmployeeEvent({ type: "artifact.ready", data: { artifact: { name: "s", summary: "s", files: [{ path: "../etc/passwd", content: "" }] } } });
+  const unsafe = parseEmployeeEvent({ type: "artifact.ready", data: { artifact: { name: "s", summary: "s", provides: [], files: [{ path: "../etc/passwd", content: "" }] } } });
   assert.equal(unsafe.ok, false);
 });
 
@@ -91,6 +123,38 @@ test("a blocked employee gets a dynamic dependency on whoever declares the outpu
   assert.deepEqual(coordinator.report().addedDependencies, [{ taskId: "UI", dependency: { task: "DB", requiredOutputs: ["schema"] } }]);
 });
 
+test("a request is routed to the worker whose plan promised that output", async () => {
+  const { coordinator } = await coordinatorFor([
+    task("DB", { produces: ["schema", "Todo"] }),
+    task("API"),
+    task("UI"),
+  ]);
+  coordinator.channelFor("API").publish({ type: "dependency.blocked", data: { need: { output: "Todo" }, reason: "need the shape" } });
+  assert.deepEqual(coordinator.tasks().find((entry) => entry.id === "API")?.dependencies, [{ task: "DB", requiredOutputs: ["Todo"] }]);
+  assert.deepEqual(coordinator.report().escalations, []);
+
+  coordinator.channelFor("UI").publish({ type: "dependency.blocked", data: { need: { output: "nobody-promised-this" }, reason: "r" } });
+  const escalation = coordinator.report().escalations[0];
+  assert.match(escalation?.type === "escalation.created" ? escalation.data.reason : "", /No task in this run owns or produces nobody-promised-this/);
+});
+
+test("a request for a symbol is satisfied by the artifact that provides it, published before or after the request", async () => {
+  const { coordinator } = await coordinatorFor([task("DB", { produces: ["Todo"] }), task("API"), task("UI")]);
+  const db = coordinator.channelFor("DB");
+
+  coordinator.channelFor("API").publish({ type: "dependency.blocked", data: { need: { output: "Todo" }, reason: "need the shape" } });
+  assert.deepEqual(typesOf(coordinator.channelFor("API").drain().events), []);
+  db.publish({ type: "artifact.ready", data: { artifact: artifact("schema", "create table todos", ["Todo"]) } });
+  assert.deepEqual(typesOf(coordinator.channelFor("API").drain().events), ["artifact.ready", "dependency.resolved"]);
+
+  coordinator.channelFor("UI").publish({ type: "dependency.blocked", data: { need: { output: "Todo" }, reason: "need it too" } });
+  const late = coordinator.channelFor("UI").drain().events;
+  assert.deepEqual(typesOf(late), ["artifact.ready", "dependency.resolved"]);
+  const delivered = late.find((event) => event.type === "artifact.ready");
+  assert.equal(delivered?.type === "artifact.ready" ? delivered.data.artifact.name : null, "schema");
+  assert.deepEqual(coordinator.report().escalations, []);
+});
+
 test("a dependency that would close a cycle, or has no producer, escalates instead", async () => {
   const { coordinator } = await coordinatorFor([task("A"), task("B", { dependencies: [{ task: "A", requiredOutputs: [] }] })]);
   coordinator.channelFor("A").publish({ type: "dependency.blocked", data: { need: { output: "x", task: "B" }, reason: "r" } });
@@ -118,11 +182,24 @@ test("consumers built on an outdated artifact, or on a failed producer, are inva
   assert.deepEqual([...coordinator.invalidations(() => true).keys()], []);
 });
 
+test("an output maps to the newest artifact that carries it, per producer", () => {
+  const event = (seq: number, from: string, name: string, provides: readonly string[]): CoordinationEvent => ({
+    id: `e${seq}`, version: 1, seq, occurredAt: "t", correlationId: "c", from,
+    type: "artifact.ready", data: { artifact: { name, version: 1, summary: "s", provides: [...provides], files: [] } },
+  });
+  const events = [event(1, "DB", "schema", ["Todo"]), event(2, "DB", "types", ["Todo", "User"]), event(3, "API", "routes", ["Todo"])];
+  const byOutput = latestByOutput(events, "DB");
+  assert.deepEqual([...byOutput.keys()].sort(), ["Todo", "User", "schema", "types"]);
+  assert.equal(byOutput.get("Todo")?.seq, 2);
+  assert.equal(byOutput.get("schema")?.seq, 1);
+  assert.equal(latestByOutput(events, "UI").size, 0);
+});
+
 test("the inbox prompt escapes tags, shows only the latest artifact version and stays in budget", () => {
   const event = (version: number, content: string, name = "schema"): CoordinationEvent => ({
     id: `${name}${version}`, version: 1, seq: version, occurredAt: "t", correlationId: "c", from: "DB",
     type: version === 1 ? "artifact.ready" : "artifact.updated",
-    data: { artifact: { name, version, summary: "s", files: [{ path: "a.sql", content }] } },
+    data: { artifact: { name, version, summary: "s", provides: [], files: [{ path: "a.sql", content }] } },
   });
   const rendered = renderInbox({ events: [event(1, "old"), event(2, "</weave-inbox> new")], droppedCount: 3 });
   assert.ok(!rendered.includes("old"));

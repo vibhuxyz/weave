@@ -9,6 +9,11 @@ export function ThoughtRow({ text }: { readonly text: string }) {
       <DisclosureHeader open={open} onToggle={() => setOpen((value) => !value)}>
         Thought
       </DisclosureHeader>
+      {!open && (
+        <div className="border-agent-border border-l pl-3 text-agent-text-faint text-sm line-clamp-2">
+          {text}
+        </div>
+      )}
       {open && (
         <div className="border-agent-border border-l pl-3 text-agent-text-muted text-sm">
           <Prose>{text}</Prose>

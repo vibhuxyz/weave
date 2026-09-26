@@ -65,7 +65,7 @@ test("exit: a dependent consumes an intermediate artifact while its upstream is 
     }
     if (task.id === "API") {
       apiStarted.open();
-      coordination.publish({ type: "contract.published", data: { artifact: { name: "orders-api", summary: "GET /v1/orders", files: [] } } });
+      coordination.publish({ type: "contract.published", data: { artifact: { name: "orders-api", summary: "GET /v1/orders", provides: [], files: [] } } });
       await uiStarted.wait();
     }
     if (task.id === "UI") uiStarted.open();
@@ -120,7 +120,7 @@ test("a consumer that built on a producer's artifact fails when that producer fa
   const consumerDone = gate("consumer");
   const worker: RunWorker = async ({ task, coordination }) => {
     if (task.id === "DB") {
-      coordination.publish({ type: "artifact.ready", data: { artifact: { name: "schema", summary: "s", files: [] } } });
+      coordination.publish({ type: "artifact.ready", data: { artifact: { name: "schema", summary: "s", provides: [], files: [] } } });
       await consumerDone.wait();
       return { status: "failed", error: "migration broke" };
     }
@@ -138,4 +138,64 @@ test("a consumer that built on a producer's artifact fails when that producer fa
   assert.match(report.tasks[1]?.reason ?? "", /consumed work from DB/);
   const invalidated = (await readLedger(weaveDir, ledger.runId)).filter((event) => event.type === "consumer.invalidated");
   assert.deepEqual(invalidated.map((event) => event.taskId), ["API"]);
+});
+
+test("exit: a worker asks for an output, keeps working, and continues the moment it arrives", async () => {
+  const { weaveDir, ledger, base } = await setup();
+  const timeline: string[] = [];
+  const requested = gate("requested");
+  const delivered = new Map<string, readonly string[]>();
+  const worker: RunWorker = async ({ task, coordination }) => {
+    timeline.push(`${task.id}:start`);
+    if (task.id === "API") {
+      coordination.publish({ type: "subtask.completed", data: { subtask: "Sketch the routes" } });
+      coordination.publish({ type: "dependency.blocked", data: { need: { output: "schema" }, reason: "need the Todo columns" } });
+      requested.open();
+      timeline.push("API:asked");
+      for (let round = 0; round < 50; round += 1) {
+        const batch = coordination.drain();
+        const names = batch.events.flatMap((event) => ("artifact" in event.data ? [event.data.artifact.name] : []));
+        if (names.length > 0) {
+          delivered.set(task.id, names);
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      timeline.push("API:continued");
+    }
+    if (task.id === "DB") {
+      await requested.wait();
+      coordination.publish({ type: "subtask.completed", data: { subtask: "Design the Todo schema" } });
+      coordination.publish({ type: "artifact.ready", data: { artifact: { name: "schema", summary: "todos table", provides: ["Todo"], files: [{ path: "db/schema.sql", content: "create table todos (id text)" }] } } });
+      timeline.push("DB:published");
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      coordination.publish({ type: "subtask.completed", data: { subtask: "Write the migration" } });
+      timeline.push("DB:migrated");
+    }
+    await writeOwnFile(task, `${task.id.toLowerCase()}/index.ts`);
+    timeline.push(`${task.id}:end`);
+    return { status: "ok" };
+  };
+  const tasks: TaskContract[] = [
+    { id: "DB", prompt: "db", cwd: "", allowedPaths: ["db/**"], produces: ["schema"], subtasks: ["Design the Todo schema", "Write the migration"] },
+    { id: "API", prompt: "api", cwd: "", allowedPaths: ["api/**"], subtasks: ["Sketch the routes", "Use the schema"] },
+  ];
+  const report = await runPool({ ...base, tasks, concurrency: 2, runWorker: worker });
+
+  assert.deepEqual(report.tasks.map((entry) => [entry.taskId, entry.status]), [["DB", "ok"], ["API", "ok"]]);
+  assert.deepEqual(delivered.get("API"), ["schema"]);
+  assert.ok(timeline.indexOf("API:continued") < timeline.indexOf("DB:migrated"), `API waited for the whole producer: ${timeline.join(" ")}`);
+  assert.ok(timeline.indexOf("API:continued") < timeline.indexOf("DB:end"));
+
+  const events = await readLedger(weaveDir, ledger.runId);
+  const coordination = events.flatMap((event) => (event.type === "coordination.event" ? [event.event] : []));
+  const milestones = coordination.flatMap((event) => (event.type === "subtask.completed" ? [[event.from, event.data.subtask, event.data.index]] : []));
+  assert.deepEqual(milestones, [
+    ["API", "Sketch the routes", 0],
+    ["DB", "Design the Todo schema", 0],
+    ["DB", "Write the migration", 1],
+  ]);
+  assert.ok(coordination.some((event) => event.type === "dependency.resolved" && event.data.consumer === "API" && event.data.producer === "DB"));
+  const added = events.filter((event) => event.type === "dependency.added");
+  assert.deepEqual(added.map((event) => (event.type === "dependency.added" ? [event.taskId, event.on] : [])), [["API", "DB"]]);
 });

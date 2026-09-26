@@ -1,6 +1,6 @@
 import { ENGINES } from "@weave/agent";
 import type { RunConfig } from "@weave/protocol";
-import { BudgetManager, buildStats, logDecision, planOrchestration, type EngineCandidate, type HistoryRead, type HistoryStats, type OrchestrationDecision } from "../adaptive/index.ts";
+import { affordableWorkers, BudgetManager, buildStats, logDecision, planOrchestration, type EngineCandidate, type HistoryRead, type HistoryStats, type OrchestrationDecision } from "../adaptive/index.ts";
 import { concurrencyFor, type Decision, type DecisionReason } from "../decide/index.ts";
 import type { PlannedTask } from "../planner/index.ts";
 import { enginesFor } from "../run-plan/index.ts";
@@ -22,7 +22,9 @@ export interface AdaptiveSetupInput {
 
 export interface AdaptiveSetup {
   readonly decision: Decision;
+  readonly isGuarded: boolean;
   readonly concurrency: number;
+  readonly affordable: number | null;
   readonly orchestration: OrchestrationDecision;
   readonly routes: ReadonlyMap<string, readonly string[]>;
   readonly priorities: ReadonlyMap<string, number>;
@@ -36,6 +38,16 @@ function capabilitiesOf(engineId: string): Record<string, boolean> {
 
 export function engineCandidates(config: RunConfig | undefined): readonly EngineCandidate[] {
   return enginesFor(config).map((id) => ({ id, capabilities: capabilitiesOf(id) }));
+}
+
+function plannedWorkers(input: AdaptiveSetupInput, orchestration: OrchestrationDecision, isGuarded: boolean): OrchestrationDecision {
+  const fromPlan = Math.min(input.tasks.length, input.maxWorkers);
+  if (isGuarded || orchestration.workers >= fromPlan) return orchestration;
+  return {
+    ...orchestration,
+    workers: fromPlan,
+    reason: `${orchestration.reason}; the plan asks for ${input.tasks.length} task(s), so ${fromPlan} worker(s) run`,
+  };
 }
 
 async function statsFor(input: AdaptiveSetupInput): Promise<HistoryStats> {
@@ -59,11 +71,14 @@ export async function adaptiveSetup(input: AdaptiveSetupInput): Promise<Adaptive
     ...(budgets.run?.maxWallMs === undefined ? {} : { maxRunWallMs: budgets.run.maxWallMs }),
   });
   logDecision(input.ledger, orchestration);
-  const decision: Decision = isGuarded ? input.baseline : { mode: orchestration.workers > 1 ? "parallel" : "sequential", reason: "adaptive" };
+  const planned = plannedWorkers(input, orchestration, isGuarded);
+  const decision: Decision = isGuarded ? input.baseline : { mode: planned.workers > 1 ? "parallel" : "sequential", reason: "adaptive" };
   return {
     decision,
-    concurrency: orchestration.workers,
-    orchestration,
+    isGuarded,
+    concurrency: planned.workers,
+    affordable: affordableWorkers(budgets, stats.projectSpend),
+    orchestration: planned,
     routes: new Map(orchestration.tasks.map((plan) => [plan.taskId, plan.route.engines])),
     priorities: new Map(orchestration.tasks.map((plan) => [plan.taskId, plan.priorityMs])),
     budget: new BudgetManager({ budgets, ledger: input.ledger, tasks: input.tasks, projectSpend: stats.projectSpend }),

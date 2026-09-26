@@ -1,11 +1,13 @@
 import type { ArtifactFile } from "@weave/protocol";
-import { isRecord, readList, readPattern, readString, type FieldContext } from "../../shared/index.ts";
+import { isRecord, readList, readPattern, readString, readStringList, type FieldContext } from "../../shared/index.ts";
 import type { ArtifactInput } from "../dependencies/index.ts";
 import {
   MAX_ARTIFACT_FILE_CHARS,
   MAX_ARTIFACT_FILES,
   MAX_ARTIFACT_PATH_CHARS,
   MAX_EVENT_TEXT_CHARS,
+  MAX_NAME_CHARS,
+  MAX_PROVIDED_OUTPUTS,
   OUTPUT_NAME_PATTERN,
 } from "./constants.ts";
 
@@ -34,6 +36,8 @@ export function parseArtifact(raw: unknown, where: string, issues: string[]): Ar
   const name = readPattern(ctx, "name", OUTPUT_NAME_PATTERN);
   const summary = readString(ctx, "summary", MAX_EVENT_TEXT_CHARS);
   const files = readList(ctx, "files", MAX_ARTIFACT_FILES, parseFile);
+  const provides = readStringList(ctx, "provides", { maxItems: MAX_PROVIDED_OUTPUTS, maxChars: MAX_NAME_CHARS })
+    .filter((output) => OUTPUT_NAME_PATTERN.test(output));
   if (name === null || summary === null) return null;
-  return { name, summary, files };
+  return { name, summary, provides, files };
 }

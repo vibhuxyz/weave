@@ -218,7 +218,8 @@ export function createGuardedPermissionPolicy(
   };
 }
 
-export const rejectAll: PermissionPolicy = () => ({
+export const rejectAll: PermissionPolicy = (_task, request) => ({
   decision: "reject",
+  optionId: request ? (findRejectOption(request) ?? undefined) : undefined,
   reason: "policy: rejectAll",
 });

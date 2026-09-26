@@ -52,7 +52,7 @@ test("a broken limits file is reported and stops a run from starting", async () 
   assert.ok(message?.type === "budgets");
   assert.match(message.issue ?? "", /not valid JSON/);
   const sent: ServerMessage[] = [];
-  const runs = createRunController(async () => ({ status: "no-change-needed", reason: "unused" }));
+  const runs = createRunController(async () => ({ status: "no-change-needed", reason: "unused" }), { readBudgets: loadBudgets, prepareRepo: async () => ({ ok: true }) });
   await runs.start({ request: "go", projectDir: dir, engineId: "claude-code", runKey: "k1", send: (msg) => sent.push(msg) });
   assert.deepEqual(sent.map((msg) => msg.type), ["run-started", "run-finished"]);
   const finished = sent[1];

@@ -90,7 +90,7 @@ test("a dependency discovered mid-run reorders the merge without a restart", asy
   const repo = await makeRepo();
   const worker: RunWorker = async ({ task: running, coordination }) => {
     if (running.id === "B") coordination.publish({ type: "dependency.blocked", data: { need: { output: "config", task: "A" }, reason: "needs A's config" } });
-    if (running.id === "A") coordination.publish({ type: "artifact.ready", data: { artifact: { name: "config", summary: "c", files: [] } } });
+    if (running.id === "A") coordination.publish({ type: "artifact.ready", data: { artifact: { name: "config", summary: "c", provides: [], files: [] } } });
     await writeFile(join(running.cwd, `${running.id}.txt`), running.id);
     return { status: "ok" };
   };

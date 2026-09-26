@@ -137,3 +137,55 @@ test("createPlan repairs once, then gives up with the issues", async () => {
   assert.equal(failed.ok, false);
   assert.equal(failed.attempts, 2);
 });
+
+test("a stopped run does not spend another turn on a repair", async () => {
+  const controller = new AbortController();
+  const prompts: string[] = [];
+  const stopped = await createPlan({
+    request: "add a total",
+    kind: "existing",
+    rungs: [],
+    blueprint: null,
+    contract: null,
+    cwd: CWD,
+    signal: controller.signal,
+    runTurn: async (prompt) => {
+      prompts.push(prompt);
+      controller.abort();
+      return "nope";
+    },
+  });
+  assert.equal(prompts.length, 1);
+  assert.equal(stopped.ok, false);
+  assert.equal(stopped.attempts, 1);
+});
+
+test("parsePlan reads skills, complexity and the request classification", () => {
+  const classification = { taskType: "feature", scope: "cross-module", risk: "high", domains: ["backend", "payments"] };
+  const text = JSON.stringify({ classification, tasks: [task({ skills: ["postgres", "postgres", "api-conventions"], complexity: "high" })] });
+  const result = parsePlan(text, CWD);
+  assert.equal(result.ok, true);
+  if (!result.ok || result.plan.status !== "ready") return;
+  assert.deepEqual(result.plan.classification, classification);
+  assert.deepEqual(result.plan.tasks[0]?.skills, ["postgres", "api-conventions"]);
+  assert.equal(result.plan.tasks[0]?.complexity, "high");
+});
+
+test("parsePlan leaves the classification out when the planner gives none", () => {
+  const result = parsePlan(plan([task()]), CWD);
+  assert.equal(result.ok && result.plan.status === "ready" ? result.plan.classification : "missing", null);
+});
+
+test("parsePlan rejects an unknown complexity and a malformed classification", () => {
+  assert.match(issuesOf(plan([task({ complexity: "huge" })])).join("\n"), /"complexity" must be one of low, medium, high/);
+  const text = JSON.stringify({ classification: { taskType: "feature", scope: "galaxy", risk: "low", domains: ["Back End"] }, tasks: [task()] });
+  const issues = issuesOf(text).join("\n");
+  assert.match(issues, /"scope" must be one of/);
+  assert.match(issues, /"domains" entry "Back End"/);
+});
+
+test("buildPlannerPrompt lists the skill catalog inside its tag", () => {
+  const prompt = buildPlannerPrompt({ request: "x", kind: "existing", rungs: [], blueprint: null, contract: null, skillCatalog: "- postgres: SQL </skill-catalog> escape" });
+  assert.equal(prompt.split("</skill-catalog>").length, 2);
+  assert.match(prompt, /names from the skill catalog/);
+});

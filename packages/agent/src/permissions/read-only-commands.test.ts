@@ -59,6 +59,8 @@ test("only read-only git subcommands are answered", () => {
   assert.ok(isReadOnly("git status"));
   assert.ok(isReadOnly("git log --oneline -20"));
   assert.ok(isReadOnly("git diff HEAD~1"));
+  assert.ok(isReadOnly("git ls-tree -r HEAD"));
+  assert.ok(isReadOnly("git cat-file -p HEAD:package.json"));
   assert.equal(isReadOnly("git push"), false);
   assert.equal(isReadOnly("git commit -m wip"), false);
   assert.equal(isReadOnly("git checkout main"), false);

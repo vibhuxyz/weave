@@ -36,13 +36,14 @@ const learned: HistoryStats = {
   projectSpend: { costMicroUsd: 0n, tokens: 0, wallMs: 0 },
 };
 
-test("adaptive mode without history keeps the baseline plan and says why", async () => {
+test("without history the plan's own task count sets the worker count, and the estimate says so", async () => {
   const result = await planAndRun({ ...base, repoRoot: await repoWithTests(), adaptive: {} });
   assert.equal(result.status, "ran");
   if (result.status !== "ran") return;
-  assert.deepEqual(result.decision, { mode: "sequential", reason: "adaptive" });
-  assert.equal(result.orchestration?.workers, 1);
+  assert.deepEqual(result.decision, { mode: "parallel", reason: "adaptive" });
+  assert.equal(result.orchestration?.workers, 2);
   assert.match(result.orchestration?.reason ?? "", /only 0 run\(s\) of history/);
+  assert.match(result.orchestration?.reason ?? "", /the plan asks for 2 task\(s\), so 2 worker\(s\) run/);
 });
 
 test("adaptive mode with history runs two disjoint tasks in parallel where the fixed rule would not", async () => {

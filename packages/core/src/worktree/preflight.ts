@@ -1,4 +1,5 @@
 import { MAX_LISTED_DIRTY_PATHS } from "./constants.ts";
+import { blockingDirtyLines } from "./dirty-lines.ts";
 import { outputLines, runGit } from "./run-git.ts";
 import type { WorktreeResult } from "./types.ts";
 
@@ -11,7 +12,7 @@ function describeDirty(lines: readonly string[]): string {
 export async function checkCleanBase(repoRoot: string): Promise<WorktreeResult<string>> {
   const status = await runGit(repoRoot, ["status", "--porcelain", "--untracked-files=no"]);
   if (!status.ok) return { ok: false, reason: `Cannot read git status in ${repoRoot}: ${status.output.trim()}` };
-  const dirty = outputLines(status.output);
+  const dirty = blockingDirtyLines(outputLines(status.output));
   if (dirty.length > 0) {
     return {
       ok: false,

@@ -1,3 +1,4 @@
+import type { TaskComplexity } from "@weave/protocol";
 import type { ChainEstimate } from "../estimate/index.ts";
 
 export interface EngineCandidate {
@@ -24,4 +25,5 @@ export interface RoutableTask {
   readonly allowedPaths?: readonly string[];
   readonly component?: string;
   readonly capabilities?: readonly string[];
+  readonly complexity?: TaskComplexity;
 }

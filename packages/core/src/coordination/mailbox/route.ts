@@ -29,6 +29,7 @@ function candidates(event: CoordinationEvent, dependentsOf: DependentsOf): reado
       return [event.data.consumer];
     case "dependency.blocked":
       return event.data.need.task ? [event.data.need.task, WEAVE_SENDER] : [WEAVE_SENDER];
+    case "subtask.completed":
     case "review.requested":
     case "escalation.created":
       return [WEAVE_SENDER];

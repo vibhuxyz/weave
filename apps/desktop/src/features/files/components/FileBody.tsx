@@ -2,7 +2,7 @@ import { MessageResponse } from "@/shared/ui/ai-elements";
 import type { FileViewState } from "../types";
 import { CodeView } from "./CodeView";
 
-export function FileBody({ view, isRendered }: { readonly view: FileViewState; readonly isRendered: boolean }) {
+export function FileBody({ view, isRendered, filename }: { readonly view: FileViewState; readonly isRendered: boolean; readonly filename: string }) {
   switch (view.status) {
     case "loading":
       return <div className="m-4 h-40 animate-pulse rounded-lg bg-agent-surface-hover motion-reduce:animate-none" />;
@@ -16,7 +16,7 @@ export function FileBody({ view, isRendered }: { readonly view: FileViewState; r
               <MessageResponse mode="static">{view.content}</MessageResponse>
             </div>
           ) : (
-            <CodeView content={view.content} />
+            <CodeView content={view.content} filename={filename} />
           )}
           {view.truncated && <p className="px-4 py-3 text-agent-text-faint text-xs">Showing the first 1 MB of this file.</p>}
         </>

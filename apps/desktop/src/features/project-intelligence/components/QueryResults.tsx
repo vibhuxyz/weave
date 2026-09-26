@@ -1,9 +1,10 @@
 import type { ProjectQueryResult, QueryState } from "../types";
+import { FileLink } from "./FileLink";
 import { ImpactSection } from "./ImpactSection";
 import { Mono, ResultList } from "./ResultList";
 
 function pathRow(path: string) {
-  return <Mono>{path}</Mono>;
+  return <FileLink target={path} />;
 }
 
 function Results({ result }: { readonly result: ProjectQueryResult }) {
@@ -14,10 +15,10 @@ function Results({ result }: { readonly result: ProjectQueryResult }) {
         {result.terms.length > 0 && <> · matched on {result.terms.join(", ")}</>}
       </p>
       <div className="grid gap-8 md:grid-cols-2">
-        <ResultList title="Relevant files" list={result.files} empty="No file matches." keyOf={(file) => file.path} render={(file) => <><Mono>{file.path}</Mono>{file.reasons.length > 0 && <span className="block text-muted-foreground text-xs">{file.reasons.join("; ")}</span>}</>} />
-        <ResultList title="Symbols" list={result.symbols} empty="No symbol matches." keyOf={(symbol) => `${symbol.file}:${symbol.line}:${symbol.name}`} render={(symbol) => <><Mono>{symbol.name}</Mono> <span className="text-muted-foreground text-xs">{symbol.kind}, {symbol.file}:{symbol.line}</span></>} />
-        <ResultList title="API contracts" list={result.apis} empty="No API routes match." keyOf={(api) => `${api.method} ${api.path} ${api.file}`} render={(api) => <><Mono>{api.method} {api.path}</Mono> <span className="text-muted-foreground text-xs">{api.file}:{api.line}</span></>} />
-        <ResultList title="Events" list={result.events} empty="No events match." keyOf={(event) => `${event.role}:${event.name}:${event.file}:${event.line}`} render={(event) => <><Mono>{event.name}</Mono> <span className="text-muted-foreground text-xs">{event.role}s in {event.file}</span></>} />
+        <ResultList title="Relevant files" list={result.files} empty="No file matches." keyOf={(file) => file.path} render={(file) => <><FileLink target={file.path} />{file.reasons.length > 0 && <span className="block text-muted-foreground text-xs">{file.reasons.join("; ")}</span>}</>} />
+        <ResultList title="Symbols" list={result.symbols} empty="No symbol matches." keyOf={(symbol) => `${symbol.file}:${symbol.line}:${symbol.name}`} render={(symbol) => <><FileLink target={symbol.file}>{symbol.name}</FileLink> <span className="text-muted-foreground text-xs">{symbol.kind}, {symbol.file}:{symbol.line}</span></>} />
+        <ResultList title="API contracts" list={result.apis} empty="No API routes match." keyOf={(api) => `${api.method} ${api.path} ${api.file}`} render={(api) => <><FileLink target={api.file}>{api.method} {api.path}</FileLink> <span className="text-muted-foreground text-xs">{api.file}:{api.line}</span></>} />
+        <ResultList title="Events" list={result.events} empty="No events match." keyOf={(event) => `${event.role}:${event.name}:${event.file}:${event.line}`} render={(event) => <><FileLink target={event.file}>{event.name}</FileLink> <span className="text-muted-foreground text-xs">{event.role}s in {event.file}</span></>} />
         <ResultList title="They import" list={result.imports} empty="No imports." keyOf={(path) => path} render={pathRow} />
         <ResultList title="Imported by" list={result.dependents} empty="Nothing imports them." keyOf={(path) => path} render={pathRow} />
         <ResultList title="Called by" list={result.callers} empty="No callers." keyOf={(id) => id} render={pathRow} />

@@ -1,5 +1,5 @@
 import type { RunPlanTask, RunUpdate } from "../../../../server/index.ts";
-import { MAX_LANE_FILES, MAX_LANE_TEXT_CHARS, MAX_LANE_TOOLS } from "../constants";
+import { PLAN_ASSIGNMENT_REASON } from "../constants";
 import type { Lane } from "../types";
 import { applyWorkforceUpdate } from "./lane-workforce";
 
@@ -10,18 +10,23 @@ export function emptyLane(task: RunPlanTask): Lane {
     taskId: task.id,
     title: task.title,
     dependsOn: task.dependsOn,
+    allowedPaths: task.allowedPaths,
+    readOnlyPaths: task.readOnlyPaths ?? [],
+    subtasks: task.subtasks ?? [],
+    subtasksDone: [],
+    awaited: [],
+    skills: task.skills ?? [],
+    produces: task.produces ?? [],
+    plannedEngineId: task.engineId ?? null,
+    verifyRung: task.verifyRung ?? null,
+    complexity: task.complexity ?? null,
     status: "waiting",
     attempts: 0,
-    text: "",
-    tools: [],
-    toolCount: 0,
-    files: [],
-    hiddenFileCount: 0,
     settledCostUsd: 0,
     attemptCostUsd: 0,
     reason: null,
     merge: null,
-    employee: null,
+    employee: task.employeeId ? { employeeId: task.employeeId, reasons: [PLAN_ASSIGNMENT_REASON] } : null,
     verification: null,
     claims: [],
     blockedReason: null,
@@ -30,24 +35,11 @@ export function emptyLane(task: RunPlanTask): Lane {
   };
 }
 
-function withFile(lane: Lane, path: string): Lane {
-  if (lane.files.includes(path)) return lane;
-  if (lane.files.length >= MAX_LANE_FILES) return { ...lane, hiddenFileCount: lane.hiddenFileCount + 1 };
-  return { ...lane, files: [...lane.files, path] };
-}
-
-function withTool(lane: Lane, title: string): Lane {
-  const tool = { id: lane.toolCount, title };
-  return { ...lane, text: "", tools: [...lane.tools, tool].slice(-MAX_LANE_TOOLS), toolCount: lane.toolCount + 1 };
-}
-
 function startedAttempt(lane: Lane): Lane {
   return {
     ...lane,
     status: "running",
     attempts: lane.attempts + 1,
-    text: "",
-    tools: [],
     reason: null,
     merge: null,
     blockedReason: null,
@@ -62,11 +54,11 @@ export function applyLaneUpdate(lane: Lane, update: LaneUpdate): Lane {
     case "task-started":
       return startedAttempt(lane);
     case "text":
-      return { ...lane, text: (lane.text + update.text).slice(-MAX_LANE_TEXT_CHARS) };
+    case "thought":
     case "tool":
-      return withTool(lane, update.title);
+    case "tool-update":
     case "file":
-      return withFile(lane, update.path);
+      return lane;
     case "cost":
       return { ...lane, attemptCostUsd: update.costUsd };
     case "task-settled":
@@ -79,6 +71,10 @@ export function applyLaneUpdate(lane: Lane, update: LaneUpdate): Lane {
     case "blocked":
     case "dependency-added":
     case "note":
+    case "subtask":
+    case "artifact":
+    case "awaiting":
+    case "awaited-arrived":
       return applyWorkforceUpdate(lane, update);
     default: {
       const unreachable: never = update;

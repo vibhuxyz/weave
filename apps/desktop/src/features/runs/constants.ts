@@ -1,7 +1,13 @@
-export const MAX_LANE_TEXT_CHARS = 4_000;
-export const MAX_LANE_TOOLS = 5;
-export const MAX_LANE_FILES = 40;
+export const MAX_BLOCK_TEXT_CHARS = 4_000;
+export const MAX_BLOCK_FILES = 40;
+export const MAX_TOOLS_PER_BLOCK = 200;
+export const MAX_STREAM_BLOCKS = 200;
 export const MAX_VISIBLE_LANES = 12;
+export const MAX_LISTED_PLAN_NOTES = 5;
 export const MAX_LANE_NOTES = 4;
 export const MAX_RUN_ALERTS = 10;
 export const RUN_COMMAND = "/parallel";
+export const PLANNER_TASK_ID = "planner";
+export const PLAN_ASSIGNMENT_REASON = "named in the plan";
+export const MAX_RUN_ARTIFACTS = 12;
+export const MAX_LANE_AWAITED = 4;

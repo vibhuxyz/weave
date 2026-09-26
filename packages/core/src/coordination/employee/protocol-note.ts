@@ -7,11 +7,14 @@ export function renderEmployeeProtocol(): string {
     "Publish an output as soon as it is usable, before your whole task is done, so dependent employees can start.",
     "To publish, write a fenced block in your message (one event per block):",
     `${fence}${EVENT_FENCE_LANGUAGE}`,
-    '{ "type": "artifact.ready", "data": { "artifact": { "name": "schema", "summary": "what it is", "files": [{ "path": "db/schema.sql", "content": "..." }] } } }',
+    '{ "type": "artifact.ready", "data": { "artifact": { "name": "schema", "summary": "what it is", "provides": ["Todo", "CreateTodoInput"], "files": [{ "path": "db/schema.sql", "content": "..." }] } } }',
     fence,
+    '"provides" lists the exact output names dependent employees wait for. A dependent starts as soon as every name it needs is published, without waiting for the rest of your task to finish.',
     "Types: artifact.ready, artifact.updated, contract.published, contract.changed (same artifact data);",
     'dependency.blocked { "need": { "output": "name", "task": "optional id" }, "reason": "..." };',
+    'subtask.completed { "subtask": "the milestone, worded as Weave listed it" };',
     'task.blocked { "reason" }; review.requested, verification.failed, verification.passed { "summary" }; escalation.created { "subject", "reason" }.',
+    "Report a milestone the moment it is done, not at the end. Report milestones, outputs and blockers only: never a single file edit, command or tool call.",
     "When you are blocked on one input, publish dependency.blocked and keep doing the work that does not need it.",
   ].join("\n");
 }

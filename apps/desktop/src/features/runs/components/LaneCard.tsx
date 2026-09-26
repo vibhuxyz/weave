@@ -19,23 +19,31 @@ function LaneCardView({ taskId }: { readonly taskId: string }) {
         </span>
       </div>
       {lane.dependsOn.length > 0 && <span className="text-[11px] text-agent-text-faint">after {lane.dependsOn.join(", ")}</span>}
-      <LaneWorkforce lane={lane} />
-      {lane.tools.length > 0 && (
-        <ul className="flex flex-col gap-0.5 font-mono text-[11px] text-agent-text-muted">
-          {lane.tools.map((tool) => (
-            <li key={tool.id} className="truncate">{tool.title}</li>
-          ))}
-        </ul>
+      {lane.allowedPaths.length > 0 && (
+        <span className="truncate font-mono text-[11px] text-agent-text-faint" title={lane.allowedPaths.join(", ")}>may change {lane.allowedPaths.join(", ")}</span>
       )}
-      {lane.text && <p className="line-clamp-3 whitespace-pre-wrap text-agent-text text-xs">{lane.text}</p>}
-      {lane.files.length > 0 && (
-        <span className="truncate text-[11px] text-agent-text-faint">
-          {lane.files.length + lane.hiddenFileCount} files: {lane.files.join(", ")}
-          {lane.hiddenFileCount > 0 && ` (+${lane.hiddenFileCount} more)`}
+      {(lane.skills.length > 0 || lane.complexity) && (
+        <span className="truncate text-[11px] text-agent-text-faint" title={lane.skills.join(", ")}>
+          {lane.complexity && `${lane.complexity} complexity`}
+          {lane.complexity && lane.skills.length > 0 && " · "}
+          {lane.skills.length > 0 && `skills: ${lane.skills.join(", ")}`}
         </span>
       )}
+      {lane.readOnlyPaths.length > 0 && (
+        <span className="truncate font-mono text-[11px] text-agent-text-faint" title={lane.readOnlyPaths.join(", ")}>reads only {lane.readOnlyPaths.join(", ")}</span>
+      )}
+      {lane.produces.length > 0 && (
+        <span className="truncate text-[11px] text-agent-text-faint" title={lane.produces.join(", ")}>publishes {lane.produces.join(", ")}</span>
+      )}
+      {(lane.plannedEngineId || lane.verifyRung) && (
+        <span className="truncate text-[11px] text-agent-text-faint">
+          {lane.plannedEngineId && `on ${lane.plannedEngineId}`}
+          {lane.plannedEngineId && lane.verifyRung && " · "}
+          {lane.verifyRung && `must pass ${lane.verifyRung}`}
+        </span>
+      )}
+      <LaneWorkforce lane={lane} />
       {lane.reason && <span className="text-[11px] text-agent-critical-fg">{lane.reason}</span>}
-      {lane.merge && <span className="text-[11px] text-agent-text-muted">merge: {lane.merge.status}</span>}
     </li>
   );
 }

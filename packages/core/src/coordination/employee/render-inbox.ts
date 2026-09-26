@@ -24,6 +24,8 @@ function headline(event: CoordinationEvent): string {
       return `${prefix} ${flatten(event.data.reason)}`;
     case "task.completed":
       return `${prefix} ${event.data.status}`;
+    case "subtask.completed":
+      return `${prefix} finished ${flatten(event.data.subtask)}`;
     case "dependency.ready":
       return `${prefix} your inputs are ready: ${event.data.outputs.join(", ") || "upstream finished"}`;
     case "dependency.blocked":

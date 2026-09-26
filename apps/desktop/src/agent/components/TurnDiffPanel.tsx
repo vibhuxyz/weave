@@ -4,6 +4,26 @@ import { cn } from "@/shared/lib";
 import { useCopyToClipboard } from "@/shared/hooks";
 import { relativePath, type DiffLine, type FileDiff, type TurnDiffEntry } from "@/agent/diff";
 import { CONTEXT_PANEL_TABS, type ContextPanelTab } from '@/features/chat/components';
+import { highlightCode } from "@/shared/ui/ai-elements/code-block";
+import type { BundledLanguage, ThemedToken } from "shiki";
+
+const EXT_LANG: Record<string, BundledLanguage> = {
+  ts: "typescript",
+  tsx: "tsx",
+  js: "javascript",
+  jsx: "jsx",
+  json: "json",
+  css: "css",
+  html: "html",
+  md: "markdown",
+  py: "python",
+  yaml: "yaml",
+  yml: "yaml",
+  xml: "xml",
+  sql: "sql",
+  sh: "shell",
+  bash: "shell"
+};
 
 /**
  * The side-panel diff reader. Opened from an assistant card's "Open diff";
@@ -198,6 +218,22 @@ function FileDiffView({
 }) {
   const { isCopied, copyToClipboard } = useCopyToClipboard();
 
+  const [tokenized, setTokenized] = useState<{ tokens: ThemedToken[][] } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const allLinesText = file.hunks.flatMap((h) => h.lines.map((l) => l.text)).join("\n");
+    const ext = file.path.split(".").pop()?.toLowerCase();
+    const lang = (ext ? EXT_LANG[ext] : undefined) ?? "text";
+
+    const cached = highlightCode(allLinesText, lang as BundledLanguage, (res) => {
+      setTokenized(res as { tokens: ThemedToken[][] });
+    });
+    if (cached) {
+      setTokenized(cached as { tokens: ThemedToken[][] });
+    }
+  }, [file, open]);
+
   return (
     <section
       ref={registerRef}
@@ -245,47 +281,81 @@ function FileDiffView({
               Large file — shown as a wholesale replacement.
             </p>
           )}
-          {file.hunks.map((hunk, hi) => (
-            <div key={hi}>
-              {(hunk.skippedBefore ?? 0) > 0 && (
-                <div className="border-agent-code-border/60 border-y bg-agent-surface-hover/30 py-1 text-center font-mono text-[10px] text-agent-text-faint">
-                  {hunk.skippedBefore} unmodified line
-                  {hunk.skippedBefore === 1 ? "" : "s"}
-                </div>
-              )}
-              {hi > 0 && (hunk.skippedBefore ?? 0) === 0 && (
-                <div className="py-0.5 text-center font-mono text-[11px] text-agent-text-faint">
-                  ···
-                </div>
-              )}
-              {hunk.lines.map((line, li) => (
-                <DiffLineRow key={`${hi}-${li}`} line={line} />
-              ))}
-            </div>
-          ))}
+          {(() => {
+            let globalLineIndex = 0;
+            return file.hunks.map((hunk, hi) => (
+              <div key={hi}>
+                {(hunk.skippedBefore ?? 0) > 0 && (
+                  <div className="border-agent-code-border/60 border-y bg-agent-surface-hover/30 py-1 text-center font-mono text-[10px] text-agent-text-faint">
+                    {hunk.skippedBefore} unmodified line
+                    {hunk.skippedBefore === 1 ? "" : "s"}
+                  </div>
+                )}
+                {hi > 0 && (hunk.skippedBefore ?? 0) === 0 && (
+                  <div className="py-0.5 text-center font-mono text-[11px] text-agent-text-faint">
+                    ···
+                  </div>
+                )}
+                {hunk.lines.map((line, li) => {
+                  const tokens = tokenized?.tokens[globalLineIndex];
+                  globalLineIndex++;
+                  return <DiffLineRow key={`${hi}-${li}`} line={line} tokens={tokens} />;
+                })}
+              </div>
+            ));
+          })()}
         </div>
       )}
     </section>
   );
 }
 
-function DiffLineRow({ line }: { line: DiffLine }) {
+function DiffLineRow({ line, tokens }: { line: DiffLine; tokens?: ThemedToken[] }) {
+  // Shiki font styles bitwise constants
+  // oxlint-disable-next-line eslint(no-bitwise)
+  const isItalic = (fontStyle?: number) => fontStyle && (fontStyle & 1);
+  // oxlint-disable-next-line eslint(no-bitwise)
+  const isBold = (fontStyle?: number) => fontStyle && (fontStyle & 2);
+  // oxlint-disable-next-line eslint(no-bitwise)
+  const isUnderline = (fontStyle?: number) => fontStyle && (fontStyle & 4);
+
   return (
     <div
       className={cn(
         "flex items-start gap-2 px-2 font-mono text-[11px] leading-[1.6]",
-        line.kind === "add" && "bg-agent-success/10 text-agent-success",
-        line.kind === "del" && "bg-agent-critical-fg/10 text-agent-critical-fg",
-        line.kind === "context" && "text-agent-text",
+        line.kind === "add" && "bg-agent-success/10",
+        line.kind === "del" && "bg-agent-critical-fg/10",
       )}
     >
       <span className="w-10 shrink-0 select-none text-right text-agent-text-faint">
         {line.kind === "add" ? line.newLine : line.oldLine}
       </span>
-      <span className="w-2 shrink-0 select-none">
+      <span className={cn(
+        "w-2 shrink-0 select-none",
+        line.kind === "add" && "text-agent-success",
+        line.kind === "del" && "text-agent-critical-fg"
+      )}>
         {line.kind === "add" ? "+" : line.kind === "del" ? "−" : " "}
       </span>
-      <span className="whitespace-pre-wrap break-words">{line.text || " "}</span>
+      <span className="whitespace-pre-wrap break-words text-agent-text">
+        {tokens ? (
+          tokens.map((t, i) => (
+            <span
+              key={i}
+              style={{
+                color: t.color,
+                fontStyle: isItalic(t.fontStyle) ? "italic" : undefined,
+                fontWeight: isBold(t.fontStyle) ? "bold" : undefined,
+                textDecoration: isUnderline(t.fontStyle) ? "underline" : undefined,
+              }}
+            >
+              {t.content}
+            </span>
+          ))
+        ) : (
+          line.text || " "
+        )}
+      </span>
     </div>
   );
 }
