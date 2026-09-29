@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkCleanBase } from "./preflight.ts";
+import { checkCleanBase, describeUntrackedFiles } from "./preflight.ts";
 import { harvestWorktree } from "./harvest.ts";
 import { detectInstallCommand, installWorktree } from "./install.ts";
 import { runGit } from "./run-git.ts";
@@ -33,6 +33,17 @@ test("a dirty main is refused with the files named, and a clean one returns HEAD
   const dirty = await checkCleanBase(repo);
   assert.equal(dirty.ok, false);
   assert.match(dirty.ok ? "" : dirty.reason, /1 uncommitted change\(s\): M README\.md/);
+});
+
+test("untracked files are named, but ignored files and Weave's own folder are not", async () => {
+  const repo = await makeRepo();
+  assert.equal(await describeUntrackedFiles(repo, join(repo, ".weave")), null);
+  await mkdir(join(repo, "src", "api"), { recursive: true });
+  await writeFile(join(repo, "src", "api", "app file.ts"), "1\n");
+  await mkdir(join(repo, "state"), { recursive: true });
+  await writeFile(join(repo, "state", "ledger.ndjson"), "{}\n");
+  const warning = await describeUntrackedFiles(repo, join(repo, "state"));
+  assert.match(warning ?? "", /^1 file\(s\) are not in the last commit: src\/api\/app file\.ts\. The planner/);
 });
 
 test("os noise files do not block a run, but a real change next to them does", async () => {

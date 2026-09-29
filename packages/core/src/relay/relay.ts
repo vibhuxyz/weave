@@ -30,13 +30,21 @@ async function currentState(options: RelayOptions): Promise<TaskState> {
   return stateFrom(options, await taskEvents(options));
 }
 
-async function promptFor(options: RelayOptions, state: TaskState | null, subtasksDone: readonly string[]): Promise<string> {
+interface AttemptContext {
+  readonly state: TaskState | null;
+  readonly subtasksDone: readonly string[];
+  readonly engineId: string;
+}
+
+async function promptFor(options: RelayOptions, attempt: AttemptContext): Promise<string> {
   const { task, model } = options;
-  if (!model) return state ? `${task.prompt}\n\n<task-state>\n${briefOf(state, FALLBACK_BRIEF_BYTES)}\n</task-state>` : task.prompt;
+  const { state, subtasksDone, engineId } = attempt;
+  if (!model) return state ? `${task.prompt}\n\n<task-state>\n${briefOf(state, FALLBACK_BRIEF_BYTES, engineId)}\n</task-state>` : task.prompt;
   const context = await buildWorkerContext({
     root: task.cwd,
     model,
     state,
+    engineId,
     task: { id: task.id, goal: task.prompt, allowedPaths: task.allowedPaths, readOnlyPaths: task.readOnlyPaths, produces: task.produces, subtasks: task.subtasks, subtasksDone, skills: task.skills, verify: task.verify, verifyRung: task.verifyRung, dependencies: task.dependencies?.map((dependency) => ({ task: dependency.task, requiredOutputs: [...(dependency.requiredOutputs ?? [])] })) },
   });
   if (state === null && context.unknownSkills.length > 0) {
@@ -64,7 +72,7 @@ export async function relayTask(options: RelayOptions): Promise<RelayResult> {
     if (!engineId) break;
     const events = await taskEvents(options);
     const resumed = attemptIndex === 0 ? null : stateFrom(options, events);
-    const prompt = withBriefing(await promptFor(options, resumed, reportedSubtasks(events, task.id)), options.briefing);
+    const prompt = withBriefing(await promptFor(options, { state: resumed, subtasksDone: reportedSubtasks(events, task.id), engineId }), options.briefing);
     ledger.append("attempt.started", { taskId: task.id, attemptIndex, engineId, sessionId: "" });
     last = await runAttempt({ engineId, attemptIndex, task: { ...task, prompt }, ledger, signal });
     const { move, reason } = afterAttempt(last);

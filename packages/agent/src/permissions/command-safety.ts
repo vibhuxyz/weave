@@ -1,6 +1,7 @@
+import { statSync } from "node:fs";
 import type { CommandSafetyResult } from "./types.ts";
 import { isInside, realish } from "./path-confinement.ts";
-import { splitShellWords } from "./shell-words/index.ts";
+import { resolveParentPaths, splitShellWords, type DirectoryView } from "./shell/index.ts";
 
 const SENSITIVE_PATTERNS = [
   /(?:^|[\s"'`=])(~|\$HOME)\/(?:\.ssh|\.aws|\.gnupg|\.kube|\.config\/gcloud)/i,
@@ -18,6 +19,7 @@ const PATH_UNTIL_WHITESPACE = /^[^\s"'`;]+/;
 const PATH_UNTIL_WORD_END = /^[^"'`;]+/;
 const TRAILING_PUNCTUATION = /[,:;)"']+$/;
 const PARENT_SEGMENT = /(?:^|\/)\.\.(?:\/|$)/;
+const UNUSABLE_DIRECTORY_CODES: ReadonlySet<string> = new Set(["ENOENT", "ENOTDIR", "EACCES", "ELOOP"]);
 
 /**
  * Output an engine wrote for itself and has to read back.
@@ -61,6 +63,27 @@ export function extractCommand(rawInput: unknown): string | null {
 
 function checkSensitivePatterns(command: string): boolean {
   return SENSITIVE_PATTERNS.some((pattern) => pattern.test(command));
+}
+
+function isUnusableDirectoryError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && typeof error.code === "string" && UNUSABLE_DIRECTORY_CODES.has(error.code);
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch (error) {
+    if (isUnusableDirectoryError(error)) return false;
+    throw error;
+  }
+}
+
+const DIRECTORY_VIEW: DirectoryView = { isDirectory, realPath: realish };
+
+function escapesThroughParent(command: string, normalizedCwd: string, startDir: string): boolean {
+  if (!TRAVERSAL_PATTERN.test(command)) return false;
+  const uses = resolveParentPaths(command, startDir, DIRECTORY_VIEW);
+  return uses.length === 0 || uses.some((use) => use.resolved === null || !isInside(normalizedCwd, use.resolved));
 }
 
 function leadingPath(text: string, pattern: RegExp): string {
@@ -120,7 +143,7 @@ export function inspectCommandBoundaries(
     };
   }
 
-  if (TRAVERSAL_PATTERN.test(command)) {
+  if (escapesThroughParent(command, normalizedCwd, runsIn ?? normalizedCwd)) {
     return {
       allowed: false,
       reason: "contains path traversal (..) escaping task directory",

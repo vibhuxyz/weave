@@ -1,17 +1,33 @@
-import type { Decision, TaskState, VerificationResult } from "@weave/protocol";
+import type { Decision, Failure, RecentMessage, TaskState, VerificationResult } from "@weave/protocol";
 import { rungStrength } from "@weave/protocol";
 import type { EngineDescriptor } from "@weave/agent";
 import type { Checkpoint } from "../checkpoint/index.ts";
+import { capBytes } from "../shared/index.ts";
 
 const MAX_BRIEF_BYTES = 4096;
+const MAX_GOAL_BYTES = 800;
 const MAX_LISTED = 8;
+const MAX_LINE_CHARS = 300;
+
+interface ShownParts {
+  readonly decisions: readonly Decision[];
+  readonly completed: readonly string[];
+  readonly verification: readonly VerificationResult[];
+  readonly failures: readonly Failure[];
+  readonly recent: readonly RecentMessage[];
+}
 
 function section(heading: string, body: string): string {
   return `${heading}\n${body}`;
 }
 
+function clipLine(line: string): string {
+  const characters = [...line.replace(/\s+/g, " ").trim()];
+  return characters.length <= MAX_LINE_CHARS ? characters.join("") : `${characters.slice(0, MAX_LINE_CHARS - 1).join("")}…`;
+}
+
 function listed(lines: readonly string[]): string {
-  return lines.slice(-MAX_LISTED).map((line) => `  ${line.replace(/\s+/g, " ").trim()}`).join("\n");
+  return lines.slice(-MAX_LISTED).map((line) => `  ${clipLine(line)}`).join("\n");
 }
 
 function renderWorkspace(state: TaskState): string {
@@ -37,15 +53,22 @@ function optional(heading: string, lines: readonly string[]): readonly string[] 
   return lines.length === 0 ? [] : [section(heading, listed(lines))];
 }
 
-function renderBrief(state: TaskState, decisions: readonly Decision[], completed: readonly string[], verification: readonly VerificationResult[]): string {
+function renderRecent(recent: readonly RecentMessage[]): readonly string[] {
+  if (recent.length === 0) return [];
+  return [section("LAST WORDS  (the previous worker's own notes before it stopped — unverified)", recent.map((message) => `  ${message.text}`).join("\n"))];
+}
+
+function renderBrief(state: TaskState, shown: ShownParts): string {
+  const { decisions, completed, verification, failures, recent } = shown;
   const unfinished = state.inFlight.map((tool) => `${tool.locations[0] ?? tool.title}   an edit was in progress when the previous worker stopped. Read it before editing.`);
   const doing = state.currentStep ?? `(last completed: ${completed.at(-1) ?? "nothing yet"})`;
   return [
-    section("TASK", state.goal),
+    section("TASK", capBytes(state.goal, MAX_GOAL_BYTES)),
     section("WORKSPACE", renderWorkspace(state)),
     section("CHANGED", renderChanged(state.changedFiles)),
+    ...renderRecent(recent),
     section("VERIFIED  (deterministic — these actually ran)", renderVerified(verification)),
-    ...optional("FAILURES  (recorded by Weave)", state.failures.map((failure) => `${failure.kind}: ${failure.message}`)),
+    ...optional("FAILURES  (recorded by Weave)", failures.slice(-MAX_LISTED).map((failure) => `${failure.kind}: ${failure.message}`)),
     ...optional("UNFINISHED — verify before trusting", unfinished),
     ...optional("CLAIMED BY THE PREVIOUS WORKER  (unverified — treat as hints)", decisions.map((decision) => `"${decision.description}"`)),
     ...optional("DISCOVERIES", state.discoveries.map((discovery) => `${discovery.source === "worker" ? "(claimed) " : ""}${discovery.text}`)),
@@ -56,21 +79,32 @@ function renderBrief(state: TaskState, decisions: readonly Decision[], completed
   ].join("\n\n");
 }
 
-export function buildBrief(checkpoint: Checkpoint, _next: EngineDescriptor): string {
-  return briefOf(checkpoint.state, MAX_BRIEF_BYTES);
+export function buildBrief(checkpoint: Checkpoint, next: EngineDescriptor): string {
+  return briefOf(checkpoint.state, MAX_BRIEF_BYTES, next.id);
 }
 
-export function briefOf(state: TaskState, maxBytes: number): string {
-  let decisions = state.decisions;
-  let completed = state.completed;
-  let verification = state.verification;
-  let brief = renderBrief(state, decisions, completed, verification);
+function shrunk(shown: ShownParts): ShownParts | null {
+  if (shown.decisions.length > 0) return { ...shown, decisions: shown.decisions.slice(1) };
+  if (shown.completed.length > 0) return { ...shown, completed: shown.completed.slice(1) };
+  if (shown.verification.length > 0) return { ...shown, verification: shown.verification.slice(1) };
+  if (shown.failures.length > 0) return { ...shown, failures: shown.failures.slice(-MAX_LISTED).slice(1) };
+  if (shown.recent.length > 0) return { ...shown, recent: shown.recent.slice(1) };
+  return null;
+}
+
+export function briefOf(state: TaskState, maxBytes: number, nextEngineId: string | null): string {
+  let shown: ShownParts | null = {
+    decisions: state.decisions,
+    completed: state.completed,
+    verification: state.verification,
+    failures: state.failures,
+    recent: state.recentMessages.filter((message) => message.engineId !== null && message.engineId === nextEngineId),
+  };
+  let brief = renderBrief(state, shown);
   while (Buffer.byteLength(brief, "utf8") > maxBytes) {
-    if (decisions.length > 0) decisions = decisions.slice(1);
-    else if (completed.length > 0) completed = completed.slice(1);
-    else if (verification.length > 0) verification = verification.slice(1);
-    else return Buffer.from(brief, "utf8").subarray(0, maxBytes).toString("utf8");
-    brief = renderBrief(state, decisions, completed, verification);
+    shown = shrunk(shown);
+    if (shown === null) return Buffer.from(brief, "utf8").subarray(0, maxBytes).toString("utf8");
+    brief = renderBrief(state, shown);
   }
   return brief;
 }

@@ -1,13 +1,22 @@
 import { isRecord, parseJsonBlock, readChoice, readList, readString, readStringList, type FieldContext } from "../../shared/index.ts";
 import {
+  CLIPPED_REASON_MARK,
   MAX_ISSUE_REASON_CHARS,
   MAX_ISSUE_TASK_IDS,
   MAX_NEW_TASK_ID_CHARS,
+  MAX_RAW_ISSUE_REASON_CHARS,
   MAX_REVIEW_ISSUES,
   REVIEW_ISSUE_TYPES,
   REVIEW_STATUSES,
 } from "./constants.ts";
 import type { ParseReviewResult, ReviewIssue } from "./types.ts";
+
+function clipReason(reason: string): string {
+  const characters = [...reason];
+  if (characters.length <= MAX_ISSUE_REASON_CHARS) return reason;
+  const kept = characters.slice(0, MAX_ISSUE_REASON_CHARS - CLIPPED_REASON_MARK.length).join("").trimEnd();
+  return `${kept}${CLIPPED_REASON_MARK}`;
+}
 
 function parseIssue(raw: unknown, where: string, issues: string[], knownIds: ReadonlySet<string>): ReviewIssue | null {
   if (!isRecord(raw)) {
@@ -18,11 +27,11 @@ function parseIssue(raw: unknown, where: string, issues: string[], knownIds: Rea
   const issuesBefore = issues.length;
   const type = readChoice(ctx, "type", REVIEW_ISSUE_TYPES);
   const taskIds = readStringList(ctx, "taskIds", { maxItems: MAX_ISSUE_TASK_IDS, maxChars: MAX_NEW_TASK_ID_CHARS });
-  const reason = readString(ctx, "reason", MAX_ISSUE_REASON_CHARS);
+  const reason = readString(ctx, "reason", MAX_RAW_ISSUE_REASON_CHARS);
   const unknown = type === "missing_task" ? [] : taskIds.filter((id) => !knownIds.has(id));
   if (unknown.length > 0) issues.push(`${where}: "taskIds" names tasks that are not in the plan: ${unknown.join(", ")}`);
   if (issues.length > issuesBefore || type === null || reason === null) return null;
-  return { type, taskIds, reason };
+  return { type, taskIds, reason: clipReason(reason) };
 }
 
 export function parseReview(text: string, knownIds: ReadonlySet<string>): ParseReviewResult {

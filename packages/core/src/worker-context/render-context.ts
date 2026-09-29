@@ -116,7 +116,7 @@ export function renderWorkerContext(sources: ContextSources): WorkerContext {
   const code = wrapEntries("code-excerpts", sources.snippets.map((snippet) => `### ${snippet.path}:${snippet.startLine} (${snippet.symbol})\n\`\`\`\n${snippet.text}\n\`\`\``), SECTION_BUDGETS.code);
   const rules = wrapEntries("project-rules", sources.rules.map((rule) => `## ${rule.name} (${rule.sourcePath})\n${rule.body}`), SECTION_BUDGETS.rules);
   const project = renderProjectContext(answer, SECTION_BUDGETS.project - 200);
-  const state = sources.state ? capBytes(`<task-state>\nRecorded by Weave for this task so far. The files on disk are authoritative.\n\n${escaped(briefOf(sources.state, SECTION_BUDGETS.state - 200), "task-state")}\n</task-state>`, SECTION_BUDGETS.state) : { text: "", isCut: false };
+  const state = sources.state ? capBytes(`<task-state>\nRecorded by Weave for this task so far. The files on disk are authoritative.\n\n${escaped(briefOf(sources.state, SECTION_BUDGETS.state - 200, sources.engineId), "task-state")}\n</task-state>`, SECTION_BUDGETS.state) : { text: "", isCut: false };
   const skillsText = renderSkills(skills, SECTION_BUDGETS.skills);
   const candidates: readonly Rendered[] = [
     { name: "project", text: project, isCut: project.includes("more lines cut") },

@@ -4,6 +4,7 @@ import { MAX_DISCOVERIES, MAX_FAILURES, MAX_MESSAGE_BUFFER_CHARS, MAX_NOTES_PER_
 import { foldLifecycle } from "./fold-engine.ts";
 import { foldPlan, foldToolCall, foldToolCallUpdate, recordRead, recordWrite } from "./fold-tools.ts";
 import { extractTaskNotes } from "./notes.ts";
+import { withRecentMessage } from "./recent-messages.ts";
 import type { PlanUpdateLike, ToolCallStatusUpdateLike, ToolCallUpdateLike } from "./types.ts";
 
 export type { PlanUpdateLike, ToolCallStatusUpdateLike, ToolCallUpdateLike } from "./types.ts";
@@ -33,6 +34,7 @@ export function emptyTaskState(taskId: string, goal: string, options: FoldOption
     verification: [],
     commands: [],
     openQuestions: [],
+    recentMessages: [],
     dependencies: (options.dependencies ?? []).map((dependency) => ({ task: dependency.task, requiredOutputs: [...dependency.requiredOutputs] })),
     contextVersion: options.contextVersion ?? null,
     gitState: options.gitState ?? EMPTY_GIT_STATE,
@@ -59,6 +61,25 @@ function sessionUpdateKind(raw: unknown): string | null {
   return typeof kind === "string" ? kind : null;
 }
 
+interface NarrationBuffer {
+  message: string;
+  thought: string;
+  seq: number;
+}
+
+function flushNarration(state: TaskState, buffer: NarrationBuffer): void {
+  if (buffer.message) flushNotes(state, buffer.message, buffer.seq);
+  const engineId = state.engineState.engineId;
+  const withThought = withRecentMessage(state.recentMessages, { text: buffer.thought, atSeq: buffer.seq, engineId });
+  state.recentMessages = withRecentMessage(withThought, { text: buffer.message, atSeq: buffer.seq, engineId });
+  buffer.message = "";
+  buffer.thought = "";
+}
+
+function appendChunk(text: string, chunk: string): string {
+  return (text + chunk).slice(-MAX_MESSAGE_BUFFER_CHARS);
+}
+
 function chunkText(raw: unknown): string {
   const content = (raw as { content?: { type?: unknown; text?: unknown } } | null)?.content;
   return content?.type === "text" && typeof content.text === "string" ? content.text : "";
@@ -67,11 +88,7 @@ function chunkText(raw: unknown): string {
 export function foldTaskState(events: readonly WeaveEvent[], goal: string, taskId: string, options: FoldOptions = {}): TaskState {
   const state = emptyTaskState(taskId, goal, options);
   const open = new Map<string, ToolCallRef>();
-  const buffer = { text: "", seq: 0 };
-  const flush = () => {
-    if (buffer.text) flushNotes(state, buffer.text, buffer.seq);
-    buffer.text = "";
-  };
+  const buffer: NarrationBuffer = { message: "", thought: "", seq: 0 };
   for (const event of events) {
     state.atSeq = event.seq;
     if (foldLifecycle(state, event)) continue;
@@ -80,18 +97,17 @@ export function foldTaskState(events: readonly WeaveEvent[], goal: string, taskI
     if (event.type === "verification.rung") foldVerification(state, event);
     if (event.type !== "agent.message") continue;
     const kind = sessionUpdateKind(event.update);
-    if (kind === "agent_message_chunk") {
-      buffer.text = (buffer.text + chunkText(event.update)).slice(-MAX_MESSAGE_BUFFER_CHARS);
-      buffer.seq = event.seq;
-    }
+    if (kind === "agent_message_chunk") buffer.message = appendChunk(buffer.message, chunkText(event.update));
+    if (kind === "agent_thought_chunk") buffer.thought = appendChunk(buffer.thought, chunkText(event.update));
+    if (kind === "agent_message_chunk" || kind === "agent_thought_chunk") buffer.seq = event.seq;
     if (kind === "tool_call") {
-      flush();
+      flushNarration(state, buffer);
       foldToolCall(state, open, event.seq, event.update as ToolCallUpdateLike);
     }
     if (kind === "tool_call_update") foldToolCallUpdate(state, open, event.seq, event.update as ToolCallStatusUpdateLike);
     if (kind === "plan") foldPlan(state, event.update as PlanUpdateLike);
   }
-  flush();
+  flushNarration(state, buffer);
   state.inFlight = [...open.values()];
   return state;
 }

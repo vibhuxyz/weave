@@ -155,3 +155,40 @@ test("a version 1 checkpoint state is upgraded, not thrown away", () => {
   assert.deepEqual(upgraded.failures, [{ kind: "error", message: "boom", where: "x", atSeq: 2 }]);
   assert.equal(upgraded.gitState.branch, "main");
 });
+
+function narration(seq: number, sessionUpdate: string, text: string): WeaveEvent {
+  return { ...base(seq), type: "agent.message", update: { sessionUpdate, content: { type: "text", text } } };
+}
+
+function toolCall(seq: number): WeaveEvent {
+  return { ...base(seq), type: "agent.message", update: { sessionUpdate: "tool_call", toolCallId: `tc-${seq}`, title: "Read x", kind: "read", status: "in_progress" } };
+}
+
+test("the worker's last thoughts and messages are kept for the next worker, newest last", () => {
+  const events: WeaveEvent[] = [
+    { ...base(0), type: "attempt.started", attemptIndex: 0, engineId: "claude-code", sessionId: "" },
+    narration(1, "agent_message_chunk", "Reading the contract."),
+    toolCall(2),
+    narration(3, "agent_thought_chunk", "Root cause: client.ts expects a flat "),
+    narration(4, "agent_thought_chunk", "message, but the API sends { error }."),
+    toolCall(5),
+    narration(6, "agent_message_chunk", "Fixing it now.\n```weave-event\n{ \"type\": \"x\" }\n```"),
+    toolCall(7),
+    narration(8, "agent_message_chunk", "API typecheck passes."),
+    toolCall(9),
+    narration(10, "agent_thought_chunk", "Next: validate the error envelope in client.ts."),
+  ];
+  const state = foldTaskState(events, GOAL, TASK_ID);
+  assert.deepEqual(state.recentMessages.map((message) => message.text), [
+    "Root cause: client.ts expects a flat message, but the API sends { error }.",
+    "Fixing it now.",
+    "API typecheck passes.",
+    "Next: validate the error envelope in client.ts.",
+  ]);
+  assert.deepEqual(new Set(state.recentMessages.map((message) => message.engineId)), new Set(["claude-code"]));
+});
+
+test("a checkpoint saved before last words existed upgrades with none", () => {
+  const { recentMessages: _recentMessages, ...stored } = foldTaskState([], GOAL, TASK_ID);
+  assert.deepEqual(upgradeTaskState(stored).recentMessages, []);
+});

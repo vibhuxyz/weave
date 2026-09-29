@@ -5,7 +5,7 @@ import { discoverSkills } from "../discovery/index.ts";
 import type { PlanningEngines } from "../adaptive/index.ts";
 import type { ProjectModel } from "../context/index.ts";
 import { createPlan, type ProjectKind } from "../planner/index.ts";
-import { flatten, type Ledger } from "../shared/index.ts";
+import { escapeClosingTag, flatten, type Ledger } from "../shared/index.ts";
 import { buildSkillRegistry, renderSkillCatalog } from "../skills/index.ts";
 import { triageRequest } from "../triage/index.ts";
 import { SKILL_DIRS } from "../worker-context/index.ts";
@@ -16,6 +16,7 @@ import type { PlanningInput, PlanningOutcome } from "./types.ts";
 const MAX_LISTED_ISSUES = 20;
 const MAX_FAST_TITLE_CHARS = 120;
 const FAST_TASK_ID = "T1";
+const PREFLIGHT_TAG = "preflight-warnings";
 
 export interface FastPlanInput {
   readonly request: string;
@@ -24,6 +25,13 @@ export interface FastPlanInput {
   readonly repoRoot: string;
   readonly ledger: Ledger;
   readonly engines: PlanningEngines;
+  readonly preflightWarnings?: readonly string[];
+}
+
+function withPreflightNote(projectContext: string, warnings: readonly string[]): string {
+  if (warnings.length === 0) return projectContext;
+  const body = escapeClosingTag(warnings.join("\n"), PREFLIGHT_TAG);
+  return `${projectContext}\n\n<${PREFLIGHT_TAG} source="Weave: checked with git before planning">\n${body}\n</${PREFLIGHT_TAG}>`;
 }
 
 export function fastPlan(input: FastPlanInput): PlanningOutcome | null {
@@ -32,7 +40,7 @@ export function fastPlan(input: FastPlanInput): PlanningOutcome | null {
   const engines = triage.route === "plan" ? { plannerEngineId: input.engines.plannerId ?? null, reviewerEngineId: input.engines.reviewerId ?? null } : { plannerEngineId: null, reviewerEngineId: null };
   input.ledger.append("plan.triaged", { route: triage.route, reason: triage.reason, ...engines });
   if (triage.route === "plan") return null;
-  input.ledger.append("plan.reviewed", { attempts: 0, classification: { ...triage.classification, domains: [...triage.classification.domains] }, warnings: [], critique: null });
+  input.ledger.append("plan.reviewed", { attempts: 0, classification: { ...triage.classification, domains: [...triage.classification.domains] }, warnings: [...(input.preflightWarnings ?? [])], critique: null });
   const request = input.request.trim();
   const title = flatten(request).slice(0, MAX_FAST_TITLE_CHARS);
   const task = { id: FAST_TASK_ID, title, prompt: request, cwd: input.repoRoot, allowedPaths: [triage.path], complexity: "low" as const };
@@ -56,7 +64,7 @@ export async function planTasks(
     rungs: input.rungs,
     blueprint: base?.blueprint ?? null,
     contract: base?.contract ?? null,
-    projectContext: input.projectContext ?? null,
+    projectContext: input.projectContext ? withPreflightNote(input.projectContext, input.preflightWarnings ?? []) : null,
     employees: input.employeeRoster ?? null,
     skillCatalog: renderSkillCatalog(skills),
     engineCatalog: renderEngineCatalog(input.engineCandidates),
@@ -75,7 +83,7 @@ export async function planTasks(
   input.ledger.append("plan.reviewed", {
     attempts: outcome.attempts,
     classification: classification && { ...classification, domains: [...classification.domains] },
-    warnings: [...outcome.warnings],
+    warnings: [...(input.preflightWarnings ?? []), ...outcome.warnings],
     critique: outcome.critique && {
       outcome: outcome.critique.outcome,
       issues: outcome.critique.issues.map((issue) => ({ type: issue.type, taskIds: [...issue.taskIds], reason: issue.reason })),

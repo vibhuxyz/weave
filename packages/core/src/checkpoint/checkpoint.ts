@@ -1,8 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { CheckpointReason, TaskState, TaskStateV1, WeaveEvent } from "@weave/protocol";
+import type { CheckpointReason, TaskState, WeaveEvent } from "@weave/protocol";
 import { isNotFound } from "../shared/index.ts";
-import { upgradeTaskState } from "../state/index.ts";
+import { upgradeTaskState, type StoredTaskState } from "../state/index.ts";
 
 export interface Checkpoint {
   schemaVersion: 1;
@@ -84,7 +84,7 @@ export async function writeCheckpoint(
   return checkpoint;
 }
 
-type StoredCheckpoint = Omit<Checkpoint, "state"> & { state: TaskState | TaskStateV1 };
+type StoredCheckpoint = Omit<Checkpoint, "state"> & { state: StoredTaskState };
 
 function upgraded(stored: StoredCheckpoint): Checkpoint {
   return { ...stored, state: upgradeTaskState(stored.state) };

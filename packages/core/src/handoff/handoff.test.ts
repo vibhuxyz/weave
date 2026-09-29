@@ -5,7 +5,7 @@ import type { Checkpoint } from "../checkpoint/index.ts";
 import type { TaskState } from "@weave/protocol";
 import { EMPTY_GIT_STATE } from "@weave/protocol";
 import { emptyTaskState } from "../state/index.ts";
-import { buildBrief } from "./handoff.ts";
+import { briefOf, buildBrief } from "./handoff.ts";
 
 const NEXT_ENGINE = { id: "codex", label: "Codex" } as EngineDescriptor;
 
@@ -109,4 +109,27 @@ test("buildBrief on an empty task still renders every required section", () => {
   assert.match(brief, /CHANGED\n {2}\(no files changed\)/);
   assert.match(brief, /VERIFIED.*\n {2}\(nothing verified yet\)/);
   assert.doesNotMatch(brief, /UNFINISHED/);
+});
+
+test("a long task and many failures cannot push the previous worker's last words out of the brief", () => {
+  const state = baseState({
+    goal: "Find and fix the todo bug. ".repeat(140),
+    failures: Array.from({ length: 12 }, (_, i) => ({ kind: "tool" as const, message: `cd "/a/very/long/path" && npm run typecheck ${"x".repeat(400)} #${i}`, where: "tool", atSeq: i })),
+    recentMessages: [
+      { text: "Root cause identified: client.ts expects a flat data.message but the API returns { error } envelopes.", atSeq: 1, engineId: "claude-code" },
+      { text: "API typecheck passes; next I'll fix client.ts error parsing.", atSeq: 2, engineId: "claude-code" },
+    ],
+  });
+  const brief = briefOf(state, 3_300, "claude-code");
+  assert.ok(Buffer.byteLength(brief, "utf8") <= 3_300);
+  assert.match(brief, /TASK\nFind and fix the todo bug\.[\s\S]*\(truncated\)\n\nWORKSPACE/);
+  assert.match(brief, /LAST WORDS[^\n]*\n {2}Root cause identified: client\.ts[^\n]*\n {2}API typecheck passes/);
+});
+
+test("a worker's own words go back only to the same engine, never across providers", () => {
+  const state = baseState({ recentMessages: [{ text: "PRIVATE-NOTE from claude", atSeq: 1, engineId: "claude-code" }] });
+  assert.match(briefOf(state, 4_096, "claude-code"), /LAST WORDS[^\n]*\n {2}PRIVATE-NOTE from claude/);
+  assert.doesNotMatch(briefOf(state, 4_096, "codex"), /PRIVATE-NOTE|LAST WORDS/);
+  assert.doesNotMatch(briefOf(state, 4_096, null), /PRIVATE-NOTE|LAST WORDS/);
+  assert.doesNotMatch(buildBrief(checkpointOf(state), NEXT_ENGINE), /PRIVATE-NOTE/);
 });

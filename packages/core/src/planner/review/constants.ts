@@ -10,7 +10,9 @@ export const REVIEW_ISSUE_TYPES = [
 ] as const;
 
 export const MAX_REVIEW_ISSUES = 8;
-export const MAX_ISSUE_REASON_CHARS = 300;
+export const MAX_ISSUE_REASON_CHARS = 1_000;
+export const MAX_RAW_ISSUE_REASON_CHARS = 20_000;
+export const CLIPPED_REASON_MARK = "…";
 export const MAX_ISSUE_TASK_IDS = 6;
 export const MAX_NEW_TASK_ID_CHARS = 32;
 export const MAX_PLANNING_BRIEF_BYTES = 24_000;

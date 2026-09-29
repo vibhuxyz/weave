@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createPlan } from "../planner.ts";
 import type { PlanRequest } from "../types.ts";
 import { parseReview } from "./parse-review.ts";
-import { MAX_REVIEW_TASK_PROMPT_BYTES } from "./constants.ts";
+import { MAX_ISSUE_REASON_CHARS, MAX_RAW_ISSUE_REASON_CHARS, MAX_REVIEW_TASK_PROMPT_BYTES } from "./constants.ts";
 import { buildReviewPrompt, renderPlanForReview } from "./prompt.ts";
 import { runReview } from "./run-review.ts";
 import { shouldReview } from "./should-review.ts";
@@ -34,6 +34,18 @@ test("parseReview rejects unknown tasks, contradictions and unknown issue types"
   assert.match(issuesOf({ status: "changes_requested", issues: [] }), /at least one issue/);
   assert.match(issuesOf({ status: "changes_requested", issues: [{ ...MISSING_DEPENDENCY, type: "vibes" }] }), /"type" must be one of/);
   assert.deepEqual(parseReview(fenced({ status: "changes_requested", issues: [{ type: "missing_task", taskIds: ["T3"], reason: "no tests" }] }), IDS).ok, true);
+});
+
+test("a long reason is kept and clipped instead of voiding the review", () => {
+  const reasonOf = (length: number) => {
+    const result = parseReview(fenced({ status: "changes_requested", issues: [{ ...MISSING_DEPENDENCY, reason: "x".repeat(length) }] }), IDS);
+    return result.ok && result.verdict.status === "changes_requested" ? result.verdict.issues[0]?.reason ?? "" : null;
+  };
+  assert.equal(reasonOf(700)?.length, 700);
+  const clipped = reasonOf(MAX_ISSUE_REASON_CHARS + 500) ?? "";
+  assert.equal(clipped.length, MAX_ISSUE_REASON_CHARS);
+  assert.ok(clipped.endsWith("…"));
+  assert.equal(reasonOf(MAX_RAW_ISSUE_REASON_CHARS + 1), null);
 });
 
 test("only risky, wide or larger plans are reviewed", () => {

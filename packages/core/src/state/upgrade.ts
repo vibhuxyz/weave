@@ -1,8 +1,10 @@
 import type { TaskState, TaskStateV1 } from "@weave/protocol";
 import { EMPTY_ENGINE_STATE } from "@weave/protocol";
 
-export function upgradeTaskState(state: TaskState | TaskStateV1): TaskState {
-  if (state.schemaVersion === 2) return state;
+export type StoredTaskState = TaskStateV1 | (Omit<TaskState, "recentMessages"> & Partial<Pick<TaskState, "recentMessages">>);
+
+export function upgradeTaskState(state: StoredTaskState): TaskState {
+  if (state.schemaVersion === 2) return { ...state, recentMessages: state.recentMessages ?? [] };
   return {
     schemaVersion: 2,
     taskId: state.taskId,
@@ -21,6 +23,7 @@ export function upgradeTaskState(state: TaskState | TaskStateV1): TaskState {
     verification: state.verification,
     commands: state.commands,
     openQuestions: [],
+    recentMessages: [],
     dependencies: [],
     contextVersion: null,
     gitState: state.git,

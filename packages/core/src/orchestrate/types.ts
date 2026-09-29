@@ -58,6 +58,7 @@ export type PlanAndRunResult =
 export interface PlanningInput {
   readonly request: string;
   readonly projectContext?: string | null;
+  readonly preflightWarnings?: readonly string[];
   readonly employeeRoster?: string | null;
   readonly employeeIds?: readonly string[] | null;
   readonly engineCandidates: readonly EngineCandidate[];

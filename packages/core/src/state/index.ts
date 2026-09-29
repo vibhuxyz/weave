@@ -3,3 +3,4 @@ export type { FoldOptions, PlanUpdateLike, ToolCallStatusUpdateLike, ToolCallUpd
 export { extractTaskNotes, TASK_NOTES_INSTRUCTION } from "./notes.ts";
 export type { TaskNotes } from "./notes.ts";
 export { upgradeTaskState } from "./upgrade.ts";
+export type { StoredTaskState } from "./upgrade.ts";

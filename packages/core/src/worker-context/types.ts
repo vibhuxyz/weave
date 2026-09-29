@@ -29,6 +29,7 @@ export interface ContextSources {
   readonly model: ProjectModel;
   readonly answer: ProjectAnswer;
   readonly state: TaskState | null;
+  readonly engineId: string | null;
   readonly snippets: readonly CodeSnippet[];
   readonly rules: readonly RuleEntry[];
   readonly skills: SkillRegistry;

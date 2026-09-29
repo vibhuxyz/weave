@@ -97,6 +97,12 @@ export interface OpenQuestion {
   atSeq: number;
 }
 
+export interface RecentMessage {
+  text: string;
+  atSeq: number;
+  engineId: string | null;
+}
+
 export interface TaskDependencyRef {
   task: string;
   requiredOutputs: string[];
@@ -137,6 +143,7 @@ export interface TaskState {
   verification: VerificationResult[];
   commands: CommandResult[];
   openQuestions: OpenQuestion[];
+  recentMessages: RecentMessage[];
   dependencies: TaskDependencyRef[];
   contextVersion: number | null;
   gitState: GitState;

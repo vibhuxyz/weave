@@ -1,3 +1,4 @@
+import { relative } from "node:path";
 import { MAX_LISTED_DIRTY_PATHS } from "./constants.ts";
 import { blockingDirtyLines } from "./dirty-lines.ts";
 import { outputLines, runGit } from "./run-git.ts";
@@ -22,4 +23,17 @@ export async function checkCleanBase(repoRoot: string): Promise<WorktreeResult<s
   const head = await runGit(repoRoot, ["rev-parse", "--verify", "HEAD^{commit}"]);
   if (!head.ok) return { ok: false, reason: `${repoRoot} has no commit yet. Workers need a base commit to branch from.` };
   return { ok: true, value: head.output.trim() };
+}
+
+export async function describeUntrackedFiles(repoRoot: string, weaveDir: string): Promise<string | null> {
+  const listed = await runGit(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  if (!listed.ok) return `Cannot list the files missing from the last commit in ${repoRoot}: ${listed.output.trim()}`;
+  const weavePrefix = `${relative(repoRoot, weaveDir)}/`;
+  const paths = listed.output
+    .split("\0")
+    .filter((path) => path !== "" && !path.startsWith(weavePrefix))
+    .map((path) => path.replace(/\s+/g, " "))
+    .sort();
+  if (paths.length === 0) return null;
+  return `${paths.length} file(s) are not in the last commit: ${describeDirty(paths)}. The planner, and any worker that gets its own worktree, start from the last commit and cannot open them. Commit them so every step sees the same code.`;
 }

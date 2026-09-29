@@ -4,3 +4,6 @@ export const MAX_DISCOVERIES = 60;
 export const MAX_FAILURES = 60;
 export const MAX_MESSAGE_BUFFER_CHARS = 20_000;
 export const TASK_NOTES_KEY = "taskNotes";
+export const MAX_RECENT_MESSAGES = 4;
+export const MAX_RECENT_MESSAGE_CHARS = 600;
+export const CODE_FENCE = /```[\s\S]*?(?:```|$)/g;

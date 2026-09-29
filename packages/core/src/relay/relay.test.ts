@@ -74,6 +74,25 @@ test("exit condition: one task moves Claude → Codex → Gemini → OpenCode on
   assert.equal(checkpoint?.state.engineState.attempts, 3);
 });
 
+test("a restart after the turn limit hands the same engine its own last words", async () => {
+  const root = await marketplaceRepo();
+  const weaveDir = join(root, ".weave");
+  const { model } = await buildProjectModel({ root });
+  const ledger = new Ledger(weaveDir, "turn-limit-run");
+  const task: TaskContract = { id: "PAYOUT", prompt: "Change the seller payout API to accept a currency", cwd: root, allowedPaths: ["apps/api/**"] };
+  const prompts: string[] = [];
+  const runAttempt = async ({ task: running, ledger: log }: AttemptInput): Promise<AttemptOutcome> => {
+    prompts.push(running.prompt);
+    log.append("agent.message", { taskId: running.id, update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: `Root cause found on attempt ${prompts.length}.` } } });
+    const isFirst = prompts.length === 1;
+    return { status: isFirst ? "cancelled" : "ok", stoppedBy: isFirst ? "maxTurns" : null, error: null, contextUsed: null, contextSize: null, finalMessage: "" };
+  };
+  const result = await relayTask({ task, engines: ["claude-code"], weaveDir, ledger, model, runAttempt });
+  assert.equal(result.status, "ok");
+  assert.deepEqual(result.attempts.map((attempt) => [attempt.engineId, attempt.endedBy]), [["claude-code", "max_turns"], ["claude-code", null]]);
+  assert.match(prompts[1] ?? "", /LAST WORDS[^\n]*\n {2}Root cause found on attempt 1\./);
+});
+
 test("the lifecycle escalates with context use, and stop reasons pick the next move", () => {
   const at = (ratio: number) => lifecycleStage({ contextUsed: ratio * 1000, contextSize: 1000, isProviderLimited: false, isEngineDown: false });
   assert.deepEqual([0.1, 0.55, 0.7, 0.8, 0.9].map(at), ["normal", "compress-tool-output", "trim-history", "summarize", "reconstruct"]);

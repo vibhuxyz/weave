@@ -13,6 +13,7 @@ export interface BuildWorkerContextInput {
   readonly task: WorkerTask;
   readonly model: ProjectModel;
   readonly state?: TaskState | null;
+  readonly engineId?: string | null;
 }
 
 export async function buildWorkerContext(input: BuildWorkerContextInput): Promise<WorkerContext> {
@@ -23,5 +24,5 @@ export async function buildWorkerContext(input: BuildWorkerContextInput): Promis
     discoverRules(RULE_DIRS.map((dir) => join(root, dir))),
     discoverSkills(SKILL_DIRS.map((dir) => join(root, dir))),
   ]);
-  return renderWorkerContext({ task, model, answer, state: input.state ?? null, snippets, rules, skills: buildSkillRegistry(projectSkills) });
+  return renderWorkerContext({ task, model, answer, state: input.state ?? null, engineId: input.engineId ?? null, snippets, rules, skills: buildSkillRegistry(projectSkills) });
 }

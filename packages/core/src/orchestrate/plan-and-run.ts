@@ -12,7 +12,7 @@ import type { EmployeeRegistry, PreparedEmployees } from "../employees/index.ts"
 import { Ledger, newRunId, once } from "../shared/index.ts";
 import { buildProjectModel, queryProject, renderProjectContext, type ProjectModel } from "../context/index.ts";
 import { buildExecutionPlan, executionPlanEvent } from "../execution-plan/index.ts";
-import { checkCleanBase } from "../worktree/index.ts";
+import { checkCleanBase, describeUntrackedFiles } from "../worktree/index.ts";
 import { adaptiveSetup, engineCandidates, type AdaptiveSetup } from "./adaptive-setup.ts";
 import { employeeRoutes, employeeSetup, loadRoster, rememberRun, withEmployeeVerification } from "./employee-setup.ts";
 import { contractReviser } from "./contract-revision.ts";
@@ -79,6 +79,7 @@ interface PlanContext {
   readonly ledger: Ledger;
   readonly kind: ProjectKind;
   readonly rungs: readonly VerificationRung[];
+  readonly preflightWarnings: readonly string[];
 }
 
 interface PlanSources {
@@ -90,7 +91,7 @@ interface PlanSources {
 
 async function plan(options: PlanAndRunOptions, context: PlanContext, sources: PlanSources): Promise<PlanningOutcome> {
   const engines = choosePlanningEngines(sources.engineCandidates);
-  const fast = fastPlan({ request: options.request, kind: context.kind, model: sources.model, repoRoot: context.repoRoot, ledger: context.ledger, engines });
+  const fast = fastPlan({ request: options.request, kind: context.kind, model: sources.model, repoRoot: context.repoRoot, ledger: context.ledger, engines, preflightWarnings: context.preflightWarnings });
   if (fast) return fast;
   const projectContext = sources.model ? renderProjectContext(queryProject(sources.model, options.request)) : null;
   const withTurn = (runTurn: TurnRunner, reviewTurn: TurnRunner | undefined) =>
@@ -229,8 +230,8 @@ export async function planAndRun(options: PlanAndRunOptions): Promise<PlanAndRun
   if (!clean.ok) return { status: "refused", reason: clean.reason };
   const weaveDir = weaveDirFor(repoRoot, options.config);
   const ledger = new Ledger(weaveDir, newRunId(), options.onEvent);
-  const [kind, detected] = await Promise.all([options.kind ?? detectProjectKind(repoRoot), intake(repoRoot)]);
-  const context: PlanContext = { repoRoot, weaveDir, ledger, kind, rungs: availableRungs(detected) };
+  const [kind, detected, untracked] = await Promise.all([options.kind ?? detectProjectKind(repoRoot), intake(repoRoot), describeUntrackedFiles(repoRoot, weaveDir)]);
+  const context: PlanContext = { repoRoot, weaveDir, ledger, kind, rungs: availableRungs(detected), preflightWarnings: untracked ? [untracked] : [] };
 
   const [model, roster] = await Promise.all([
     projectModelFor(repoRoot, weaveDir, kind),
