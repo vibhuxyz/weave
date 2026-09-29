@@ -1,9 +1,10 @@
-import { WEAVE_SENDER, type CoordinationEvent } from "@weave/protocol";
+import { WEAVE_SENDER, type Artifact, type CoordinationEvent } from "@weave/protocol";
 import type { DependentsOf } from "./types.ts";
 
-function consumersOfOutput(event: CoordinationEvent, name: string, dependentsOf: DependentsOf): readonly string[] {
+function consumersOfArtifact(event: CoordinationEvent, artifact: Artifact, dependentsOf: DependentsOf): readonly string[] {
+  const carried = new Set([artifact.name, ...artifact.provides]);
   return dependentsOf(event.from)
-    .filter((dependent) => dependent.requiredOutputs.length === 0 || dependent.requiredOutputs.includes(name))
+    .filter((dependent) => dependent.requiredOutputs.length === 0 || dependent.requiredOutputs.some((output) => carried.has(output)))
     .map((dependent) => dependent.consumer);
 }
 
@@ -17,7 +18,7 @@ function candidates(event: CoordinationEvent, dependentsOf: DependentsOf): reado
     case "artifact.updated":
     case "contract.published":
     case "contract.changed":
-      return consumersOfOutput(event, event.data.artifact.name, dependentsOf);
+      return consumersOfArtifact(event, event.data.artifact, dependentsOf);
     case "task.started":
     case "task.blocked":
     case "task.completed":
@@ -29,6 +30,11 @@ function candidates(event: CoordinationEvent, dependentsOf: DependentsOf): reado
       return [event.data.consumer];
     case "dependency.blocked":
       return event.data.need.task ? [event.data.need.task, WEAVE_SENDER] : [WEAVE_SENDER];
+    case "scope.expand":
+      return [WEAVE_SENDER];
+    case "scope.granted":
+    case "scope.denied":
+      return [event.data.taskId];
     case "subtask.completed":
     case "review.requested":
     case "escalation.created":

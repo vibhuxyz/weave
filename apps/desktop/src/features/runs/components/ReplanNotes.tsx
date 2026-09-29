@@ -1,6 +1,8 @@
 import { useRunStore } from "../store";
 import type { ReplanEntry } from "../types";
 
+const NO_REPLANS: readonly ReplanEntry[] = [];
+
 const ACTION_LABEL = { continue: "kept going", rerun: "ran work again", stop: "stopped for a person" } as const;
 
 function triggerText(entry: ReplanEntry): string {
@@ -26,7 +28,7 @@ function ReplanRow({ entry }: { readonly entry: ReplanEntry }) {
 }
 
 export function ReplanNotes() {
-  const replans = useRunStore((state) => state.run?.replans ?? []);
+  const replans = useRunStore((state) => state.run?.replans ?? NO_REPLANS);
   if (replans.length === 0) return null;
   return (
     <div className="flex w-full flex-col gap-1 text-[11px] text-agent-text-muted" role="group" aria-label="Coordinator decisions">

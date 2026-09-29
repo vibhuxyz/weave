@@ -14,7 +14,10 @@ function mayOverlap(a: string, b: string): boolean {
 }
 
 function upstreamOf(tasks: readonly ReviewedTask[]): ReadonlyMap<string, ReadonlySet<string>> {
-  const direct = new Map(tasks.map((task) => [task.id, (task.dependencies ?? []).map((dependency) => dependency.task)]));
+  const direct = new Map(tasks.map((task) => [
+    task.id,
+    (task.dependencies ?? []).filter((dependency) => dependency.requiredOutputs.length === 0).map((dependency) => dependency.task),
+  ]));
   const upstream = new Map<string, ReadonlySet<string>>();
   const collect = (id: string, visiting: ReadonlySet<string>): ReadonlySet<string> => {
     const known = upstream.get(id);
@@ -41,6 +44,6 @@ export function concurrentWriteConflicts(tasks: readonly ReviewedTask[]): readon
   const isOrdered = (a: ReviewedTask, b: ReviewedTask) => Boolean(upstream.get(a.id)?.has(b.id) || upstream.get(b.id)?.has(a.id));
   return tasks.flatMap((task, index) => tasks.slice(index + 1).flatMap((other) => {
     const shared = isOrdered(task, other) ? null : sharedWrite(task, other);
-    return shared === null ? [] : [`Tasks ${task.id} and ${other.id} can run at the same time but both write ${shared}; make one depend on the other or give them separate allowedPaths`];
+    return shared === null ? [] : [`Tasks ${task.id} and ${other.id} can run at the same time but both write ${shared}; give them separate allowedPaths, or make one wait for the whole of the other with an empty "requiredOutputs"`];
   }));
 }

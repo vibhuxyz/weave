@@ -6,6 +6,7 @@ export interface RunConfig {
   mode?: string;
   effort?: string;
   fast?: "on" | "off";
+  configOptions?: Record<string, string>;
   maxTurns?: number;
   timeoutMs?: number;
   weaveDir?: string;

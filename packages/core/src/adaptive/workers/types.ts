@@ -5,7 +5,7 @@ export interface BenefitTask {
   readonly id: string;
   readonly allowedPaths?: readonly string[];
   readonly owns?: readonly ResourceRef[];
-  readonly dependencies?: readonly { readonly task: string }[];
+  readonly dependencies?: readonly { readonly task: string; readonly requiredOutputs?: readonly string[] }[];
 }
 
 export interface BenefitBreakdown {

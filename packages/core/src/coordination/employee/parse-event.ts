@@ -1,6 +1,6 @@
 import { EMPLOYEE_EVENT_TYPES, RESOURCE_KINDS, type DependencyNeed, type EmployeeEventType, type ResourceKind } from "@weave/protocol";
-import { isRecord, readOptionalString, readPattern, readString, type FieldContext } from "../../shared/index.ts";
-import { MAX_EVENT_TEXT_CHARS, MAX_NAME_CHARS, MAX_SUBTASK_CHARS, OUTPUT_NAME_PATTERN } from "./constants.ts";
+import { isRecord, readOptionalString, readPattern, readString, readStringList, type FieldContext } from "../../shared/index.ts";
+import { MAX_ARTIFACT_PATH_CHARS, MAX_EVENT_TEXT_CHARS, MAX_EXPAND_PATHS, MAX_NAME_CHARS, MAX_SUBTASK_CHARS, OUTPUT_NAME_PATTERN } from "./constants.ts";
 import { parseArtifact } from "./parse-artifact.ts";
 import type { EmployeeSubmission, ParseSubmissionResult } from "./types.ts";
 
@@ -54,6 +54,16 @@ function parseData(type: EmployeeEventType, ctx: FieldContext): EmployeeSubmissi
       const need = parseNeed(ctx.record["need"], ctx.issues);
       const reason = readString(ctx, "reason", MAX_EVENT_TEXT_CHARS);
       return need === null || reason === null ? null : { type, data: { need, reason } };
+    }
+    case "scope.expand": {
+      const reason = readString(ctx, "reason", MAX_EVENT_TEXT_CHARS);
+      const paths = readStringList(ctx, "paths", { maxItems: MAX_EXPAND_PATHS, maxChars: MAX_ARTIFACT_PATH_CHARS });
+      if (reason === null) return null;
+      if (paths.length === 0) {
+        ctx.issues.push(`${WHERE} scope.expand: "paths" must name at least one path`);
+        return null;
+      }
+      return { type, data: { paths, reason } };
     }
     case "review.requested":
     case "verification.failed":

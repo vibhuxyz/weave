@@ -5,7 +5,7 @@ import { inferArchitecture } from "./architecture/index.ts";
 import { loadModuleCache, saveModuleCache } from "./cache/index.ts";
 import { CONTEXT_CACHE_FILE } from "./constants.ts";
 import { readGitFacts } from "./git/index.ts";
-import { buildDependencyGraph } from "./graph/index.ts";
+import { buildDependencyGraph, buildModulePathIndex } from "./graph/index.ts";
 import { parseSources } from "./parse-sources.ts";
 import { scanProject } from "./scan/index.ts";
 import type { ModuleFacts, ProjectFile, ProjectModel } from "./types.ts";
@@ -52,7 +52,7 @@ export async function buildProjectModel(options: BuildModelOptions): Promise<{ r
   const located = scan.files.map((file) => ({ ...file, workspace: workspaceOfPath(file.path, workspaces), hash: null }));
   const parsed = await parseSources(root, located, cache);
   const files: readonly ProjectFile[] = located.map((file) => ({ ...file, hash: parsed.cache.get(file.path)?.hash ?? null }));
-  const graph = buildDependencyGraph(parsed.modules, { files: new Set(paths), tsPaths: manifests.tsPaths, packagesByName: namedPackages(manifests.manifests) });
+  const graph = buildDependencyGraph(parsed.modules, { files: new Set(paths), tsPaths: manifests.tsPaths, packagesByName: namedPackages(manifests.manifests), modulePaths: buildModulePathIndex(paths) });
   if (cachePath) await saveModuleCache(cachePath, parsed.cache);
   const model: ProjectModel = {
     version: 2,

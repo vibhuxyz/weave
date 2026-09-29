@@ -41,6 +41,16 @@ test("buildContract renders schemas, endpoints and events as TypeScript", () => 
   assert.deepEqual(contract.exports, ["Note", "CreateNoteRequest", "ENDPOINTS", "Events", "CONTRACT_VERSION"]);
 });
 
+test("buildContract lays down a workspace root the tasks can build against", () => {
+  const manifest = contract.files.find((file) => file.path === "package.json")?.content ?? "";
+  assert.deepEqual(JSON.parse(manifest).workspaces, ["apps/*", "packages/*"]);
+  const tsconfig = contract.files.find((file) => file.path === "tsconfig.base.json")?.content ?? "";
+  const options = JSON.parse(tsconfig).compilerOptions;
+  assert.equal(options.strict, true);
+  assert.equal(options.noUncheckedIndexedAccess, true);
+  assert.match(summarizeContract(contract), /tsconfig\.base\.json/);
+});
+
 test("buildContract is deterministic", () => {
   assert.deepEqual(buildContract(parsed.blueprint, 3), contract);
 });

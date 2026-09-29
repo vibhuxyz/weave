@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { createPlan } from "../planner.ts";
 import type { PlanRequest } from "../types.ts";
 import { parseReview } from "./parse-review.ts";
-import { buildReviewPrompt } from "./prompt.ts";
+import { MAX_REVIEW_TASK_PROMPT_BYTES } from "./constants.ts";
+import { buildReviewPrompt, renderPlanForReview } from "./prompt.ts";
 import { runReview } from "./run-review.ts";
 import { shouldReview } from "./should-review.ts";
 import type { ReviewableTask } from "./types.ts";
@@ -51,6 +52,16 @@ test("the review prompt keeps the brief and the plan inside their tags", () => {
 function review(reply: () => Promise<string>, revised: string | null) {
   return runReview({ plannerPrompt: "brief", tasks: TASKS, reviewTurn: reply, revise: async () => revised });
 }
+
+test("a long task prompt reaches the reviewer whole, and a cut one says so", () => {
+  const prompt = `${"step ".repeat(300)}finish`;
+  const rendered = renderPlanForReview([{ ...TASKS[0], id: "T1", title: "API", prompt }]);
+  assert.ok(rendered.includes("finish"), "the reviewer must see the end of the prompt, not a mid-sentence cut");
+  assert.ok(!rendered.includes("(truncated)"));
+
+  const overlong = renderPlanForReview([{ ...TASKS[0], id: "T1", title: "API", prompt: "x".repeat(MAX_REVIEW_TASK_PROMPT_BYTES + 100) }]);
+  assert.match(overlong, /\(truncated\)/, "a prompt that is genuinely cut is marked, so the reviewer does not call it an incomplete plan");
+});
 
 test("runReview approves, revises, or keeps the plan with a reason", async () => {
   const approved = await review(async () => fenced({ status: "approved" }), null);

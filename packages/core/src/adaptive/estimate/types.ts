@@ -11,9 +11,14 @@ export interface ChainEstimate {
   readonly successProbability: number;
 }
 
+export interface GraphDependency {
+  readonly task: string;
+  readonly requiredOutputs?: readonly string[];
+}
+
 export interface GraphTask {
   readonly id: string;
-  readonly dependencies?: readonly { readonly task: string }[];
+  readonly dependencies?: readonly GraphDependency[];
 }
 
 export interface ScheduledInterval {

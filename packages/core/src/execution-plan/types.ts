@@ -2,7 +2,7 @@ import type { WeaveEvent } from "@weave/protocol";
 
 export interface ExecutionTask {
   readonly id: string;
-  readonly dependencies?: readonly { readonly task: string }[];
+  readonly dependencies?: readonly { readonly task: string; readonly requiredOutputs?: readonly string[] }[];
 }
 
 export interface ExecutionPlanInput {

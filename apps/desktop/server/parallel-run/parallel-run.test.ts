@@ -176,3 +176,26 @@ test("a gate answers once, and an already-aborted run is never asked", async () 
   assert.equal(gate.decide(true), false);
   assert.deepEqual(calls, []);
 });
+
+test("a run uses the engine and the model the user picked in the chat, not an engine default", async () => {
+  const seen: Parameters<typeof planAndRun>[0][] = [];
+  const capture: typeof planAndRun = async (options) => {
+    seen.push(options);
+    return { status: "no-change-needed", reason: "captured" };
+  };
+  const runs = createRunController(capture, READY);
+  await runs.start({
+    request: "build a todo app", projectDir: "/repo", engineId: "claude-code",
+    fallbackEngineIds: ["claude-code", "codex"],
+    configOptions: { model: "claude-haiku-4-5", effort: "medium" },
+    runKey: "k1", send: () => undefined,
+  });
+  assert.deepEqual(seen[0]?.config, {
+    engine: "claude-code",
+    fallbackEngines: ["codex"],
+    configOptions: { model: "claude-haiku-4-5", effort: "medium" },
+  });
+
+  await runs.start({ request: "again", projectDir: "/repo", engineId: "claude-code", runKey: "k2", send: () => undefined });
+  assert.deepEqual(seen[1]?.config, { engine: "claude-code", fallbackEngines: [] });
+});

@@ -8,7 +8,8 @@ How the pieces fit, and why the seams are where they are.
 
 Tiers: [V1](V1.md) · [CONTINUATION](CONTINUATION.md) · [MVP](MVP.md) ·
 [V2](V2.md) · [V3](V3.md) · [V4](V4.md) ·
-[ROADMAP](ROADMAP.md) · [LADDER](LADDER.md) · [FINDINGS](FINDINGS.md)
+[ROADMAP](ROADMAP.md) · [LADDER](LADDER.md) · [FINDINGS](FINDINGS.md) ·
+[WORKER_MODEL](WORKER_MODEL.md)
 
 ---
 

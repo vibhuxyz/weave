@@ -14,7 +14,8 @@
     "tauri": "bun run --filter desktop tauri",
     "build": "bun run --filter desktop build",
     "build:app": "bun run --filter desktop tauri build && cp -a apps/desktop/src-tauri/target/release/bundle/macos/*.app ./",
-    "typecheck": "bun run --workspaces typecheck"
+    "typecheck": "bun run --workspaces typecheck",
+    "diagnose": "node --experimental-strip-types scripts/diagnose.mjs"
   },
   "trustedDependencies": [
     "better-sqlite3",

@@ -63,6 +63,11 @@ export function parseJsonBlock(text: string): JsonBlockResult {
   return { ok: false, issue: "Output is not valid JSON" };
 }
 
+export function unparsedIssue(issue: string, text: string, maxChars: number): string {
+  const excerpt = text.replace(/\s+/g, " ").trim().slice(0, maxChars);
+  return excerpt === "" ? issue : `${issue}; the engine answered: ${JSON.stringify(excerpt)}`;
+}
+
 export function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

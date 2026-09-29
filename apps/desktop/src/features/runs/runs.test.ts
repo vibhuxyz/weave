@@ -44,7 +44,7 @@ test("the worker count and the constraints behind it reach the plan header", () 
   const count = { workers: 2, limitedBy: "machine", reason: "2 workers: this machine can run 2 at a time", requested: 5, maxWorkers: 4, machineCapacity: 2, affordable: null } as const;
   const run = applyRunMessages(null, [started, plan, update({ kind: "worker-count", count })]);
   assert.deepEqual(run?.workerCount, count);
-  assert.equal(workerCountText(count), "2 workers, set by this machine");
+  assert.equal(workerCountText(count), "up to 2 workers, set by this machine");
   assert.equal(workerCapacityText(count), "plan asks for 5 · project allows 4 · machine fits 2");
   assert.match(workerCapacityText({ ...count, affordable: 3 }), /cost limits afford 3$/);
 });
@@ -55,8 +55,8 @@ test("each lane only takes the updates for its own taskId", () => {
     plan,
     update({ kind: "task-started", taskId: "T1" }),
     update({ kind: "text", taskId: "T1", text: "writing add" }),
-    update({ kind: "file", taskId: "T1", path: "add.js" }),
-    update({ kind: "task-settled", taskId: "T1", status: "ok", reason: null }),
+    update({ kind: "file", taskId: "T1", path: "add.js", change: "modified" }),
+    update({ kind: "task-settled", taskId: "T1", status: "ok", reason: null, wallMs: 1000, installMs: 0 }),
   ]);
   assert.equal(run?.lanes.T1?.status, "ok");
   assert.equal(run?.lanes.T2?.status, "waiting");
@@ -88,7 +88,7 @@ test("a task outside the plan, like a contract revision, gets its own lane", () 
 });
 
 test("files in one stream block stay capped, and the rest are counted", () => {
-  const files = Array.from({ length: MAX_BLOCK_FILES + 2 }, (_, index) => update({ kind: "file", taskId: "T1", path: `f${index}.js` }));
+  const files = Array.from({ length: MAX_BLOCK_FILES + 2 }, (_, index) => update({ kind: "file", taskId: "T1", path: `f${index}.js`, change: "modified" }));
   const block = applyRunMessages(null, [started, plan, ...files])?.stream[0];
   assert.equal(block?.files.length, MAX_BLOCK_FILES);
   assert.equal(block?.hiddenFileCount, 2);

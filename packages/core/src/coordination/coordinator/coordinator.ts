@@ -1,16 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { WEAVE_SENDER, type CoordinationDraft, type CoordinationEvent, type DependencyNeed, type TaskContract } from "@weave/protocol";
 import type { Ledger } from "../../shared/index.ts";
-import type { AvailableOutputs } from "../../scheduler/index.ts";
 import { ArtifactStore, DependencyGraph, artifactKey, invalidatedConsumers, staleConsumers, type ArtifactInput, type ArtifactKind } from "../dependencies/index.ts";
 import type { EmployeeSubmission } from "../employee/index.ts";
 import { Mailboxes, recipientsFor, type InboxBatch } from "../mailbox/index.ts";
 import { OwnershipRegistry, claimsForTask, describeResource } from "../ownership/index.ts";
 import { buildEvent } from "./envelope.ts";
+import { decideExpansion } from "./expand-scope.ts";
 import { latestByOutput } from "./artifact-index.ts";
 import { declaredProducersOf, findProducer, promisedProducersOf } from "./find-producer.ts";
 import { subtaskIndex } from "./subtask-index.ts";
-import type { CoordinationChannel, CoordinationReport, CoordinatorOptions, PublishResult, SettledTaskStatus } from "./types.ts";
+import type { CoordinationChannel, CoordinationReport, CoordinatorOptions, ExpandedScope, PublishResult, SettledTaskStatus } from "./types.ts";
 import { watchEmployeeMessages } from "./watch-ledger.ts";
 
 interface OpenNeed {
@@ -25,6 +25,7 @@ const ESCALATION_TYPES: ReadonlySet<CoordinationEvent["type"]> = new Set(["escal
 export class Coordinator {
   private readonly ledger: Ledger;
   private readonly now: () => Date;
+  private readonly contextFor: (paths: readonly string[]) => string;
   private readonly graph: DependencyGraph<TaskContract>;
   private readonly artifacts = new ArtifactStore();
   private readonly mailboxes = new Mailboxes();
@@ -33,12 +34,14 @@ export class Coordinator {
   private readonly consumed = new Map<string, Map<string, number>>();
   private readonly blockedTasks = new Set<string>();
   private openNeeds: readonly OpenNeed[] = [];
+  private readonly expanded: ExpandedScope[] = [];
   private seq = 0;
   private wake: { promise: Promise<void>; resolve: () => void } = Coordinator.waiter();
 
   constructor(options: CoordinatorOptions) {
     this.ledger = options.ledger;
     this.now = options.now ?? (() => new Date());
+    this.contextFor = options.contextFor ?? (() => "");
     this.graph = new DependencyGraph(options.tasks);
   }
 
@@ -52,10 +55,6 @@ export class Coordinator {
     return this.graph.current();
   }
 
-  availableOutputs(): AvailableOutputs {
-    return this.artifacts.outputsByProducer();
-  }
-
   nextChange(): Promise<void> {
     return this.wake.promise;
   }
@@ -65,18 +64,31 @@ export class Coordinator {
   }
 
   channelFor(taskId: string): CoordinationChannel {
-    return { taskId, publish: (submission) => this.submit(taskId, submission), drain: () => this.drain(taskId), awaited: () => this.graph.dependentsOf(taskId) };
+    return {
+      taskId,
+      publish: (submission) => this.submit(taskId, submission),
+      drain: () => this.drain(taskId),
+      awaited: () => this.graph.dependentsOf(taskId),
+      published: () => this.artifacts.outputsByProducer().get(taskId) ?? new Set(),
+    };
   }
 
-  claim(task: TaskContract): boolean {
+  tryClaim(task: TaskContract): boolean {
     const claimed = this.ownership.claim(task.id, claimsForTask(task));
     if (claimed.ok) {
       this.blockedTasks.delete(task.id);
       if (claimed.resources.length > 0) this.ledger.append("ownership.claimed", { taskId: task.id, resources: [...claimed.resources] });
       return true;
     }
+    return false;
+  }
+
+  claim(task: TaskContract): boolean {
+    if (this.tryClaim(task)) return true;
     if (this.blockedTasks.has(task.id)) return false;
     this.blockedTasks.add(task.id);
+    const claimed = this.ownership.claim(task.id, claimsForTask(task));
+    if (claimed.ok) return true; // Just in case
     const conflicts = claimed.conflicts.map((conflict) => `${describeResource(conflict.resource)} overlaps ${describeResource(conflict.held)} held by ${conflict.heldBy}`);
     this.ledger.append("ownership.blocked", { taskId: task.id, conflicts });
     this.emit(task.id, { type: "task.blocked", data: { reason: `waiting for ownership: ${conflicts.join("; ")}` } });
@@ -87,8 +99,22 @@ export class Coordinator {
     this.emit(taskId, { type: "task.started", data: {} });
     const dependencies = this.graph.current().find((task) => task.id === taskId)?.dependencies ?? [];
     if (dependencies.length === 0) return;
-    const outputs = [...new Set(dependencies.flatMap((dependency) => dependency.requiredOutputs))].sort();
-    this.emit(WEAVE_SENDER, { type: "dependency.ready", data: { consumer: taskId, outputs } });
+    const required = [...new Set(dependencies.flatMap((dependency) => dependency.requiredOutputs))].sort();
+    const outputs = required.filter((output) => this.artifacts.producersOf(output).length > 0);
+    const pending = required.filter((output) => this.artifacts.producersOf(output).length === 0);
+    this.redeliverPublished(taskId, outputs);
+    this.emit(WEAVE_SENDER, { type: "dependency.ready", data: { consumer: taskId, outputs, pending } });
+  }
+
+  private redeliverPublished(consumer: string, outputs: readonly string[]): void {
+    const wanted = new Set(outputs);
+    const waiting = this.mailboxes.peek(consumer);
+    for (const event of this.lastArtifactEvents.values()) {
+      if (!("artifact" in event.data)) continue;
+      const carried = [event.data.artifact.name, ...event.data.artifact.provides];
+      if (!carried.some((output) => wanted.has(output)) || waiting.includes(event)) continue;
+      this.mailboxes.deliver(consumer, event);
+    }
   }
 
   taskSettled(taskId: string, status: SettledTaskStatus): void {
@@ -113,6 +139,8 @@ export class Coordinator {
         return { ok: true, event: this.publishArtifact(taskId, "contract", submission.data.artifact) };
       case "dependency.blocked":
         return { ok: true, event: this.requestDependency(taskId, submission.data.need, submission.data.reason) };
+      case "scope.expand":
+        return { ok: true, event: this.expandScope(taskId, submission.data.paths, submission.data.reason) };
       case "subtask.completed":
         return { ok: true, event: this.recordSubtask(taskId, submission.data.subtask) };
       case "task.blocked":
@@ -182,6 +210,39 @@ export class Coordinator {
     this.resolveNeeds(found.producer);
     this.notifyChange();
     return request;
+  }
+
+  private expandScope(taskId: string, paths: readonly string[], reason: string): CoordinationEvent {
+    const request = this.emit(taskId, { type: "scope.expand", data: { paths: [...paths], reason } });
+    const task = this.graph.current().find((candidate) => candidate.id === taskId);
+    if (!task) return this.escalate(request, `${taskId} asked to expand its scope`, `Unknown task ${taskId}`);
+
+    const decision = decideExpansion({ task, paths, ownerOf: (resource) => this.ownership.ownerOf(resource) });
+    if (!decision.ok) {
+      this.emit(WEAVE_SENDER, { type: "scope.denied", data: { taskId, paths: [...paths], reason: decision.reason } }, request.correlationId);
+      this.ledger.append("scope.denied", { taskId, paths: [...paths], reason: decision.reason });
+      return request;
+    }
+
+    const claimed = this.ownership.claim(taskId, decision.claims);
+    if (!claimed.ok) {
+      const reasons = claimed.conflicts.map((conflict) => `${describeResource(conflict.resource)} held by ${conflict.heldBy}`).sort().join("; ");
+      this.emit(WEAVE_SENDER, { type: "scope.denied", data: { taskId, paths: [...decision.paths], reason: reasons } }, request.correlationId);
+      this.ledger.append("scope.denied", { taskId, paths: [...decision.paths], reason: reasons });
+      return request;
+    }
+
+    this.graph.widenScope(taskId, decision.paths);
+    const context = this.contextFor(decision.paths);
+    this.expanded.push({ taskId, paths: decision.paths, reason });
+    this.emit(WEAVE_SENDER, { type: "scope.granted", data: { taskId, paths: [...decision.paths], context } }, request.correlationId);
+    this.ledger.append("scope.expanded", { taskId, paths: [...decision.paths], reason });
+    this.notifyChange();
+    return request;
+  }
+
+  expansions(): readonly ExpandedScope[] {
+    return this.expanded;
   }
 
   private recordSubtask(taskId: string, subtask: string): CoordinationEvent {

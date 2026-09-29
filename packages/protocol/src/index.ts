@@ -17,6 +17,12 @@ export type {
   ResourceRef,
 } from "./coordination/index.ts";
 export * from "./events/index.ts";
+export { RUN_MODES, RUN_STATUSES } from "./run/index.ts";
+export type { RunConfiguration, RunMode, RunRecord, RunRepository, RunStatus } from "./run/index.ts";
+export { WORKER_STATUSES } from "./worker/index.ts";
+export type { WorkerProgress, WorkerRecord, WorkerRuntime, WorkerStatus, WorkerWorkspace } from "./worker/index.ts";
+export { ARTIFACT_STATUSES, ARTIFACT_TYPES } from "./artifact/index.ts";
+export type { ArtifactRecord, ArtifactStatus, ArtifactType } from "./artifact/index.ts";
 export * from "./task/index.ts";
 export * from "./config/index.ts";
 export * from "./eval/index.ts";

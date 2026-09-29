@@ -41,7 +41,10 @@ export function buildExecutionPlan(input: ExecutionPlanInput): ExecutionPlan {
   const schedule = listSchedule(input.tasks, durationOf, input.workers);
   const placed = [...schedule.intervals.entries()].map(([taskId, interval]) => ({ taskId, interval }));
   const workerOf = assignWorkers(placed, input.workers);
-  const afterByTask = new Map(input.tasks.map((task) => [task.id, (task.dependencies ?? []).map((dependency) => dependency.task)]));
+  const afterByTask = new Map(input.tasks.map((task) => [
+    task.id,
+    (task.dependencies ?? []).filter((dependency) => (dependency.requiredOutputs ?? []).length === 0).map((dependency) => dependency.task),
+  ]));
   const slots = placed
     .map((entry) => slotOf(input, entry, workerOf.get(entry.taskId) ?? 1, afterByTask.get(entry.taskId) ?? []))
     .sort((a, b) => a.startMs - b.startMs || a.worker - b.worker);

@@ -59,6 +59,7 @@ import {
 import { EngineAuthPanel } from "@/features/auth";
 import { HomeView } from "@/home/canvas/ui";
 import { basename } from '@/features/projects/lib';
+import { CommandMenu, commandQueryOf, matchCommands, type SlashCommand } from '@/features/chat/commands';
 import { latestPlanEntries, useAcpChat, type ChatImageAttachment } from '@/features/chat/hooks';
 import {
   AutoCompactSetting,
@@ -142,6 +143,7 @@ export function App() {
     submitSetupConsent,
     isOpeningChat,
     send,
+    showUserMessage,
     compact,
     isCompacting,
     isCompactSupported,
@@ -709,6 +711,13 @@ export function App() {
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionItemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
+  // "/" at the start of an empty draft opens the command menu; picking one
+  // leaves the trigger in the box so the prompt is typed straight after it.
+  const [commandQuery, setCommandQuery] = useState<string | null>(null);
+  const [commandIndex, setCommandIndex] = useState(0);
+  // `/img` has its own picker: one popover at a time.
+  const commandMatches = imgQuery === null ? matchCommands(commandQuery) : [];
+
   // A query with a "/" or "." is a path — `@src/App.tsx` — so the menu shows
   // files instead of agents.
   const fileMode = mentionQuery !== null && /[./]/.test(mentionQuery);
@@ -747,7 +756,9 @@ export function App() {
     setMentionQuery(m ? (m[1] ?? "") : null);
     const img = /(?:^|\s)\/img[ ]?([\w. -]*)$/.exec(head);
     setImgQuery(img ? (img[1] ?? "") : null);
+    setCommandQuery(commandQueryOf(head));
     setMentionIndex(0);
+    setCommandIndex(0);
   };
 
   const editPrompt = (text: string) => {
@@ -757,6 +768,13 @@ export function App() {
       el?.focus();
       el?.setSelectionRange(text.length, text.length);
     });
+  };
+
+  const pickCommand = (command: SlashCommand) => {
+    const text = `${command.trigger} `;
+    setCommandQuery(null);
+    setCommandIndex(0);
+    editPrompt(text);
   };
 
   /**
@@ -923,6 +941,7 @@ export function App() {
     dismissFinishedRun();
     const runRequest = parseRunCommand(draft);
     if (runRequest !== null) {
+      showUserMessage(draft);
       startRun(runRequest);
       setDraft("");
       resetComposerHeight();
@@ -1472,6 +1491,12 @@ export function App() {
               isDraggingImage && "outline outline-2 outline-offset-[-2px] outline-primary",
             )}
           >
+            <CommandMenu
+              commands={commandMatches}
+              activeIndex={commandIndex}
+              onHighlight={setCommandIndex}
+              onPick={pickCommand}
+            />
             {mentionMatches.length > 0 && (
               <div className="absolute bottom-full left-0 z-20 mb-2 w-80 overflow-hidden rounded-2xl border border-agent-border bg-agent-surface-raised p-2 shadow-[0_20px_56px_rgba(0,0,0,0.5)]">
                 <div className="flex items-center gap-1 px-1 pb-2 text-sm">
@@ -1783,6 +1808,25 @@ export function App() {
                     return;
                   }
                 }
+                if (commandMatches.length > 0) {
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    const step = event.key === "ArrowDown" ? 1 : commandMatches.length - 1;
+                    setCommandIndex((i) => (i + step) % commandMatches.length);
+                    return;
+                  }
+                  if (event.key === "Enter" || event.key === "Tab") {
+                    event.preventDefault();
+                    const command = commandMatches[commandIndex] ?? commandMatches[0];
+                    if (command) pickCommand(command);
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setCommandQuery(null);
+                    return;
+                  }
+                }
                 if (mentionMatches.length > 0) {
                   if (event.key === "ArrowDown") {
                     event.preventDefault();
@@ -1821,7 +1865,7 @@ export function App() {
                 }
               }}
               placeholder={
-                `Chat with ${selectedAgent?.name ?? (ready && engineLabel ? engineLabel : "Agent")}, @ for agents or files`
+                `Chat with ${selectedAgent?.name ?? (ready && engineLabel ? engineLabel : "Agent")}, / for commands, @ for agents or files`
               }
               rows={1}
               disabled={!ready}

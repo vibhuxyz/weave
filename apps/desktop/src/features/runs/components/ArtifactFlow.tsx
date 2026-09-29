@@ -2,6 +2,8 @@ import { useShallow } from "zustand/react/shallow";
 import { useRunStore } from "../store";
 import type { RunArtifactEntry } from "../types";
 
+const NO_ARTIFACTS: readonly RunArtifactEntry[] = [];
+
 function deliveryText(entry: RunArtifactEntry): string {
   return entry.deliveredTo.length > 0 ? `to ${entry.deliveredTo.join(", ")}` : "waiting for a consumer";
 }
@@ -20,7 +22,7 @@ function ArtifactRow({ entry }: { readonly entry: RunArtifactEntry }) {
 
 export function ArtifactFlow() {
   const { artifacts, hiddenArtifactCount } = useRunStore(
-    useShallow((state) => ({ artifacts: state.run?.artifacts ?? [], hiddenArtifactCount: state.run?.hiddenArtifactCount ?? 0 })),
+    useShallow((state) => ({ artifacts: state.run?.artifacts ?? NO_ARTIFACTS, hiddenArtifactCount: state.run?.hiddenArtifactCount ?? 0 })),
   );
   if (artifacts.length === 0) return null;
   return (

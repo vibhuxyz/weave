@@ -13,12 +13,20 @@ export interface CoordinationChannel {
   readonly publish: (submission: EmployeeSubmission) => PublishResult;
   readonly drain: () => InboxBatch;
   readonly awaited: () => readonly Dependent[];
+  readonly published: () => ReadonlySet<string>;
 }
 
 export interface CoordinatorOptions {
   readonly tasks: readonly TaskContract[];
   readonly ledger: Ledger;
   readonly now?: () => Date;
+  readonly contextFor?: (paths: readonly string[]) => string;
+}
+
+export interface ExpandedScope {
+  readonly taskId: string;
+  readonly paths: readonly string[];
+  readonly reason: string;
 }
 
 export interface CoordinationReport {

@@ -5,7 +5,7 @@ import type {
 } from "@weave/protocol";
 import { firstMatch } from "./globs.ts";
 import { isInside, relativeInside } from "./path-confinement.ts";
-import { extractCommand, inspectCommandBoundaries } from "./command-safety.ts";
+import { extractCommand, extractWorkingDir, inspectCommandBoundaries } from "./command-safety.ts";
 import { classifyCommand } from "./read-only-commands.ts";
 import {
   changesAnythingInPlanMode,
@@ -101,7 +101,7 @@ function checkCommandSafety(
   const command = extractCommand(rawInput);
   if (!command) return { decision: null, command: null };
 
-  const safety = inspectCommandBoundaries(command, task.cwd);
+  const safety = inspectCommandBoundaries(command, task.cwd, extractWorkingDir(rawInput));
   if (!safety.allowed) {
     return {
       decision: {

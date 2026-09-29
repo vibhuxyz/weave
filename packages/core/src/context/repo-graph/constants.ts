@@ -1,0 +1,4 @@
+export const MAX_GRAPH_NODES = 60_000;
+export const MAX_GRAPH_EDGES = 120_000;
+export const MAX_NEIGHBOURHOOD_NODES = 200;
+export const DEFAULT_NEIGHBOURHOOD_DEPTH = 2;

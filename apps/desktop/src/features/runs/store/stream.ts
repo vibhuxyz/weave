@@ -116,9 +116,19 @@ function openBlockIndex(blocks: readonly StreamBlock[], taskId: string): number 
   return last >= 0 && blocks[last]?.taskId === taskId && blocks[last]?.status === "running" ? last : -1;
 }
 
-function attemptOf(blocks: readonly StreamBlock[], taskId: string): number {
-  const previous = blocks.filter((block) => block.taskId === taskId).at(-1);
-  return (previous?.attempt ?? 0) + 1;
+function lastAttemptOf(blocks: readonly StreamBlock[], taskId: string): number {
+  return blocks.filter((block) => block.taskId === taskId).at(-1)?.attempt ?? 0;
+}
+
+function nextAttemptOf(blocks: readonly StreamBlock[], taskId: string): number {
+  return lastAttemptOf(blocks, taskId) + 1;
+}
+
+// Work from two workers interleaves, so one attempt is written as several
+// blocks. Only a restart is a new attempt; a later block of the same attempt
+// keeps its number.
+function sameAttemptOf(blocks: readonly StreamBlock[], taskId: string): number {
+  return Math.max(1, lastAttemptOf(blocks, taskId));
 }
 
 export interface StreamState {
@@ -146,7 +156,7 @@ function grown(state: StreamState, taskId: string, grow: (block: StreamBlock) =>
     const block = state.stream[index];
     return block === undefined ? state : { ...state, stream: replacedAt(state.stream, index, grow(block)) };
   }
-  const fresh = grow(emptyBlock(taskId, attemptOf(state.stream, taskId), state.stream.length + state.hiddenBlockCount));
+  const fresh = grow(emptyBlock(taskId, sameAttemptOf(state.stream, taskId), state.stream.length + state.hiddenBlockCount));
   const { blocks, dropped } = appended(state.stream, fresh);
   return { stream: blocks, hiddenBlockCount: state.hiddenBlockCount + dropped };
 }
@@ -154,7 +164,7 @@ function grown(state: StreamState, taskId: string, grow: (block: StreamBlock) =>
 export function applyStreamUpdate(state: StreamState, update: StreamUpdate): StreamState {
   switch (update.kind) {
     case "task-started": {
-      const started = emptyBlock(update.taskId, attemptOf(state.stream, update.taskId), state.stream.length + state.hiddenBlockCount);
+      const started = emptyBlock(update.taskId, nextAttemptOf(state.stream, update.taskId), state.stream.length + state.hiddenBlockCount);
       const { blocks, dropped } = appended(state.stream, started);
       return { stream: blocks, hiddenBlockCount: state.hiddenBlockCount + dropped };
     }

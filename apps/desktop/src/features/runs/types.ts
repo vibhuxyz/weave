@@ -1,9 +1,34 @@
 import type { ChatTurn } from "@/features/chat/hooks";
-import type { BudgetAlert, NoteTone, RunArtifact, RunClassification, RunReplanAction, RunReplanRerun, RunReplanTrigger, RunCritique, RunExecutionPlan, RunOutcome, RunPlanTask, RunTaskStatus, RunUpdate, RunWorkerCount, RungResult, ServerMessage } from "../../../server/index.ts";
+import type { BudgetAlert, FileChange, NoteTone, RunArtifact, RunClassification, RunReplanAction, RunReplanRerun, RunReplanTrigger, RunCritique, RunExecutionPlan, RunOutcome, RunPlanTask, RunTaskStatus, RunUpdate, RunWorkerCount, RungResult, ServerMessage } from "../../../server/index.ts";
 
 export type RunMessage = Extract<ServerMessage, { readonly type: "run-started" | "run-update" | "run-finished" }>;
 
 export type LaneStatus = "waiting" | "running" | RunTaskStatus;
+
+export const TASK_PHASES = [
+  "pending",
+  "ready",
+  "running",
+  "partially-blocked",
+  "verifying",
+  "completed",
+  "failed",
+] as const;
+
+export type TaskPhase = (typeof TASK_PHASES)[number];
+
+export interface FileChangeEntry {
+  readonly path: string;
+  readonly change: FileChange;
+  readonly taskId: string;
+}
+
+export interface RunEventEntry {
+  readonly id: number;
+  readonly kind: string;
+  readonly taskId: string | null;
+  readonly text: string;
+}
 
 export type MergeResult = Pick<Extract<RunUpdate, { readonly kind: "merge" }>, "status" | "detail">;
 
@@ -47,6 +72,7 @@ export interface Lane {
   readonly taskId: string;
   readonly title: string;
   readonly dependsOn: readonly string[];
+  readonly startsAfter: readonly string[];
   readonly allowedPaths: readonly string[];
   readonly readOnlyPaths: readonly string[];
   readonly subtasks: readonly string[];
@@ -67,6 +93,11 @@ export interface Lane {
   readonly verification: LaneVerification | null;
   readonly claims: readonly string[];
   readonly blockedReason: string | null;
+  readonly activity: string | null;
+  readonly verifyingRung: string | null;
+  readonly changedFiles: number;
+  readonly wallMs: number | null;
+  readonly installMs: number | null;
   readonly notes: readonly LaneNote[];
   readonly noteCount: number;
 }
@@ -116,6 +147,12 @@ export interface ReplanEntry {
 
 export interface RunState {
   readonly runKey: string;
+  readonly startedAt: number;
+  readonly finishedAt: number | null;
+  readonly files: readonly FileChangeEntry[];
+  readonly hiddenFileCount: number;
+  readonly events: readonly RunEventEntry[];
+  readonly hiddenEventCount: number;
   readonly approval: PlanApproval;
   readonly request: string;
   readonly plan: RunPlanSummary | null;

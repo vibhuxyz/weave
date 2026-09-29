@@ -41,15 +41,26 @@ test("topological order respects dependencies and is stable", () => {
   assert.deepEqual(topologicalOrder([{ id: "B", dependencies: [after("A")] }, { id: "A" }]), ["A", "B"]);
 });
 
-test("a task starts early once a running producer published every required output", () => {
+test("a worker that needs named outputs starts at once; only one that needs a whole task waits", () => {
   const tasks: readonly SchedulableTask[] = [
     { id: "DB" },
     { id: "API", dependencies: [{ task: "DB", requiredOutputs: ["schema"] }] },
     { id: "UI", dependencies: [after("DB")] },
   ];
-  const states = new Map<string, ScheduledState>([["DB", "running"]]);
-  assert.deepEqual(nextStep(tasks, states).ready, []);
-  const published = new Map([["DB", new Set(["schema"])]]);
-  assert.deepEqual(nextStep(tasks, states, published).ready, ["API"]);
-  assert.deepEqual(nextStep(tasks, new Map([["DB", "failed"]]), published).skipped.map((entry) => entry.taskId), ["API", "UI"]);
+  assert.deepEqual(nextStep(tasks, new Map()).ready, ["DB", "API"]);
+  assert.deepEqual(nextStep(tasks, new Map([["DB", "running"]])).ready, ["API"]);
+  assert.deepEqual(nextStep(tasks, new Map([["DB", "ok"]])).ready, ["API", "UI"]);
+  assert.deepEqual(nextStep(tasks, new Map([["DB", "failed"]])).skipped.map((entry) => entry.taskId), ["API", "UI"]);
+});
+
+test("merges still follow producer before consumer, whatever the start order was", () => {
+  assert.deepEqual(
+    topologicalOrder([
+      { id: "UI", dependencies: [{ task: "API", requiredOutputs: ["routes"] }] },
+      { id: "API", dependencies: [{ task: "DB", requiredOutputs: ["schema"] }] },
+      { id: "DB" },
+    ]),
+    ["DB", "API", "UI"],
+  );
+  assert.deepEqual(topologicalOrder([{ id: "A", dependencies: [{ task: "B", requiredOutputs: [] }] }, { id: "B", dependencies: [{ task: "A", requiredOutputs: [] }] }]), []);
 });

@@ -1,7 +1,7 @@
 import type { RunConfig } from "./types.ts";
 
 export function agentConfigFrom(config: RunConfig): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = { ...config.configOptions };
   if (config.model) out.model = config.model;
   if (config.mode) out.mode = config.mode;
   if (config.effort) out.effort = config.effort;

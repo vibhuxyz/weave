@@ -1,6 +1,7 @@
 import type { TaskContract } from "@weave/protocol";
 import { Coordinator } from "../coordination/index.ts";
 import { nextStep, type ScheduledState, type SkippedTask } from "../scheduler/index.ts";
+import { readHeadCommit } from "../shared/index.ts";
 import { runOneTask } from "./run-one.ts";
 import type { PoolContext, PoolOptions, PoolReport, PoolTaskReport } from "./types.ts";
 
@@ -40,13 +41,13 @@ function cancelPending(pool: PoolState, ctx: PoolContext, ready: readonly string
   }
 }
 
-function launch(pool: PoolState, ctx: PoolContext, task: TaskContract): void {
+function launch(pool: PoolState, ctx: PoolContext, task: TaskContract, isolate: boolean): void {
   const controller = linkedController(ctx.signal);
   pool.states.set(task.id, "running");
   pool.controllers.set(task.id, controller);
   ctx.coordinator.taskStarted(task.id);
   ctx.budget?.taskStarted(task.id);
-  pool.running.set(task.id, runOneTask(task, { ...ctx, signal: controller.signal }));
+  pool.running.set(task.id, runOneTask(task, { ...ctx, signal: controller.signal }, isolate));
 }
 
 function admitted(pool: PoolState, ctx: PoolContext, taskId: string): boolean {
@@ -76,7 +77,10 @@ function launchReady(pool: PoolState, ctx: PoolContext, ready: readonly string[]
   for (const taskId of byPriority(ready, ctx.priorityOf)) {
     if (pool.running.size >= capacity) return;
     const task = tasksById.get(taskId);
-    if (task && admitted(pool, ctx, taskId) && ctx.coordinator.claim(task)) launch(pool, ctx, task);
+    if (task && admitted(pool, ctx, taskId)) {
+      const canShare = ctx.canShareRoot && ctx.coordinator.tryClaim(task);
+      launch(pool, ctx, task, !canShare);
+    }
   }
 }
 
@@ -89,7 +93,7 @@ function linkedController(signal: AbortSignal | undefined): AbortController {
 
 async function drive(pool: PoolState, ctx: PoolContext, capacity: number): Promise<void> {
   for (;;) {
-    const step = nextStep(ctx.coordinator.tasks(), pool.states, ctx.coordinator.availableOutputs());
+    const step = nextStep(ctx.coordinator.tasks(), pool.states);
     skip(pool, ctx, step.skipped);
     if (step.skipped.length > 0) continue;
     if (ctx.signal.aborted && step.ready.length > 0) {
@@ -133,7 +137,13 @@ function bindBudget(pool: PoolState, options: PoolOptions, run: AbortController)
   };
 }
 
+async function isCheckedOutAtBase(repoRoot: string, baseCommit: string | undefined): Promise<boolean> {
+  if (baseCommit === undefined) return true;
+  return (await readHeadCommit(repoRoot)) === baseCommit;
+}
+
 export async function runPool(options: PoolOptions): Promise<PoolReport> {
+  const canShareRoot = await isCheckedOutAtBase(options.repoRoot, options.baseCommit);
   const controller = linkedController(options.signal);
   const coordinator = options.coordinator ?? new Coordinator({ tasks: options.tasks, ledger: options.ledger });
   const ctx: PoolContext = {
@@ -144,6 +154,7 @@ export async function runPool(options: PoolOptions): Promise<PoolReport> {
     signal: controller.signal,
     shouldInstall: options.shouldInstall ?? true,
     baseCommit: options.baseCommit,
+    canShareRoot,
     inspectHarvest: options.inspectHarvest,
     attempt: options.attempt ?? 0,
     coordinator,

@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { RunUpdate } from "../../../server/index.ts";
 import { MAX_LANE_AWAITED, MAX_LANE_NOTES, MAX_RUN_ALERTS, MAX_RUN_ARTIFACTS, MAX_RUN_REPLANS } from "./constants";
-import { usdFromMicro } from "./lib";
+import { usdFromMicro, workerCountText, workforceText } from "./lib";
 import { applyRunMessages } from "./store/apply-run-message";
+import { selectWorkforce } from "./store/select-header";
 import type { RunMessage } from "./types";
 
 const started: RunMessage = { type: "run-started", runKey: "k1", request: "split the api" };
@@ -149,4 +150,49 @@ test("a replan shows what woke the coordinator, then what it decided", () => {
   const many = applyRunMessages(decided, Array.from({ length: MAX_RUN_REPLANS + 2 }, (_, index) =>
     update({ kind: "replan-requested", round: index + 2, triggers: [], hiddenTriggerCount: 0 })));
   assert.equal(many?.replans.length, MAX_RUN_REPLANS);
+});
+
+test("the header counts workers that are actually running, not the capacity the plan asked for", () => {
+  const count = { workers: 3, limitedBy: "plan", reason: "3 workers", requested: 3, maxWorkers: 4, machineCapacity: 8, affordable: null } as const;
+  const fanOut = update({
+    kind: "plan", goal: null, assumptions: [], risks: [], mode: "parallel", reason: "disjoint-paths",
+    tasks: [
+      { id: "T1", title: "contract", dependsOn: [], allowedPaths: ["packages/shared/**"], produces: ["Todo"] },
+      { id: "T2", title: "web", dependsOn: ["T1"], allowedPaths: ["apps/web/**"] },
+      { id: "T3", title: "tests", dependsOn: ["T1"], allowedPaths: ["apps/api/tests/**"] },
+    ],
+  });
+  const planned = applyRunMessages(null, [started, fanOut, update({ kind: "worker-count", count })]);
+  assert.equal(workerCountText(count), "up to 3 workers, set by the plan");
+  assert.equal(
+    workforceText(selectWorkforce({ run: planned })),
+    "0 of 3 workers running, 2 waiting on other tasks",
+    "T1 depends on nothing, so it is not waiting on another task",
+  );
+
+  const running = applyRunMessages(planned, [update({ kind: "task-started", taskId: "T1" })]);
+  assert.equal(workforceText(selectWorkforce({ run: running })), "1 of 3 workers running, 2 waiting on other tasks");
+
+  const fannedOut = applyRunMessages(running, [
+    update({ kind: "task-settled", taskId: "T1", status: "ok", reason: null, wallMs: 1000, installMs: 0 }),
+    update({ kind: "task-started", taskId: "T2" }),
+    update({ kind: "task-started", taskId: "T3" }),
+  ]);
+  assert.equal(workforceText(selectWorkforce({ run: fannedOut })), "2 of 3 workers running");
+  assert.equal(workforceText({ running: 0, waiting: 0, capacity: 3 }), null);
+});
+
+test("a worker that only needs an output is not shown as waiting for the whole task", () => {
+  const plan = update({
+    kind: "plan", goal: null, assumptions: [], risks: [], mode: "parallel", reason: "disjoint-paths",
+    tasks: [
+      { id: "T1", title: "api", dependsOn: [], allowedPaths: ["apps/api/**"], produces: ["todo-api-contract"] },
+      { id: "T2", title: "web", dependsOn: ["T1"], allowedPaths: ["apps/web/**"] },
+      { id: "T3", title: "docs", dependsOn: ["T1"], startsAfter: ["T1"], allowedPaths: ["docs/**"] },
+    ],
+  });
+  const run = applyRunMessages(null, [started, plan]);
+  assert.deepEqual(run?.lanes["T2"]?.startsAfter, []);
+  assert.deepEqual(run?.lanes["T2"]?.dependsOn, ["T1"]);
+  assert.deepEqual(run?.lanes["T3"]?.startsAfter, ["T1"]);
 });

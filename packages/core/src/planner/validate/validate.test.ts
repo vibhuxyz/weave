@@ -19,11 +19,18 @@ test("tasks that can run together must not write overlapping paths", () => {
   const { errors } = validatePlan([task("T1", ["apps/api/**"]), task("T2", ["apps/api/src/payouts/**"]), task("T3", ["apps/web/**"])], OPEN);
   assert.equal(errors.length, 1);
   assert.match(errors[0] ?? "", /T1 and T2 can run at the same time but both write apps\/api\/\*\* and apps\/api\/src\/payouts\/\*\*/);
+  assert.match(errors[0] ?? "", /give them separate allowedPaths, or make one wait for the whole of the other/);
 });
 
-test("overlapping writes are fine when one task waits for the other, even through a chain", () => {
+test("overlapping writes are fine when one task waits for the whole of the other, even through a chain", () => {
   const tasks = [task("T1", ["apps/api/**"]), task("T2", ["apps/web/**"], after("T1")), task("T3", ["apps/api/**"], after("T2"))];
   assert.deepEqual(validatePlan(tasks, OPEN).errors, []);
+});
+
+test("waiting only for an output does not make two writers safe: they run at the same time", () => {
+  const consumer = task("T2", ["apps/api/**"], { dependencies: [{ task: "T1", requiredOutputs: ["OrdersApi"] }] });
+  const { errors } = validatePlan([task("T1", ["apps/api/**"], { produces: ["OrdersApi"] }), consumer], OPEN);
+  assert.match(errors.join("\n"), /T1 and T2 can run at the same time but both write apps\/api\/\*\*/);
 });
 
 test("an employee off the roster and a rung the project cannot run are errors", () => {
@@ -78,7 +85,7 @@ const CLASHING = answer([
 ]);
 const FIXED = answer([
   { id: "T1", title: "API", prompt: "api", allowedPaths: ["apps/api/**"], produces: ["OrdersApi"], subtasks: ["publish the contract", "implement it"] },
-  { id: "T2", title: "Also API", prompt: "more api", allowedPaths: ["apps/api/**"], dependencies: [{ task: "T1", requiredOutputs: ["OrdersApi"] }], subtasks: ["read the contract", "use it"] },
+  { id: "T2", title: "Web", prompt: "use the api", allowedPaths: ["apps/web/**"], dependencies: [{ task: "T1", requiredOutputs: ["OrdersApi"] }], subtasks: ["read the contract", "use it"] },
 ]);
 
 function request(answers: readonly string[], prompts: string[]): PlanRequest {

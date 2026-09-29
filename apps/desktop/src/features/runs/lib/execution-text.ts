@@ -25,7 +25,14 @@ const LIMIT_LABEL = {
 } as const;
 
 export function workerCountText(count: RunWorkerCount): string {
-  return `${count.workers} ${count.workers === 1 ? "worker" : "workers"}, set by ${LIMIT_LABEL[count.limitedBy]}`;
+  return `up to ${count.workers} ${count.workers === 1 ? "worker" : "workers"}, set by ${LIMIT_LABEL[count.limitedBy]}`;
+}
+
+export function workforceText(workforce: { readonly running: number; readonly waiting: number; readonly capacity: number }): string | null {
+  const { running, waiting, capacity } = workforce;
+  if (capacity === 0 || running + waiting === 0) return null;
+  const waitingText = waiting > 0 ? `, ${waiting} waiting on other tasks` : "";
+  return `${running} of ${capacity} workers running${waitingText}`;
 }
 
 export function workerCapacityText(count: RunWorkerCount): string {

@@ -1,6 +1,9 @@
 import { builtinModules } from "node:module";
 import { posix } from "node:path";
+import { adapterFor } from "../languages/index.ts";
 import type { PackageManifest, TsPathConfig } from "../workspace/index.ts";
+import type { ModulePathIndex } from "./module-index.ts";
+import { resolveModulePath } from "./resolve-module-path.ts";
 
 export type ResolvedImport =
   | { readonly kind: "internal"; readonly path: string }
@@ -12,6 +15,7 @@ export interface ResolveContext {
   readonly files: ReadonlySet<string>;
   readonly tsPaths: readonly TsPathConfig[];
   readonly packagesByName: ReadonlyMap<string, PackageManifest>;
+  readonly modulePaths: ModulePathIndex;
 }
 
 const EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
@@ -58,6 +62,10 @@ function viaWorkspacePackage(specifier: string, name: string, manifest: PackageM
 }
 
 export function resolveImport(from: string, specifier: string, context: ResolveContext): ResolvedImport {
+  if (adapterFor(from)) {
+    const path = resolveModulePath(from, specifier, context.modulePaths);
+    return path ? { kind: "internal", path } : { kind: "external", name: packageNameOf(specifier) };
+  }
   if (specifier.startsWith("node:") || BUILTINS.has(specifier)) return { kind: "builtin" };
   if (specifier.startsWith(".")) {
     const path = firstExisting(posix.join(posix.dirname(from), specifier), context.files);

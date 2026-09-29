@@ -2,7 +2,7 @@ import type { ProjectModel, Workspace } from "../types.ts";
 import { searchVectors } from "../vectors/index.ts";
 import { indexModel, rankFiles } from "./rank-files.ts";
 import { callNeighbours, changesTouching, fileNeighbours } from "./related.ts";
-import { wordsOf } from "../words/index.ts";
+import { matchingTerms } from "../words/index.ts";
 import { requestTermsOf } from "./terms.ts";
 import type { ProjectAnswer, RankedFile, RankedSymbol } from "./types.ts";
 import { relevantTests, verificationCommands } from "./verification.ts";
@@ -23,11 +23,6 @@ function chooseApplication(files: readonly RankedFile[], workspaces: readonly Wo
       return workspace ? [{ workspace, score: score * (workspace.kind === "application" ? 2 : 1) }] : [];
     })
     .sort((a, b) => b.score - a.score || a.workspace.dir.localeCompare(b.workspace.dir))[0]?.workspace ?? null;
-}
-
-function matchingTerms(terms: readonly string[], text: string): readonly string[] {
-  const words = new Set(wordsOf(text));
-  return terms.filter((term) => words.has(term));
 }
 
 function similarFiles(model: ProjectModel, request: string): readonly RankedFile[] {

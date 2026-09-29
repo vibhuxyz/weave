@@ -33,7 +33,7 @@ function section(tag: string, body: string): readonly string[] {
 export function buildReplanPrompt(input: ReplanPromptInput): string {
   return [
     "You are the coordinator of a team that is part-way through a run. Weave holds the state and has already routed every published output; you only decide what to do about the problems below.",
-    "Think out loud in <thinking>...</thinking>, then reply with one JSON object in a ```json fence.",
+    "Decide what to do, then reply with one JSON object in a ```json fence.",
     "",
     "Rules:",
     `- Choose one action: "continue" to accept the run as it stands, "rerun" to run some tasks again, "stop" when a person has to decide.`,

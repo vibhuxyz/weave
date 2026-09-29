@@ -46,10 +46,16 @@ function mergeCandidates(tasks: readonly TaskContract[], pool: PoolReport) {
   });
 }
 
-function overallStatus(pool: PoolReport, integration: IntegrationReport | null, isCancelled: boolean): RunPlanReport["status"] {
+function overallStatus(
+  pool: PoolReport,
+  integration: IntegrationReport | null,
+  isCancelled: boolean,
+  candidateCount: number,
+): RunPlanReport["status"] {
   if (isCancelled) return "cancelled";
   if (pool.tasks.some((entry) => entry.status !== "ok")) return "failed";
-  return integration?.status ?? "failed";
+  if (integration) return integration.status;
+  return candidateCount === 0 ? "ok" : "failed";
 }
 
 export async function runPlan(options: RunPlanOptions): Promise<RunPlanResult> {
@@ -91,7 +97,7 @@ export async function runPlan(options: RunPlanOptions): Promise<RunPlanResult> {
     ? null
     : await integrate({ repoRoot, weaveDir, ledger, baseCommit, candidates, shouldInstall, verify: options.verify ?? verifyWithLadder });
 
-  const status = overallStatus(pool, integration, isCancelled);
+  const status = overallStatus(pool, integration, isCancelled, candidates.length);
   ledger.append("run.finished", { status: status === "ok" ? "ok" : status === "cancelled" ? "cancelled" : "failed", wallMs: Date.now() - started });
   return { ok: true, value: { runId: ledger.runId, ledgerFile: ledger.file, baseCommit, status, pool, integration } };
 }

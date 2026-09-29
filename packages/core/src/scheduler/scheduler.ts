@@ -1,5 +1,5 @@
 import type { TaskDependency } from "@weave/protocol";
-import type { AvailableOutputs, ScheduleStep, ScheduledState, SchedulableTask, SkippedTask } from "./types.ts";
+import type { ScheduleStep, ScheduledState, SchedulableTask, SkippedTask } from "./types.ts";
 
 const SETTLED_STATES: ReadonlySet<ScheduledState> = new Set(["ok", "failed", "cancelled", "skipped"]);
 const FAILED_STATES: ReadonlySet<ScheduledState> = new Set(["failed", "cancelled", "skipped"]);
@@ -21,31 +21,22 @@ function brokenDependency(
   return null;
 }
 
-const NO_OUTPUTS: AvailableOutputs = new Map();
-
-function hasPublishedOutputs(dependency: TaskDependency, available: AvailableOutputs): boolean {
-  const published = available.get(dependency.task);
-  return dependency.requiredOutputs.length > 0 && dependency.requiredOutputs.every((output) => published?.has(output) ?? false);
+function gatesStart(dependency: TaskDependency): boolean {
+  return dependency.requiredOutputs.length === 0;
 }
 
-function isReady(task: SchedulableTask, states: ReadonlyMap<string, ScheduledState>, available: AvailableOutputs): boolean {
-  return (task.dependencies ?? []).every(
-    (dependency) => stateOf(states, dependency.task) === "ok" || hasPublishedOutputs(dependency, available),
-  );
+function isReady(task: SchedulableTask, states: ReadonlyMap<string, ScheduledState>): boolean {
+  return (task.dependencies ?? []).every((dependency) => !gatesStart(dependency) || stateOf(states, dependency.task) === "ok");
 }
 
-export function nextStep(
-  tasks: readonly SchedulableTask[],
-  states: ReadonlyMap<string, ScheduledState>,
-  available: AvailableOutputs = NO_OUTPUTS,
-): ScheduleStep {
+export function nextStep(tasks: readonly SchedulableTask[], states: ReadonlyMap<string, ScheduledState>): ScheduleStep {
   const pending = tasks.filter((task) => stateOf(states, task.id) === "pending");
   const skipped = pending
     .map((task) => brokenDependency(task, states))
     .filter((entry): entry is SkippedTask => entry !== null);
   const skippedIds = new Set(skipped.map((entry) => entry.taskId));
   const ready = pending
-    .filter((task) => !skippedIds.has(task.id) && isReady(task, states, available))
+    .filter((task) => !skippedIds.has(task.id) && isReady(task, states))
     .map((task) => task.id);
   const isFinished = tasks.every(
     (task) => SETTLED_STATES.has(stateOf(states, task.id)) || skippedIds.has(task.id),
@@ -54,12 +45,17 @@ export function nextStep(
 }
 
 export function topologicalOrder(tasks: readonly SchedulableTask[]): readonly string[] {
+  const known = new Set(tasks.map((task) => task.id));
+  const placed = new Set<string>();
   const order: string[] = [];
-  const states = new Map<string, ScheduledState>();
-  for (let step = nextStep(tasks, states); step.ready.length > 0; step = nextStep(tasks, states)) {
-    for (const taskId of step.ready) {
-      order.push(taskId);
-      states.set(taskId, "ok");
+  const isPlaceable = (task: SchedulableTask): boolean =>
+    (task.dependencies ?? []).every((dependency) => placed.has(dependency.task) || !known.has(dependency.task));
+  for (let progressed = true; progressed; ) {
+    progressed = false;
+    for (const task of tasks.filter((candidate) => !placed.has(candidate.id) && isPlaceable(candidate))) {
+      placed.add(task.id);
+      order.push(task.id);
+      progressed = true;
     }
   }
   return order;

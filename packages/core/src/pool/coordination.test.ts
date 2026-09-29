@@ -50,56 +50,74 @@ const schemaBlock = [
   'ent\n{ "type": "artifact.ready", "data": { "artifact": { "name": "schema", "summary": "orders table", "files": [{ "path": "db/schema.sql", "content": "create table orders (id text)" }] } } }\n```\n',
 ];
 
-test("exit: a dependent consumes an intermediate artifact while its upstream is still running", async () => {
+test("exit: every worker starts at once, and each one waits only for the output it asked for", async () => {
   const { weaveDir, ledger, base } = await setup();
   const timeline: string[] = [];
-  const inboxes = new Map<string, InboxBatch>();
-  const apiStarted = gate("api");
-  const uiStarted = gate("ui");
+  const received = new Map<string, readonly string[]>();
+  const allStarted = gate("all");
+  let started = 0;
+
+  async function waitForOutput(coordination: Parameters<RunWorker>[0]["coordination"], taskId: string): Promise<void> {
+    const deadline = Date.now() + GATE_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const names = coordination.drain().events.flatMap((event) => ("artifact" in event.data ? [event.data.artifact.name] : []));
+      if (names.length > 0) {
+        received.set(taskId, names);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`${taskId} never received the output it asked for`);
+  }
+
   const worker: RunWorker = async ({ task, ledger: runLedger, coordination }) => {
     timeline.push(`${task.id}:start`);
-    inboxes.set(task.id, coordination.drain());
+    started += 1;
+    if (started === 3) allStarted.open();
+    await allStarted.wait();
+    timeline.push(`${task.id}:own-work`);
+
     if (task.id === "DB") {
       for (const text of schemaBlock) runLedger.append("agent.message", { taskId: task.id, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } });
-      await apiStarted.wait();
     }
     if (task.id === "API") {
-      apiStarted.open();
+      await waitForOutput(coordination, task.id);
       coordination.publish({ type: "contract.published", data: { artifact: { name: "orders-api", summary: "GET /v1/orders", provides: [], files: [] } } });
-      await uiStarted.wait();
     }
-    if (task.id === "UI") uiStarted.open();
+    if (task.id === "UI") await waitForOutput(coordination, task.id);
     await writeOwnFile(task, `${task.id.toLowerCase()}/index.ts`);
     timeline.push(`${task.id}:end`);
     return { status: "ok" };
   };
+
   const tasks: TaskContract[] = [
-    { id: "DB", prompt: "db", cwd: "", allowedPaths: ["db/**"] },
-    { id: "API", prompt: "api", cwd: "", allowedPaths: ["api/**"], dependencies: [{ task: "DB", requiredOutputs: ["schema"] }] },
+    { id: "DB", prompt: "db", cwd: "", allowedPaths: ["db/**"], produces: ["schema"] },
+    { id: "API", prompt: "api", cwd: "", allowedPaths: ["api/**"], produces: ["orders-api"], dependencies: [{ task: "DB", requiredOutputs: ["schema"] }] },
     { id: "UI", prompt: "ui", cwd: "", allowedPaths: ["ui/**"], dependencies: [{ task: "API", requiredOutputs: ["orders-api"] }] },
   ];
   const report = await runPool({ ...base, tasks, concurrency: 3, runWorker: worker });
 
   assert.deepEqual(report.tasks.map((entry) => [entry.taskId, entry.status]), [["DB", "ok"], ["API", "ok"], ["UI", "ok"]]);
-  assert.ok(timeline.indexOf("API:start") < timeline.indexOf("DB:end"));
-  assert.ok(timeline.indexOf("UI:start") < timeline.indexOf("API:end"));
-  const apiInbox = inboxes.get("API")?.events ?? [];
-  assert.deepEqual(apiInbox.map((event) => event.type), ["task.started", "artifact.ready", "dependency.ready"]);
-  const schema = apiInbox.find((event) => event.type === "artifact.ready");
-  assert.equal(schema?.type === "artifact.ready" ? schema.data.artifact.files[0]?.content : null, "create table orders (id text)");
-  assert.ok((inboxes.get("UI")?.events ?? []).some((event) => event.type === "contract.published"));
+  const firstEnd = timeline.findIndex((entry) => entry.endsWith(":end"));
+  for (const taskId of ["DB", "API", "UI"]) {
+    assert.ok(timeline.indexOf(`${taskId}:start`) < firstEnd, `${taskId} started only after another worker finished: ${timeline.join(" ")}`);
+  }
+  assert.deepEqual(received.get("API"), ["schema"], "API got the schema while DB was still running");
+  assert.deepEqual(received.get("UI"), ["orders-api"], "UI got the contract while API was still running");
+  assert.ok(timeline.indexOf("UI:own-work") < timeline.indexOf("API:end"), `UI waited for API to finish: ${timeline.join(" ")}`);
+
   const published = (await readLedger(weaveDir, ledger.runId)).flatMap((event) => (event.type === "coordination.event" ? [event.event.type] : []));
   assert.ok(published.includes("artifact.ready") && published.includes("contract.published") && published.includes("task.completed"));
 });
 
-test("a task whose claim overlaps a running owner waits as blocked, then runs", async () => {
+test("a task whose claim overlaps a running owner runs concurrently in an isolated worktree", async () => {
   const { weaveDir, ledger, base } = await setup();
   let active = 0;
   let peak = 0;
   const worker: RunWorker = async ({ task }) => {
     active += 1;
     peak = Math.max(peak, active);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await new Promise((resolve) => setTimeout(resolve, 300));
     await writeOwnFile(task, `src/${task.id}.ts`);
     active -= 1;
     return { status: "ok" };
@@ -110,9 +128,15 @@ test("a task whose claim overlaps a running owner waits as blocked, then runs", 
   ];
   const report = await runPool({ ...base, tasks, concurrency: 2, runWorker: worker });
   assert.deepEqual(report.tasks.map((entry) => entry.status), ["ok", "ok"]);
-  assert.equal(peak, 1);
+  assert.equal(peak, 2);
   const blocked = (await readLedger(weaveDir, ledger.runId)).filter((event) => event.type === "ownership.blocked");
-  assert.deepEqual(blocked.map((event) => event.taskId), ["B"]);
+  assert.equal(blocked.length, 0);
+  
+  // B ran isolated, so it produced a harvest event. A ran in shared workspace.
+  const harvested = (await readLedger(weaveDir, ledger.runId)).filter((event) => event.type === "worktree.harvested");
+  assert.deepEqual(harvested.map((event) => event.type === "worktree.harvested" && [event.taskId, event.files]).sort(), [
+    ["B", ["src/B.ts"]],
+  ]);
 });
 
 test("a consumer that built on a producer's artifact fails when that producer fails", async () => {

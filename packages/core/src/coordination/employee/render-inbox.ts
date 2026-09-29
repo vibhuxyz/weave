@@ -26,12 +26,23 @@ function headline(event: CoordinationEvent): string {
       return `${prefix} ${event.data.status}`;
     case "subtask.completed":
       return `${prefix} finished ${flatten(event.data.subtask)}`;
-    case "dependency.ready":
-      return `${prefix} your inputs are ready: ${event.data.outputs.join(", ") || "upstream finished"}`;
+    case "dependency.ready": {
+      const ready = event.data.outputs.length > 0
+        ? `published and shown below: ${event.data.outputs.join(", ")}`
+        : "nothing published yet";
+      const pending = event.data.pending.length > 0 ? `; still being built: ${event.data.pending.join(", ")}` : "";
+      return `${prefix} inputs — ${ready}${pending}`;
+    }
     case "dependency.blocked":
       return `${prefix} needs ${event.data.need.output}: ${flatten(event.data.reason)}`;
     case "dependency.resolved":
       return `${prefix} ${event.data.output} from ${event.data.producer} is now available`;
+    case "scope.expand":
+      return `${prefix} asks to also work on ${event.data.paths.join(", ")}: ${flatten(event.data.reason)}`;
+    case "scope.granted":
+      return `${prefix} may now also work on ${event.data.paths.join(", ")}`;
+    case "scope.denied":
+      return `${prefix} may not work on ${event.data.paths.join(", ")}: ${flatten(event.data.reason)}`;
     case "review.requested":
     case "verification.failed":
     case "verification.passed":

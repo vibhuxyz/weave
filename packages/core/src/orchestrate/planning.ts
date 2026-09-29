@@ -82,7 +82,7 @@ export async function planTasks(
     },
   });
   if (outcome.plan.status === "no-change-needed") return { status: "no-change-needed", reason: outcome.plan.reason };
-  const note = base ? buildContractWorkerNote(base.contractShape) : null;
+  const note = base?.contractShape ? buildContractWorkerNote(base.contractShape) : null;
   const tasks = base && note
     ? lockContract(outcome.plan.tasks).map((task) => ({ ...task, prompt: `${task.prompt}\n\n${note}` }))
     : outcome.plan.tasks;

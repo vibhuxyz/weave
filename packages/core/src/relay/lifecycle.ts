@@ -17,7 +17,7 @@ const STAGE_THRESHOLDS: readonly (readonly [number, LifecycleStage])[] = [
   [0.5, "compress-tool-output"],
 ];
 
-const PROVIDER_LIMIT = /rate.?limit|quota|\b429\b|overloaded|usage limit|credit|capacity|billing/i;
+const PROVIDER_LIMIT = /rate.?limit|quota|\b429\b|overloaded|usage limit|session limit|credit|capacity|billing/i;
 
 export function lifecycleStage(signal: LifecycleSignal): LifecycleStage {
   if (signal.isProviderLimited || signal.isEngineDown) return "handoff";

@@ -7,6 +7,10 @@ export const CONTRACT_ENTRY_PATHS = {
 export const CONTRACT_PACKAGE_PATH = `${CONTRACT_DIR}/package.json`;
 export const CONTRACT_PACKAGE_NAME = "contracts";
 
+export const WORKSPACE_MANIFEST_PATH = "package.json";
+export const WORKSPACE_TSCONFIG_PATH = "tsconfig.base.json";
+export const WORKSPACE_PACKAGE_NAME = "workspace";
+
 export const MAX_CHANGE_TEXT_CHARS = 500;
 export const MAX_AFFECTED_SYMBOLS = 20;
 export const MAX_SYMBOL_CHARS = 100;

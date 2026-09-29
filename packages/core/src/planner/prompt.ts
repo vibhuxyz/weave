@@ -29,19 +29,13 @@ const OUTPUT_SHAPE = `{
       "id": "T1",
       "title": "short imperative title",
       "prompt": "what this task must do, self-contained",
-      "allowedPaths": ["apps/api/**"],
-      "readOnlyPaths": ["packages/contracts/**"],
-      "produces": ["symbolName", "api-contract"],
-      "subtasks": ["design the schema", "publish the api contract", "implement the endpoints", "run the checks"],
-      "dependencies": [{ "task": "T0", "requiredOutputs": ["symbolName"] }],
-      "contractSymbols": ["Note"],
-      "component": "api",
-      "employee": "backend-engineer",
-      "engine": "claude-code",
-      "skills": ["api-conventions", "postgres"],
+      "allowedPaths": ["src/**"],
+      "produces": ["TodoStore"],
+      "subtasks": ["design the store", "implement the endpoints", "run the checks"],
+      "dependencies": [],
       "complexity": "medium",
-      "verify": "bun run typecheck",
-      "verifyRung": "typecheck"
+      "verify": "npm test",
+      "verifyRung": "tests"
     }
   ]
 }`;
@@ -52,13 +46,15 @@ function planningRules(input: PlannerPromptInput): string[] {
   const rules = [
     "The project may be written in any language. Do not assume Node.js, TypeScript, React or Python; take the stack from the project context.",
     "Use the fewest tasks that work. One task is the right answer unless splitting has a real benefit.",
+    "Match the structure to the request: one package at the repository root unless it names separately deployed parts. Tasks are not packages: several tasks may work inside one package when their allowedPaths do not overlap.",
+    "Leave out any optional field you have nothing real to say about.",
     "A task is one worker's whole assignment, not a micro-step. Give a worker several steps rather than splitting it into several tasks.",
     `Never emit more than ${MAX_PLAN_TASKS} tasks.`,
     "Every task lists allowedPaths: the only files it may write. Paths are relative to the project root.",
     "Tasks that run in parallel must not share allowedPaths.",
-    "A dependency is not a full stop: if a task needs one symbol from another, list it in requiredOutputs, or split the task.",
-    'Every task that others wait on lists "produces": the exact output names it will publish (types, contracts, endpoints, schemas). A waiting task starts the moment those names are published, long before the producer finishes, so name them precisely.',
-    'Every name in a "requiredOutputs" list must appear in the producing task\'s "produces". A dependency whose outputs are not declared blocks the dependent until the whole producing task ends.',
+    'A dependency never blocks a start. "requiredOutputs" names the exact outputs a task needs: it begins at once, does everything else, and asks Weave for them at the point of need. Empty means it waits for the whole producing task.',
+    'Every task others wait on lists "produces": the exact names it publishes. Every name in a "requiredOutputs" must appear there, or the consumer waits for the whole task.',
+    "Give every task real work of its own before it needs another's output. If it has none, merge it into that task.",
     'Write "prompt" as the worker\'s full brief: the objective, then the concrete steps it must carry out, in order.',
     `Give every task "subtasks": ${MIN_SUBTASKS_PER_TASK} to ${MAX_SUBTASKS_PER_TASK} milestones inside that one worker's task, in the order it will reach them. A milestone is work another worker or a check can see, such as "publish the api contract" or "add the migration", never a single file edit or tool call. Where the task publishes an output, make that its own milestone. Word each one differently.`,
     `If the request describes a problem that does not exist, answer ${NO_CHANGE_SHAPE} instead.`,
@@ -78,8 +74,14 @@ function planningRules(input: PlannerPromptInput): string[] {
     rules.push('Give a task "engine": an id from the engine catalog, when one of them suits that work better than the others. Leave it out to let Weave route the task, and never name an id that is not in the catalog.');
   }
   if (input.kind === "greenfield") {
-    rules.push('Give every task a "component" (frontend, api, worker, infra) taken from the blueprint.');
+    rules.push('Give every task a "component" taken from the blueprint.');
+  }
+  if (input.kind === "greenfield" && input.contract !== null) {
     rules.push("Tasks read the contract in readOnlyPaths and never edit it.");
+    rules.push("The base commit already holds the workspace root (package.json workspaces, tsconfig.base.json) and the contract package. Tasks list those root files in readOnlyPaths, extend them from their own package, and never ask for them to be created.");
+  }
+  if (input.kind === "greenfield" && input.contract === null) {
+    rules.push("There is no contract and no workspace yet. The first task creates the files it needs; do not list readOnlyPaths that no task creates.");
   }
   return rules;
 }
@@ -91,7 +93,7 @@ function section(tag: string, body: string | null): string[] {
 export function buildPlannerPrompt(input: PlannerPromptInput): string {
   const runnableRungs = input.rungs.length > 0 ? input.rungs.join(", ") : "none detected";
   return [
-    "You are the coordinator of this team. Turn the request into a plan of tasks, one per worker. First, think out loud in <thinking>...</thinking> tags to explain your reasoning, then reply with one JSON object in a ```json fence.",
+    "You are the coordinator of this team. Turn the request into a plan of tasks, one per worker. Work the plan out however you need to, then reply with one JSON object in a ```json fence.",
     "",
     "Rules:",
     ...planningRules(input).map((rule) => `- ${rule}`),

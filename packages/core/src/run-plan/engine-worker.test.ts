@@ -17,7 +17,7 @@ const schemaUpdate: CoordinationEvent = {
 
 function scriptedChannel(batches: readonly InboxBatch[]): CoordinationChannel {
   const queue = [...batches];
-  return { taskId: "API", publish: () => ({ ok: false, reason: "not used" }), drain: () => queue.shift() ?? { events: [], droppedCount: 0 }, awaited: () => [] };
+  return { taskId: "API", publish: () => ({ ok: false, reason: "not used" }), drain: () => queue.shift() ?? { events: [], droppedCount: 0 }, awaited: () => [], published: () => new Set() };
 }
 
 test("an update that arrives while an employee works becomes its next prompt turn", async () => {
@@ -54,4 +54,51 @@ test("an assigned employee's brief leads the engine's first prompt", async () =>
   const worker = engineWorker(undefined, undefined, { weaveDir, model: null, runAttempt, briefings });
   await worker({ task: { id: "API", prompt: "build it", cwd: weaveDir }, ledger: new Ledger(weaveDir, "run1"), signal: new AbortController().signal, coordination: scriptedChannel([]) });
   assert.match(prompts[0] ?? "", /build it\n\n<employee id="senior-backend-engineer"[\s\S]*<\/employee>\n\nYou work alongside other employees/);
+});
+
+function channelFor(awaited: readonly { consumer: string; requiredOutputs: readonly string[] }[], published: readonly string[]): CoordinationChannel {
+  return {
+    taskId: "T1",
+    publish: () => ({ ok: false, reason: "not used" }),
+    drain: () => ({ events: [], droppedCount: 0 }),
+    awaited: () => awaited.map((entry) => ({ consumer: entry.consumer, requiredOutputs: [...entry.requiredOutputs] })),
+    published: () => new Set(published),
+  };
+}
+
+async function runWith(channel: CoordinationChannel, prompts: string[], label: string) {
+  const weaveDir = join(await mkdtemp(join(tmpdir(), `weave-nudge-${label}-`)), ".weave");
+  const runAttempt: AttemptRunner = async ({ task }) => {
+    prompts.push(task.prompt);
+    return { status: "ok", stoppedBy: null, error: null, contextUsed: null, contextSize: null, finalMessage: "done" };
+  };
+  const worker = engineWorker(undefined, undefined, { weaveDir, model: null, runAttempt });
+  return worker({ task: { id: "T1", prompt: "build the contract", cwd: weaveDir }, ledger: new Ledger(weaveDir, "run1"), signal: new AbortController().signal, coordination: channel });
+}
+
+test("a worker whose dependents are still blocked is asked to publish before it finishes", async () => {
+  const prompts: string[] = [];
+  const outcome = await runWith(
+    channelFor([{ consumer: "T2", requiredOutputs: ["Todo", "todo-api-contract"] }, { consumer: "T3", requiredOutputs: ["Todo"] }], []),
+    prompts,
+    "blocked",
+  );
+  assert.equal(outcome.status, "ok");
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1] ?? "", /T2 and T3 cannot start: you have not published Todo, todo-api-contract\./);
+  assert.match(prompts[1] ?? "", /Publish what already exists now, in one artifact\.ready/);
+});
+
+test("a worker that already published everything its dependents need is left alone", async () => {
+  const prompts: string[] = [];
+  await runWith(channelFor([{ consumer: "T2", requiredOutputs: ["Todo"] }], ["Todo"]), prompts, "published");
+  assert.equal(prompts.length, 1);
+
+  const noDependents: string[] = [];
+  await runWith(channelFor([], []), noDependents, "alone");
+  assert.equal(noDependents.length, 1);
+
+  const wholeTask: string[] = [];
+  await runWith(channelFor([{ consumer: "T2", requiredOutputs: [] }], []), wholeTask, "whole");
+  assert.equal(wholeTask.length, 1);
 });

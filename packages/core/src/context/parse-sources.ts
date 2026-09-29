@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isNotFound, mapBounded } from "../shared/index.ts";
 import { parseModule } from "./ast/index.ts";
+import { adapterFor } from "./languages/index.ts";
 import { contentHash, type CachedModule, type ModuleCache } from "./cache/index.ts";
 import { MAX_PARSED_FILE_BYTES, PARSE_CONCURRENCY } from "./constants.ts";
 import { isParsableSource } from "./scan/index.ts";
@@ -26,7 +27,9 @@ async function parseOne(root: string, file: ProjectFile, cache: ModuleCache): Pr
   const hash = contentHash(text);
   const cached = cache.get(file.path);
   if (cached?.hash === hash) return { path: file.path, entry: cached, isReused: true };
-  return { path: file.path, entry: { hash, facts: parseModule(file.path, text) }, isReused: false };
+  const adapter = adapterFor(file.path);
+  const facts = adapter ? adapter.parse(file.path, text) : parseModule(file.path, text);
+  return { path: file.path, entry: { hash, facts }, isReused: false };
 }
 
 export async function parseSources(root: string, files: readonly ProjectFile[], cache: ModuleCache): Promise<ParsedSources> {

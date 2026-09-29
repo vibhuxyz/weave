@@ -32,7 +32,7 @@ test("claims are capped with a count of the rest", () => {
 test("coordination events summarise blocks, early starts and escalations for the right lane", () => {
   const asked = eventOf({ type: "coordination.event", recipients: [], event: { ...ENVELOPE, type: "dependency.blocked", data: { need: { output: "schema", task: "T0" }, reason: "not published" } } });
   assert.deepEqual(projectRunEvent(asked), { kind: "awaiting", taskId: "T1", output: "schema", producer: "T0", reason: "not published" });
-  const ready = eventOf({ type: "coordination.event", recipients: ["T3"], event: { ...ENVELOPE, type: "dependency.ready", data: { consumer: "T3", outputs: ["api"] } } });
+  const ready = eventOf({ type: "coordination.event", recipients: ["T3"], event: { ...ENVELOPE, type: "dependency.ready", data: { consumer: "T3", outputs: ["api"], pending: [] } } });
   assert.deepEqual(projectRunEvent(ready), { kind: "note", taskId: "T3", tone: "info", text: "Can start early: api ready from T1" });
   const escalation = eventOf({ type: "coordination.event", recipients: [], event: { ...ENVELOPE, type: "escalation.created", data: { subject: "cycle", reason: "T1 -> T2 -> T1" } } });
   assert.equal(projectRunEvent(escalation)?.kind, "note");
@@ -51,6 +51,14 @@ test("a request, a milestone and a published output each become their own lane u
 
   const contract = eventOf({ type: "coordination.event", recipients: ["T2"], event: { ...ENVELOPE, type: "contract.published", data: { artifact: { ...artifact, name: "api-contract", version: 1 } } } });
   assert.deepEqual(projectRunEvent(contract)?.kind === "artifact" ? projectRunEvent(contract) : null, { kind: "artifact", taskId: "T1", artifact: { name: "api-contract", version: 1, summary: "todos table", kind: "contract", isUpdate: false } });
+});
+
+test("an engine refusing the settings a run asked for becomes a warning on that lane", () => {
+  const refused = eventOf({ type: "error", taskId: "T1", where: "setConfigOption(model)", message: "claude-haiku-4-5 is not\n available on this engine" });
+  assert.deepEqual(projectRunEvent(refused), {
+    kind: "note", taskId: "T1", tone: "warning", text: "setConfigOption(model): claude-haiku-4-5 is not available on this engine",
+  });
+  assert.equal(projectRunEvent(eventOf({ type: "error", where: "adaptive.history", message: "no runs" })), null);
 });
 
 test("a replan becomes a request update and a decision update, both capped", () => {

@@ -26,6 +26,8 @@ export function workforceUpdate(event: WeaveEvent): RunUpdate | null {
       return { kind: "note", taskId: event.taskId, tone: "warning", text: flattened(`Coordination event rejected: ${event.reason}`) };
     case "coordination.event":
       return coordinationUpdate(event.event);
+    case "error":
+      return event.taskId === undefined ? null : { kind: "note", taskId: event.taskId, tone: "warning", text: flattened(`${event.where}: ${event.message}`) };
     case "orchestration.decided":
       return { kind: "orchestration", workers: event.workers, reason: flattened(event.reason), estimatedCostMicroUsd: event.estimatedCostMicroUsd, timeSavedMs: event.benefitMs.timeSaved };
     case "budget.exceeded":

@@ -34,7 +34,9 @@ export function coordinationUpdate(event: CoordinationEvent): RunUpdate | null {
       return { kind: "awaited-arrived", taskId: consumer, output: flattened(output, MAX_NAME_CHARS), producer };
     }
     case "dependency.ready":
-      return note(event.data.consumer, "info", `Can start early: ${event.data.outputs.join(", ")} ready from ${taskId}`);
+      return event.data.outputs.length > 0
+        ? note(event.data.consumer, "info", `Inputs ready: ${event.data.outputs.join(", ")}`)
+        : note(event.data.consumer, "info", `Started ahead of its inputs: ${event.data.pending.join(", ")}`);
     case "subtask.completed":
       return { kind: "subtask", taskId, subtask: flattened(event.data.subtask), index: event.data.index };
     case "artifact.ready":
@@ -48,6 +50,12 @@ export function coordinationUpdate(event: CoordinationEvent): RunUpdate | null {
         artifact: { name: flattened(artifact.name, MAX_NAME_CHARS), version: artifact.version, summary: flattened(artifact.summary, MAX_DETAIL_CHARS), ...ARTIFACT_KINDS[event.type] },
       };
     }
+    case "scope.expand":
+      return note(taskId, "info", `Asked to also work on ${event.data.paths.join(", ")}: ${flattened(event.data.reason)}`);
+    case "scope.granted":
+      return note(event.data.taskId, "info", `Scope widened to ${event.data.paths.join(", ")}`);
+    case "scope.denied":
+      return note(event.data.taskId, "warning", `Scope not widened to ${event.data.paths.join(", ")}: ${flattened(event.data.reason)}`);
     case "review.requested":
       return note(taskId, "info", `Review requested: ${event.data.summary}`);
     case "verification.passed":

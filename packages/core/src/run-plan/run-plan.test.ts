@@ -52,11 +52,11 @@ test("acceptance: 3 disjoint tasks run concurrently, merge cleanly, and the ledg
   assert.ok(types.includes("integration.finished"));
 });
 
-test("a dependent task only starts after its dependency, and merges after it", async () => {
+test("a task that needs an output starts beside its producer and merges after it", async () => {
   const repo = await makeRepo();
-  const order: string[] = [];
+  const started: string[] = [];
   const worker: RunWorker = async ({ task: running }) => {
-    order.push(running.id);
+    started.push(running.id);
     await writeFile(join(running.cwd, `${running.id}.txt`), running.id);
     return { status: "ok" };
   };
@@ -65,8 +65,25 @@ test("a dependent task only starts after its dependency, and merges after it", a
     repoRoot: repo, concurrency: 2, runWorker: worker, verify: verifyOk, shouldInstall: false,
   });
   assert.ok(result.ok);
-  assert.deepEqual(order, ["A", "B"]);
-  assert.deepEqual(result.value.integration?.merges.map((merge) => merge.taskId), ["A", "B"]);
+  assert.deepEqual([...started].sort(), ["A", "B"]);
+  assert.deepEqual(result.value.integration?.merges.map((merge) => merge.taskId), ["A", "B"], "the producer still merges first");
+});
+
+test("a task that needs the whole of another task waits for it to finish", async () => {
+  const repo = await makeRepo();
+  const order: string[] = [];
+  const worker: RunWorker = async ({ task: running }) => {
+    order.push(`${running.id}:start`);
+    await writeFile(join(running.cwd, `${running.id}.txt`), running.id);
+    order.push(`${running.id}:end`);
+    return { status: "ok" };
+  };
+  const result = await runPlan({
+    tasks: [task("B", { dependencies: [{ task: "A", requiredOutputs: [] }] }), task("A")],
+    repoRoot: repo, concurrency: 2, runWorker: worker, verify: verifyOk, shouldInstall: false,
+  });
+  assert.ok(result.ok);
+  assert.deepEqual(order, ["A:start", "A:end", "B:start", "B:end"]);
 });
 
 test("plans that cannot run are refused before anything starts", async () => {

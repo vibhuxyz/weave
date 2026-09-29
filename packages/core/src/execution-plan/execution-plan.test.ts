@@ -53,3 +53,28 @@ test("without estimates the plan keeps the order but reports no time", () => {
 test("the ledger event carries the cost as a string", () => {
   assert.equal(executionPlanEvent(buildExecutionPlan(input())).estimatedCostMicroUsd, "420000");
 });
+
+test("a worker that only needs an output starts beside its producer, not after it", () => {
+  const plan = buildExecutionPlan(input({
+    tasks: [{ id: "T1" }, { id: "T2", dependencies: [{ task: "T1", requiredOutputs: ["todo-api-contract"] }] }],
+    workers: 2,
+    estimatedMsByTask: new Map([["T1", 6 * MINUTE], ["T2", 12 * MINUTE]]),
+  }));
+  const byTask = new Map(plan.slots.map((slot) => [slot.taskId, slot]));
+  assert.deepEqual([byTask.get("T1")?.startMs, byTask.get("T2")?.startMs], [0, 0]);
+  assert.deepEqual(byTask.get("T2")?.after, [], "nothing gates its start, so the card says it starts now");
+  assert.equal(new Set([byTask.get("T1")?.worker, byTask.get("T2")?.worker]).size, 2, "they take a worker each");
+  assert.equal(plan.estimatedMs, 12 * MINUTE, "the run is as long as its longest worker, not the sum");
+});
+
+test("a worker that needs a whole task still waits for it", () => {
+  const plan = buildExecutionPlan(input({
+    tasks: [{ id: "T1" }, { id: "T2", dependencies: [{ task: "T1", requiredOutputs: [] }] }],
+    workers: 2,
+    estimatedMsByTask: new Map([["T1", 6 * MINUTE], ["T2", 12 * MINUTE]]),
+  }));
+  const byTask = new Map(plan.slots.map((slot) => [slot.taskId, slot]));
+  assert.equal(byTask.get("T2")?.startMs, 6 * MINUTE);
+  assert.deepEqual(byTask.get("T2")?.after, ["T1"]);
+  assert.equal(plan.estimatedMs, 18 * MINUTE);
+});

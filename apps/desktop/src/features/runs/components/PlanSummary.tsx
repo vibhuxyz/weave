@@ -1,8 +1,8 @@
 import { useShallow } from "zustand/react/shallow";
 import type { RunClassification, RunCritique } from "../../../../server/index.ts";
 import { formatNumber } from "@/shared/i18n";
-import { usdFromMicro, workerCapacityText, workerCountText } from "../lib";
-import { useRunStore } from "../store";
+import { usdFromMicro, workerCapacityText, workerCountText, workforceText } from "../lib";
+import { selectWorkforce, useRunStore } from "../store";
 import type { PlanningEnginesSummary } from "../types";
 
 const MODE_LABEL = { sequential: "One worker, in order", parallel: "Parallel workers" } as const;
@@ -32,6 +32,7 @@ export function PlanSummary() {
   const { plan, planning, classification, critique, contractVersion, integration, orchestration, workerCount } = useRunStore(
     useShallow((state) => ({ plan: state.run?.plan ?? null, planning: state.run?.planning ?? null, classification: state.run?.review?.classification ?? null, critique: state.run?.review?.critique ?? null, contractVersion: state.run?.contractVersion ?? null, integration: state.run?.integration ?? null, orchestration: state.run?.orchestration ?? null, workerCount: state.run?.workerCount ?? null })),
   );
+  const live = workforceText(useRunStore(useShallow(selectWorkforce)));
   const estimatedUsd = orchestration ? usdFromMicro(orchestration.estimatedCostMicroUsd) : null;
   const estimatedCost = estimatedUsd === null ? null : formatNumber(estimatedUsd, USD);
   if (!plan) return <p className="text-agent-text-muted text-xs">{planningText(planning)}</p>;
@@ -40,10 +41,10 @@ export function PlanSummary() {
       {classification && <span className={RISK_CLASS[classification.risk]}>{classificationText(classification)}</span>}
       {critique && <span>{critiqueText(critique)}</span>}
       <span>{MODE_LABEL[plan.mode]} ({plan.reason})</span>
-      {workerCount && <span title={workerCapacityText(workerCount)}>{workerCountText(workerCount)}</span>}
+      {workerCount && <span title={workerCapacityText(workerCount)}>{live ?? workerCountText(workerCount)}</span>}
       {orchestration && (
         <span title={orchestration.reason}>
-          {orchestration.workers} {orchestration.workers === 1 ? "worker" : "workers"}: {orchestration.reason}
+          {orchestration.reason}
           {estimatedCost && `, about ${estimatedCost}`}
           {orchestration.timeSavedMs > 0 && `, saves about ${formatNumber(orchestration.timeSavedMs / MS_PER_SECOND, SECONDS)}`}
         </span>

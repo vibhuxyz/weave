@@ -2,7 +2,7 @@ import type { TaskContract, TaskDependency } from "@weave/protocol";
 import { validateGraph } from "../../planner/index.ts";
 import type { AddDependencyResult, DependencyEdge, Dependent } from "./types.ts";
 
-type GraphTask = Pick<TaskContract, "id" | "dependencies">;
+type GraphTask = Pick<TaskContract, "id" | "dependencies" | "allowedPaths">;
 
 function mergeDependency(existing: TaskDependency | undefined, output: string): TaskDependency | null {
   if (!existing) return null;
@@ -50,6 +50,16 @@ export class DependencyGraph<T extends GraphTask> {
     this.tasks = next;
     if (isNew) this.edges.push({ taskId: consumer, dependency: { task: producer, requiredOutputs: [output] } });
     return { ok: true, isNew };
+  }
+
+  widenScope(taskId: string, paths: readonly string[]): boolean {
+    const target = this.tasks.find((task) => task.id === taskId);
+    if (!target) return false;
+    const current = target.allowedPaths ?? [];
+    const merged = [...new Set([...current, ...paths])].sort();
+    if (merged.length === current.length) return false;
+    this.tasks = this.tasks.map((task) => (task.id === taskId ? { ...task, allowedPaths: merged } : task));
+    return true;
   }
 
   dependentsOf(producer: string): readonly Dependent[] {

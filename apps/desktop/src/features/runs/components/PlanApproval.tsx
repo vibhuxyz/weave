@@ -6,6 +6,7 @@ import type { RunExecutionSlot } from "../../../../server/index.ts";
 import { durationMinutes, engineText, slotStartText, usdFromMicro } from "../lib";
 import { useRunStore } from "../store";
 
+const NO_WARNINGS: readonly string[] = [];
 const MINUTES = { style: "unit", unit: "minute", unitDisplay: "short", maximumFractionDigits: 0 } as const;
 const USD = { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 } as const;
 
@@ -16,7 +17,7 @@ interface PlanApprovalProps {
 
 function PlanWarnings() {
   const { warnings, hiddenWarningCount } = useRunStore(
-    useShallow((state) => ({ warnings: state.run?.review?.warnings ?? [], hiddenWarningCount: state.run?.review?.hiddenWarningCount ?? 0 })),
+    useShallow((state) => ({ warnings: state.run?.review?.warnings ?? NO_WARNINGS, hiddenWarningCount: state.run?.review?.hiddenWarningCount ?? 0 })),
   );
   if (warnings.length === 0) return null;
   return (

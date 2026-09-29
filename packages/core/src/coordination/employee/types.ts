@@ -8,6 +8,7 @@ export type EmployeeSubmission =
   | { readonly type: "task.blocked"; readonly data: { readonly reason: string } }
   | { readonly type: "subtask.completed"; readonly data: { readonly subtask: string } }
   | { readonly type: "dependency.blocked"; readonly data: { readonly need: DependencyNeed; readonly reason: string } }
+  | { readonly type: "scope.expand"; readonly data: { readonly paths: readonly string[]; readonly reason: string } }
   | { readonly type: "review.requested" | "verification.failed" | "verification.passed"; readonly data: { readonly summary: string } }
   | { readonly type: "escalation.created"; readonly data: { readonly reason: string; readonly subject: string } };
 

@@ -1,4 +1,4 @@
-import { installedEngines } from "@weave/agent";
+import { installedEngines, readSelectValues } from "@weave/agent";
 import { readGitStatus } from "@weave/core";
 import { readAttachment, readTextFile, searchProjectFiles } from "../project/index.ts";
 import { handleStartAuth, toAuthInputLine } from "../auth/index.ts";
@@ -259,7 +259,16 @@ export function handleClientMessage(
     }
 
     case "start-run":
-      void runs.start({ request: msg.request, projectDir, engineId: sessionMgr.currentEngineId, fallbackEngineIds: installedEngines().map((engine) => engine.id), runKey: uuidV7(Date.now()), setUpGit: msg.setUpGit === true, send });
+      void runs.start({
+        request: msg.request,
+        projectDir,
+        engineId: sessionMgr.currentEngineId,
+        fallbackEngineIds: installedEngines().map((engine) => engine.id),
+        configOptions: readSelectValues(sessionMgr.supervisor?.current.configOptions ?? []),
+        runKey: uuidV7(Date.now()),
+        setUpGit: msg.setUpGit === true,
+        send,
+      });
       return;
 
     case "decide-run-plan":

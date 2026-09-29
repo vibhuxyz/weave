@@ -5,6 +5,7 @@ import {
   confineToTaskDir,
   createGuardedPermissionPolicy,
   extractCommand,
+  extractWorkingDir,
   inspectCommandBoundaries,
   toAcpResponse,
   withPolicy,
@@ -404,4 +405,36 @@ test("withPolicy enforces an employee's deployment, network and git permissions"
   ]);
   const open = withPolicy({ network: { allowed: true } }, async () => ({ decision: "allow", optionId: "opt-1", reason: "base" }));
   assert.equal((await open(FAKE_TASK, commandRequest("curl https://example.com"))).decision, "allow");
+});
+
+test("a tool that names its own working directory is held to it", () => {
+  assert.equal(extractWorkingDir({ CommandLine: "ls", Cwd: "/tmp/one" }), "/tmp/one");
+  assert.equal(extractWorkingDir({ command: "ls", cwd: "/tmp/two" }), "/tmp/two");
+  assert.equal(extractWorkingDir({ command: "ls", working_directory: "/tmp/three" }), "/tmp/three");
+  assert.equal(extractWorkingDir({ CommandLine: "ls" }), null);
+  assert.equal(extractWorkingDir({ CommandLine: "ls", Cwd: "  " }), null);
+  assert.equal(extractWorkingDir("ls"), null);
+});
+
+test("a relative command aimed at another worker's worktree is refused", () => {
+  const mine = "/Users/xyz/Coding/app/.weave/worktrees/run1/T1";
+  const theirs = "/Users/xyz/Coding/app/.weave/worktrees/run1/T2";
+  assert.equal(inspectCommandBoundaries("find apps/web -type f", mine, mine).allowed, true);
+  assert.equal(inspectCommandBoundaries("find apps/web -type f", mine, `${mine}/apps`).allowed, true);
+  assert.equal(inspectCommandBoundaries("find apps/web -type f", mine).allowed, true);
+
+  const crossed = inspectCommandBoundaries("find apps/web -type f", mine, theirs);
+  assert.equal(crossed.allowed, false);
+  assert.match(crossed.reason ?? "", /runs in .*\/T2, outside task cwd/);
+});
+
+test("the guard rejects a call that would run in another task's directory", async () => {
+  const request = agyRequest("git status");
+  const elsewhere: RequestPermissionRequest = {
+    ...request,
+    toolCall: { ...request.toolCall, rawInput: { CommandLine: "git status", Cwd: "/Users/xyz/Coding/other-project" } },
+  };
+  const decision = await confineToTaskDir(FAKE_TASK, elsewhere);
+  assert.equal(decision.decision, "reject");
+  assert.match(decision.reason ?? "", /runs in \/Users\/xyz\/Coding\/other-project, outside task cwd/);
 });

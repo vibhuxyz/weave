@@ -41,8 +41,11 @@ export interface CoordinationDataByType {
   "artifact.updated": { artifact: Artifact };
   "contract.published": { artifact: Artifact };
   "contract.changed": { artifact: Artifact };
-  "dependency.ready": { consumer: string; outputs: string[] };
+  "dependency.ready": { consumer: string; outputs: string[]; pending: string[] };
   "dependency.blocked": { need: DependencyNeed; reason: string };
+  "scope.expand": { paths: string[]; reason: string };
+  "scope.granted": { taskId: string; paths: string[]; context: string };
+  "scope.denied": { taskId: string; paths: string[]; reason: string };
   "dependency.resolved": { consumer: string; producer: string; output: string };
   "review.requested": { summary: string };
   "verification.failed": { summary: string };
@@ -79,6 +82,7 @@ export type EmployeeEventType =
   | "contract.published"
   | "contract.changed"
   | "dependency.blocked"
+  | "scope.expand"
   | "review.requested"
   | "verification.failed"
   | "verification.passed"

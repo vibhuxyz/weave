@@ -14,3 +14,7 @@ export { updateProjectModel } from "./update/index.ts";
 export type { ModelDelta, ModelUpdate } from "./update/index.ts";
 export { searchVectors } from "./vectors/index.ts";
 export type { VectorHit } from "./vectors/index.ts";
+export { buildRepositoryGraph, neighbourhoodOf, EDGE_KINDS, NODE_KINDS } from "./repo-graph/index.ts";
+export type { EdgeKind, GraphEdge, GraphNeighbourhood, GraphNode, NeighbourhoodOptions, NodeKind, RepositoryGraph } from "./repo-graph/index.ts";
+export { adapterFor, ADAPTER_EXTENSIONS } from "./languages/index.ts";
+export type { LanguageAdapter } from "./languages/index.ts";

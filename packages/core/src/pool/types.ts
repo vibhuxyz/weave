@@ -69,6 +69,7 @@ export interface PoolContext {
   readonly signal: AbortSignal;
   readonly shouldInstall: boolean;
   readonly baseCommit: string | undefined;
+  readonly canShareRoot: boolean;
   readonly inspectHarvest: InspectHarvest | undefined;
   readonly attempt: number;
   readonly coordinator: Coordinator;

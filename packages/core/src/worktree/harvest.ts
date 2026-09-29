@@ -25,6 +25,18 @@ async function stageWork(path: string): Promise<WorktreeResult<null>> {
   return { ok: true, value: null };
 }
 
+export async function checkpointWorktree(worktree: Worktree, message: string): Promise<WorktreeResult<string | null>> {
+  const added = await stageWork(worktree.path);
+  if (!added.ok) return added;
+  const committed = await commitStaged(worktree.path, message);
+  if (!committed.ok) return committed;
+
+  const head = await runGit(worktree.path, ["rev-parse", "HEAD"]);
+  if (!head.ok) return { ok: false, reason: `Cannot read HEAD in ${worktree.path}: ${head.output.trim()}` };
+  const headCommit = head.output.trim();
+  return { ok: true, value: headCommit === worktree.baseCommit ? null : headCommit };
+}
+
 export async function harvestWorktree(worktree: Worktree, message: string): Promise<WorktreeResult<Harvest>> {
   const added = await stageWork(worktree.path);
   if (!added.ok) return added;

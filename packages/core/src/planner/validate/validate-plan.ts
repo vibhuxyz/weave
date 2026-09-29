@@ -53,7 +53,7 @@ function tasksWithoutMilestones(tasks: readonly ReviewedTask[]): readonly string
   return silent.length === 0 ? [] : [`No milestones to report progress against in: ${listed(silent)}; those workers only report when they finish`];
 }
 
-function undeclaredOutputs(tasks: readonly ReviewedTask[]): readonly string[] {
+export function undeclaredOutputs(tasks: readonly ReviewedTask[]): readonly string[] {
   const producedBy = new Map(tasks.map((task) => [task.id, new Set(task.produces ?? [])]));
   return tasks.flatMap((task) =>
     (task.dependencies ?? []).flatMap((dependency) => {

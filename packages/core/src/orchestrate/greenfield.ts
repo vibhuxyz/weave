@@ -2,17 +2,19 @@ import { buildBlueprintPrompt, parseBlueprint, renderBlueprint, type Blueprint, 
 import { buildContract, summarizeContract, writeContract, type Contract } from "../contracts/index.ts";
 import { CONTRACT_WORKTREE_ID } from "../run-plan/index.ts";
 import type { Ledger } from "../shared/index.ts";
+import { readHeadCommit } from "../shared/index.ts";
 import { createWorktree, harvestWorktree, removeWorktree } from "../worktree/index.ts";
 import type { TurnRunner } from "./types.ts";
 
 const CONTRACT_VERSION = 1;
+const SHARED_COMPONENT_COUNT = 2;
 const MAX_REPAIR_ISSUES = 20;
 
 export interface GreenfieldBase {
   readonly blueprint: string;
-  readonly contract: string;
-  readonly contractShape: Pick<Contract, "exports" | "entryPath">;
-  readonly baseRef: string;
+  readonly contract: string | null;
+  readonly contractShape: Pick<Contract, "exports" | "entryPath"> | null;
+  readonly baseRef: string | undefined;
 }
 
 export type GreenfieldResult = { readonly ok: true; readonly value: GreenfieldBase } | { readonly ok: false; readonly reason: string };
@@ -40,6 +42,10 @@ async function commitContract(repoRoot: string, weaveDir: string, ledger: Ledger
   }
 }
 
+function needsSharedContract(blueprint: Blueprint): boolean {
+  return blueprint.components.length >= SHARED_COMPONENT_COUNT;
+}
+
 export async function prepareGreenfield(
   input: { readonly request: string; readonly repoRoot: string; readonly weaveDir: string; readonly ledger: Ledger },
   runTurn: TurnRunner,
@@ -49,6 +55,19 @@ export async function prepareGreenfield(
   if (!parsed.ok) return { ok: false, reason: `The blueprint was invalid twice: ${parsed.issues.slice(0, MAX_REPAIR_ISSUES).join("; ")}` };
   const accepted = parsed.blueprint;
   input.ledger.writeArtifact("blueprint.json", accepted);
+
+  if (!needsSharedContract(accepted)) {
+    return {
+      ok: true,
+      value: {
+        blueprint: renderBlueprint(accepted),
+        contract: null,
+        contractShape: null,
+        baseRef: (await readHeadCommit(input.repoRoot)) ?? undefined,
+      },
+    };
+  }
+
   const committed = await commitContract(input.repoRoot, input.weaveDir, input.ledger, accepted);
   const contractShape = { exports: committed.contract.exports, entryPath: committed.contract.entryPath };
   return { ok: true, value: { blueprint: renderBlueprint(accepted), contract: committed.summary, contractShape, baseRef: committed.baseRef } };

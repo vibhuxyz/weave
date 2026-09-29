@@ -1,6 +1,6 @@
 import { layerOf } from "../architecture/index.ts";
 import type { ApiFact, EventFact, Layer, ProjectModel, SymbolFact } from "../types.ts";
-import { wordsOf } from "../words/index.ts";
+import { matchingTerms } from "../words/index.ts";
 import type { Intent, RankedFile, RequestTerms } from "./types.ts";
 
 const PATH_WEIGHT = 3;
@@ -18,11 +18,6 @@ function groupBy<T>(items: readonly T[], key: (item: T) => string): ReadonlyMap<
   const groups = new Map<string, T[]>();
   for (const item of items) groups.set(key(item), [...(groups.get(key(item)) ?? []), item]);
   return groups;
-}
-
-function matched(terms: readonly string[], text: string): readonly string[] {
-  const words = new Set(wordsOf(text));
-  return terms.filter((term) => words.has(term));
 }
 
 export interface FileIndex {
@@ -56,11 +51,11 @@ function hitsOf(path: string, index: FileIndex, request: RequestTerms): Pick<Fil
     for (const term of found) hits.set(term, Math.max(hits.get(term) ?? 0, weight));
     if (reasons.length < MAX_REASONS) reasons.push(reason);
   };
-  add(matched(terms, path), PATH_WEIGHT, "path");
-  for (const symbol of index.symbolsByFile.get(path) ?? []) add(matched(terms, symbol.name), SYMBOL_WEIGHT, `symbol ${symbol.name}`);
+  add(matchingTerms(terms, path), PATH_WEIGHT, "path");
+  for (const symbol of index.symbolsByFile.get(path) ?? []) add(matchingTerms(terms, symbol.name), SYMBOL_WEIGHT, `symbol ${symbol.name}`);
   const apiWeight = intents.has("api") ? API_INTENT_WEIGHT : API_WEIGHT;
-  for (const api of index.apisByFile.get(path) ?? []) add(matched(terms, `${api.path} ${api.handler ?? ""}`), apiWeight, `${api.source} ${api.method} ${api.path}`);
-  for (const event of index.eventsByFile.get(path) ?? []) add(matched(terms, event.name), EVENT_WEIGHT, `event ${event.name}`);
+  for (const api of index.apisByFile.get(path) ?? []) add(matchingTerms(terms, `${api.path} ${api.handler ?? ""}`), apiWeight, `${api.source} ${api.method} ${api.path}`);
+  for (const event of index.eventsByFile.get(path) ?? []) add(matchingTerms(terms, event.name), EVENT_WEIGHT, `event ${event.name}`);
   return { hits, reasons };
 }
 

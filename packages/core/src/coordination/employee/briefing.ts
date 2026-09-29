@@ -41,6 +41,24 @@ export function renderBriefing(batch: InboxBatch, awaited: readonly Dependent[] 
   return [renderEmployeeProtocol(), ...(waiting ? [waiting] : []), ...(inbox ? [inbox] : [])].join("\n\n");
 }
 
+export function unpublishedOutputs(awaited: readonly Dependent[], published: ReadonlySet<string>): readonly string[] {
+  const wanted = awaited.flatMap((dependent) => [...dependent.requiredOutputs]);
+  return [...new Set(wanted)].filter((output) => !published.has(output)).sort();
+}
+
+export function renderPublishNudge(awaited: readonly Dependent[], published: ReadonlySet<string>): string | null {
+  const missing = unpublishedOutputs(awaited, published);
+  if (missing.length === 0) return null;
+  const waiting = awaited
+    .filter((dependent) => dependent.requiredOutputs.some((output) => !published.has(output)))
+    .map((dependent) => dependent.consumer)
+    .slice(0, MAX_AWAITED_CONSUMERS);
+  return [
+    `${waiting.join(" and ")} cannot start: you have not published ${outputsLine(missing)}.`,
+    "Publish what already exists now, in one artifact.ready (or contract.published) event, naming those outputs in \"provides\". Then carry on with the rest of your task.",
+  ].join("\n");
+}
+
 export function renderUpdateBriefing(batch: InboxBatch): string {
   return [
     "Weave delivered updates from other employees while you worked. Re-check your work against them and finish the task.",

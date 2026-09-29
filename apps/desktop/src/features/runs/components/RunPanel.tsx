@@ -7,6 +7,9 @@ import { PermissionContent } from "@/features/chat/components/PermissionCard";
 import { MAX_VISIBLE_LANES } from "../constants";
 import { selectRunHeader, useRunStore } from "../store";
 import { ArtifactFlow } from "./ArtifactFlow";
+import { EventsPanel } from "./EventsPanel";
+import { FilesPanel } from "./FilesPanel";
+import { RunSummary } from "./RunSummary";
 import { BudgetAlerts } from "./BudgetAlerts";
 import { LaneCard } from "./LaneCard";
 import { LiveCost } from "./LiveCost";
@@ -45,7 +48,7 @@ export function RunPanel({ onSetUpGitAndRun, onDecidePlan, permissionRequest, on
         subtitle={<PlanSummary />}
         isCollapsed={isCollapsed}
         onToggleCollapsed={() => setIsCollapsed(!isCollapsed)}
-        extra={<LiveCost />}
+        extra={<><RunSummary /><LiveCost /></>}
         onClose={outcome !== null ? dismiss : undefined}
         closeLabel="Close run panel"
       />
@@ -69,6 +72,8 @@ export function RunPanel({ onSetUpGitAndRun, onDecidePlan, permissionRequest, on
           )}
           {hiddenCount > 0 && <span className="text-[11px] text-agent-text-faint">(+{hiddenCount} more lanes)</span>}
           <ArtifactFlow />
+          <FilesPanel />
+          <EventsPanel />
           <ReplanNotes />
           {outcome && <p className="text-agent-text-muted text-xs">{outcomeText(outcome)}</p>}
           {outcome?.status === "needs-git" && (

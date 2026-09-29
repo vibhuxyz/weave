@@ -1,7 +1,9 @@
 import type { BudgetAlert, RunUpdate } from "../../../../server/index.ts";
-import { MAX_RUN_ALERTS, MAX_RUN_ARTIFACTS, MAX_RUN_REPLANS, PLANNER_TASK_ID } from "../constants";
+import { MAX_RUN_ALERTS, MAX_RUN_ARTIFACTS, MAX_RUN_EVENTS, MAX_RUN_FILES, MAX_RUN_REPLANS, PLANNER_TASK_ID } from "../constants";
 import type { Lane, RunMessage, RunState } from "../types";
 import { withArtifact, withDelivery } from "./artifacts";
+import { withEvent } from "./events";
+import { withFileChange } from "./files";
 import { withReplanDecision, withReplanRequest } from "./replans";
 import { applyLaneUpdate, emptyLane } from "./lane";
 import { applyStreamUpdate } from "./stream";
@@ -10,7 +12,7 @@ type LaneUpdate = Extract<RunUpdate, { readonly taskId: string }>;
 type PlanUpdate = Extract<RunUpdate, { readonly kind: "plan" }>;
 
 function startedRun(runKey: string, request: string): RunState {
-  return { runKey, request, approval: "none", plan: null, review: null, planning: null, execution: null, workerCount: null, artifacts: [], hiddenArtifactCount: 0, replans: [], lanes: {}, laneOrder: [], stream: [], hiddenBlockCount: 0, contractVersion: null, integration: null, orchestration: null, budgetAlerts: [], hiddenAlertCount: 0, outcome: null };
+  return { runKey, request, approval: "none", startedAt: Date.now(), finishedAt: null, files: [], hiddenFileCount: 0, events: [], hiddenEventCount: 0, plan: null, review: null, planning: null, execution: null, workerCount: null, artifacts: [], hiddenArtifactCount: 0, replans: [], lanes: {}, laneOrder: [], stream: [], hiddenBlockCount: 0, contractVersion: null, integration: null, orchestration: null, budgetAlerts: [], hiddenAlertCount: 0, outcome: null };
 }
 
 function withPlan(run: RunState, update: PlanUpdate): RunState {
@@ -36,6 +38,9 @@ function withBudgetAlert(run: RunState, alert: BudgetAlert): RunState {
 }
 
 function applyUpdate(run: RunState, update: RunUpdate): RunState {
+  if (update.kind === "file") {
+    return withLaneUpdate({ ...run, ...withFileChange(run, update.taskId, update.path, update.change, MAX_RUN_FILES) }, update);
+  }
   if (update.kind === "artifact") return withLaneUpdate(withArtifact(run, update.taskId, update.artifact, MAX_RUN_ARTIFACTS), update);
   if (update.kind === "awaited-arrived") return withLaneUpdate(withDelivery(run, update.taskId, update.output, update.producer), update);
   switch (update.kind) {
@@ -74,8 +79,8 @@ function applyUpdate(run: RunState, update: RunUpdate): RunState {
 export function applyRunMessage(run: RunState | null, message: RunMessage): RunState | null {
   if (message.type === "run-started") return startedRun(message.runKey, message.request);
   if (run?.runKey !== message.runKey) return run;
-  if (message.type === "run-finished") return { ...run, outcome: message.outcome };
-  return applyUpdate(run, message.update);
+  if (message.type === "run-finished") return { ...run, outcome: message.outcome, finishedAt: Date.now() };
+  return applyUpdate({ ...run, ...withEvent(run, message.update, MAX_RUN_EVENTS) }, message.update);
 }
 
 export function applyRunMessages(run: RunState | null, messages: readonly RunMessage[]): RunState | null {

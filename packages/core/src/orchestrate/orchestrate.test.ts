@@ -31,6 +31,33 @@ test("project kind: docs-only repos are greenfield, repos with code are existing
   assert.equal(await detectProjectKind(await repoWith({ "index.js": "1" })), "existing");
 });
 
+test("project kind: a project whose files are not committed yet is still existing", async () => {
+  const repo = await repoWith({ "README.md": "# idea" });
+  assert.equal(await detectProjectKind(repo), "greenfield");
+
+  await mkdir(join(repo, "src"), { recursive: true });
+  await writeFile(join(repo, "src", "main.tsx"), "export const app = 1;\n");
+  await writeFile(join(repo, "package.json"), JSON.stringify({ name: "todo" }));
+  assert.equal(
+    await detectProjectKind(repo),
+    "existing",
+    "a previous run leaves its work uncommitted, and that work is still a project",
+  );
+
+  await writeFile(join(repo, ".gitignore"), "node_modules\n");
+  await mkdir(join(repo, "node_modules", "left-over"), { recursive: true });
+  await writeFile(join(repo, "node_modules", "left-over", "index.js"), "1\n");
+  assert.equal(await detectProjectKind(repo), "existing");
+});
+
+test("project kind: ignored files alone do not make a project", async () => {
+  const repo = await repoWith({ "README.md": "# idea" });
+  await writeFile(join(repo, ".gitignore"), "node_modules\ndist\n");
+  await mkdir(join(repo, "node_modules", "pkg"), { recursive: true });
+  await writeFile(join(repo, "node_modules", "pkg", "index.js"), "1\n");
+  assert.equal(await detectProjectKind(repo), "greenfield");
+});
+
 test("existing repo: one prompt becomes a graph that runs unedited, in parallel when paths are disjoint", async () => {
   const repo = await repoWith({ "package.json": JSON.stringify({ scripts: { test: "node --test" } }) });
   const answer = fenced({

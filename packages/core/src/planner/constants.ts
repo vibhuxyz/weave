@@ -20,6 +20,7 @@ export const MAX_VERIFY_COMMAND_CHARS = 300;
 export const MAX_REQUEST_BYTES = 8192;
 export const MAX_REPAIR_ISSUES = 10;
 export const MAX_REPAIR_ISSUE_CHARS = 300;
+export const MAX_ANSWER_EXCERPT_CHARS = 300;
 export const MAX_SKILLS_PER_TASK = 8;
 export const MAX_SKILL_NAME_CHARS = 64;
 export const MAX_DOMAINS = 8;

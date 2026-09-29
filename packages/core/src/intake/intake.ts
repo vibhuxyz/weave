@@ -2,6 +2,7 @@ import type { VerificationRung } from "@weave/protocol";
 import { VERIFICATION_RUNGS, rungStrength } from "@weave/protocol";
 import { readGitStatus } from "../shared/index.ts";
 import { detectPackageManager, readHead, readPackageJson } from "./detect.ts";
+import { ecosystemRungs } from "./ecosystems.ts";
 import {
   detectBoot,
   detectBuild,
@@ -25,6 +26,14 @@ export type {
 } from "./types.ts";
 
 const DEFAULT_BOOT_HOLD_MS = 5000;
+
+function describeExecution(execution: RungExecution): string {
+  return execution.via === "diff-review" ? "structural diff review" : `\`${execution.command}\``;
+}
+
+function addEcosystemRungs(cwd: string, ctx: RungDetectionContext): void {
+  for (const entry of ecosystemRungs(cwd)) ctx.add(entry.rung, entry.execution, entry.why);
+}
 
 export function availableRungs(intake: Intake): VerificationRung[] {
   return [...intake.detected]
@@ -60,6 +69,9 @@ export async function intake(
     skip: (rung, why) => missing.push({ rung, why }),
   };
 
+  const nodeFirst = pkg !== null;
+  if (!nodeFirst) addEcosystemRungs(cwd, ctx);
+
   detectTests(ctx);
   detectSmoke(ctx);
   detectHealth(ctx);
@@ -67,7 +79,18 @@ export async function intake(
   detectBuild(ctx);
   detectTypecheck(ctx);
   detectLint(ctx);
+  if (nodeFirst) addEcosystemRungs(cwd, ctx);
   ctx.add("diff-review", { via: "diff-review" } satisfies RungExecution, "always available");
+
+  const chosen = new Map<VerificationRung, DetectedRung>();
+  for (const entry of detected) {
+    const held = chosen.get(entry.rung);
+    if (held) {
+      missing.push({ rung: entry.rung, why: `${describeExecution(entry.execution)} was not used: ${describeExecution(held.execution)} already covers ${entry.rung}` });
+      continue;
+    }
+    chosen.set(entry.rung, entry);
+  }
 
   return {
     cwd,
@@ -77,8 +100,8 @@ export async function intake(
     clean: status.changes.length === 0,
     packageManager: pm,
     hasPackageJson: pkg !== null,
-    detected,
-    missing: missing.sort((a, b) => rungStrength(b.rung) - rungStrength(a.rung)),
+    detected: [...chosen.values()],
+    missing: missing.sort((a, b) => rungStrength(b.rung) - rungStrength(a.rung) || a.why.localeCompare(b.why)),
   };
 }
 

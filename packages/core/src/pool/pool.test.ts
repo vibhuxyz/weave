@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TaskContract } from "@weave/protocol";
@@ -34,7 +34,7 @@ async function setup() {
   return { repo, weaveDir, ledger, base: { repoRoot: repo, weaveDir, ledger, shouldInstall: false } };
 }
 
-test("three independent tasks run at the same time in separate worktrees", async () => {
+test("three independent tasks run at the same time in the shared workspace", async () => {
   const { repo, weaveDir, ledger, base } = await setup();
   let active = 0;
   let peak = 0;
@@ -49,20 +49,15 @@ test("three independent tasks run at the same time in separate worktrees", async
   };
   const report = await runPool({ ...base, tasks: [task("T1"), task("T2"), task("T3")], concurrency: 3, runWorker: overlapping });
   assert.equal(peak, 3);
-  assert.equal(cwds.size, 3);
-  assert.deepEqual(report.tasks.map((entry) => [entry.taskId, entry.status, entry.harvest?.files]), [
-    ["T1", "ok", ["T1.txt"]],
-    ["T2", "ok", ["T2.txt"]],
-    ["T3", "ok", ["T3.txt"]],
+  assert.equal(cwds.size, 1);
+  assert.deepEqual(report.tasks.map((entry) => [entry.taskId, entry.status, entry.harvest]), [
+    ["T1", "ok", null],
+    ["T2", "ok", null],
+    ["T3", "ok", null],
   ]);
   assert.deepEqual(await listWeaveWorktrees(repo), []);
-  assert.ok((await runGit(repo, ["rev-parse", "--verify", "weave/run1/T2"])).ok);
   const harvested = (await readLedger(weaveDir, ledger.runId)).filter((event) => event.type === "worktree.harvested");
-  assert.deepEqual(harvested.map((event) => event.type === "worktree.harvested" && [event.taskId, event.files]).sort(), [
-    ["T1", ["T1.txt"]],
-    ["T2", ["T2.txt"]],
-    ["T3", ["T3.txt"]],
-  ]);
+  assert.equal(harvested.length, 0);
 });
 
 test("the concurrency cap holds", async () => {
@@ -105,6 +100,49 @@ test("writing outside allowedPaths fails the task even when the worker says ok",
   });
   assert.equal(report.tasks[0]?.status, "failed");
   assert.equal(report.tasks[0]?.reason, "wrote outside its scope: T1.txt is outside allowedPaths");
+});
+
+test("tasks that write only inside new folders of their own scope pass the scope check", async () => {
+  const { base } = await setup();
+  const writesInOwnFolder: RunWorker = async ({ task: running }) => {
+    const folder = join(running.cwd, "src", running.id);
+    await mkdir(folder, { recursive: true });
+    await writeFile(join(folder, "app file.ts"), `${running.id}\n`);
+    return { status: "ok" };
+  };
+  const tasks = [task("api", { allowedPaths: ["src/api/**"] }), task("ui", { allowedPaths: ["src/ui/**"] })];
+  const report = await runPool({ ...base, tasks, concurrency: 2, runWorker: writesInOwnFolder });
+  assert.deepEqual(report.tasks.map((entry) => [entry.taskId, entry.status, entry.reason]), [
+    ["api", "ok", null],
+    ["ui", "ok", null],
+  ]);
+});
+
+async function commitOnSideBranch(repo: string, file: string, content: string): Promise<string> {
+  await runGit(repo, ["checkout", "--quiet", "-b", "side"]);
+  await writeFile(join(repo, file), content);
+  await runGit(repo, ["add", "-A"]);
+  await runGit(repo, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "side"]);
+  const commit = (await runGit(repo, ["rev-parse", "HEAD"])).output.trim();
+  await runGit(repo, ["checkout", "--quiet", "main"]);
+  return commit;
+}
+
+test("tasks start from the base commit in their own worktrees when the checkout is elsewhere", async () => {
+  const { repo, base } = await setup();
+  const contract = "export const CONTRACT_VERSION = 1;\n";
+  const baseCommit = await commitOnSideBranch(repo, "contract.ts", contract);
+  const seen: string[] = [];
+  const readsContract: RunWorker = async (input) => {
+    seen.push(await readFile(join(input.task.cwd, "contract.ts"), "utf8"));
+    return writesOwnFile(input);
+  };
+  const report = await runPool({ ...base, baseCommit, tasks: [task("T1"), task("T2")], concurrency: 2, runWorker: readsContract });
+  assert.deepEqual(seen, [contract, contract]);
+  assert.deepEqual(report.tasks.map((entry) => [entry.taskId, entry.status, entry.harvest?.files]), [
+    ["T1", "ok", ["T1.txt"]],
+    ["T2", "ok", ["T2.txt"]],
+  ]);
 });
 
 test("cancelling stops running workers, cancels queued tasks and skips dependents", async () => {

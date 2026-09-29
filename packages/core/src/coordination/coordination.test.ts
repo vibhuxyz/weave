@@ -23,23 +23,53 @@ async function coordinatorFor(tasks: readonly TaskContract[]): Promise<{ coordin
 
 const typesOf = (events: readonly CoordinationEvent[]) => events.map((event) => event.type);
 
-test("one published contract releases the symbols its dependents wait for, before the producer finishes", async () => {
+function dependencyReadyIn(events: readonly CoordinationEvent[]) {
+  const found = events.find((event) => event.type === "dependency.ready");
+  if (found?.type !== "dependency.ready") throw new Error("no dependency.ready event in the inbox");
+  return found.data;
+}
+
+test("workers that need outputs from another worker all start at once, and its contract reaches them", async () => {
   const tasks = [
     task("T1"),
     task("T2", { dependencies: [{ task: "T1", requiredOutputs: ["Todo", "CreateTodoInput"] }] }),
     task("T3", { dependencies: [{ task: "T1", requiredOutputs: ["Todo", "API_ROUTES"] }] }),
   ];
   const { coordinator } = await coordinatorFor(tasks);
-  const running = new Map([["T1", "running" as const]]);
-  assert.deepEqual(nextStep(tasks, running, coordinator.availableOutputs()).ready, []);
+  assert.deepEqual(nextStep(tasks, new Map()).ready, ["T1", "T2", "T3"]);
 
   const published = coordinator.channelFor("T1").publish({
     type: "contract.published",
     data: { artifact: artifact("todo-api-contract", "x", ["Todo", "CreateTodoInput"]) },
   });
   assert.ok(published.ok, published.ok ? "" : published.reason);
+  assert.deepEqual(typesOf(coordinator.channelFor("T2").drain().events), ["contract.published"]);
+  assert.deepEqual(typesOf(coordinator.channelFor("T3").drain().events), ["contract.published"], "T3 needs Todo too, so the contract that carries it reaches T3 as well");
 
-  assert.deepEqual(nextStep(tasks, running, coordinator.availableOutputs()).ready, ["T2"]);
+  const unrelated = coordinator.channelFor("T1").publish({ type: "artifact.ready", data: { artifact: artifact("internal-notes", "x", ["scratch"]) } });
+  assert.ok(unrelated.ok, unrelated.ok ? "" : unrelated.reason);
+  assert.deepEqual(coordinator.channelFor("T2").drain().events, [], "an output nobody asked for is not delivered");
+});
+
+test("a late starter is told which inputs exist, and gets them, and which are still being built", async () => {
+  const { coordinator } = await coordinatorFor([
+    task("T1", { produces: ["api-dev-server", "api-client"] }),
+    task("T2", { dependencies: [{ task: "T1", requiredOutputs: ["api-dev-server", "api-client"] }] }),
+  ]);
+  const published = coordinator.channelFor("T1").publish({
+    type: "artifact.ready",
+    data: { artifact: artifact("api-dev-server", "http://localhost:3000") },
+  });
+  assert.ok(published.ok, published.ok ? "" : published.reason);
+
+  coordinator.taskStarted("T2");
+  const inbox = coordinator.channelFor("T2").drain();
+  const ready = dependencyReadyIn(inbox.events);
+  assert.deepEqual(ready.outputs, ["api-dev-server"]);
+  assert.deepEqual(ready.pending, ["api-client"]);
+  const delivered = inbox.events.filter((event) => event.type === "artifact.ready");
+  assert.equal(delivered.length, 1, "the published artifact is delivered, not just named");
+  assert.match(renderInbox(inbox), /http:\/\/localhost:3000/);
 });
 
 test("a worker is told which outputs its dependents are blocked on", async () => {
@@ -99,7 +129,6 @@ test("an artifact reaches only the dependents that need it, and a re-publish is 
   assert.ok(db.publish({ type: "artifact.ready", data: { artifact: artifact("schema", "v1") } }).ok);
   const updated = db.publish({ type: "artifact.ready", data: { artifact: artifact("schema", "v2") } });
   assert.ok(updated.ok && updated.event.type === "artifact.updated");
-  assert.deepEqual(coordinator.availableOutputs(), new Map([["DB", new Set(["schema"])]]));
   const inbox = coordinator.channelFor("API").drain();
   assert.deepEqual(typesOf(inbox.events), ["artifact.ready", "artifact.updated"]);
   assert.deepEqual(coordinator.channelFor("DOCS").drain().events, []);

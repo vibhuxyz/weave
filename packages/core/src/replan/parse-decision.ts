@@ -1,5 +1,5 @@
-import { isRecord, parseJsonBlock, readChoice, readList, readOptionalString, readPattern, readString, type FieldContext } from "../shared/index.ts";
-import { MAX_GUIDANCE_CHARS, MAX_REASON_CHARS, MAX_RERUN_TASKS, REPLAN_ACTIONS, TASK_ID_PATTERN } from "./constants.ts";
+import { isRecord, parseJsonBlock, readChoice, readList, readOptionalString, readPattern, readString, unparsedIssue, type FieldContext } from "../shared/index.ts";
+import { MAX_ANSWER_EXCERPT_CHARS, MAX_GUIDANCE_CHARS, MAX_REASON_CHARS, MAX_RERUN_TASKS, REPLAN_ACTIONS, TASK_ID_PATTERN } from "./constants.ts";
 import type { ParseDecisionResult, ReplanRerun } from "./types.ts";
 
 const WHERE = "Replan decision";
@@ -22,7 +22,7 @@ function parseRerun(raw: unknown, where: string, issues: string[]): ReplanRerun 
 
 export function parseReplanDecision(text: string): ParseDecisionResult {
   const parsed = parseJsonBlock(text);
-  if (!parsed.ok) return { ok: false, issues: [parsed.issue] };
+  if (!parsed.ok) return { ok: false, issues: [unparsedIssue(parsed.issue, text, MAX_ANSWER_EXCERPT_CHARS)] };
   if (!isRecord(parsed.value)) return { ok: false, issues: [`${WHERE} must be a JSON object`] };
   const issues: string[] = [];
   const ctx: FieldContext = { record: parsed.value, where: WHERE, issues };

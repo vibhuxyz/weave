@@ -59,7 +59,7 @@ test("a re-run starts a new block and counts the attempt", () => {
   const stream = streamOf([
     update({ kind: "task-started", taskId: "T1" }),
     update({ kind: "text", taskId: "T1", text: "first try" }),
-    update({ kind: "task-settled", taskId: "T1", status: "failed", reason: "tests failed" }),
+    update({ kind: "task-settled", taskId: "T1", status: "failed", reason: "tests failed", wallMs: 1000, installMs: 0 }),
     update({ kind: "task-started", taskId: "T1" }),
     update({ kind: "text", taskId: "T1", text: "second try" }),
   ]);
@@ -83,4 +83,40 @@ test("the stream selector returns the same block list every time, so React does 
   const run = applyRunMessages(null, [started, plan, update({ kind: "text", taskId: "T1", text: "hi" })]);
   assert.ok(run);
   assert.equal(selectRunStream({ run }).blocks, selectRunStream({ run }).blocks);
+});
+
+test("interleaved work stays one attempt: the blocks are segments, not restarts", () => {
+  const run = applyRunMessages(null, [
+    started,
+    plan,
+    update({ kind: "task-started", taskId: "T1" }),
+    update({ kind: "task-started", taskId: "T2" }),
+    update({ kind: "text", taskId: "T1", text: "writing the api" }),
+    update({ kind: "text", taskId: "T2", text: "scaffolding the client" }),
+    update({ kind: "text", taskId: "T1", text: "and its routes" }),
+    update({ kind: "text", taskId: "T2", text: "and its styles" }),
+  ]);
+  const blocks = run?.stream ?? [];
+  assert.deepEqual(blocks.map((block) => [block.taskId, block.attempt]), [["T1", 1], ["T2", 1], ["T1", 1], ["T2", 1], ["T1", 1], ["T2", 1]]);
+  assert.ok(blocks.every((block) => block.attempt === 1), "no interleaving is a restart");
+  assert.equal(run?.lanes["T1"]?.attempts, 1);
+});
+
+test("a real restart is the only thing that counts as the next attempt", () => {
+  const run = applyRunMessages(null, [
+    started,
+    plan,
+    update({ kind: "task-started", taskId: "T1" }),
+    update({ kind: "task-started", taskId: "T2" }),
+    update({ kind: "text", taskId: "T1", text: "first go" }),
+    update({ kind: "text", taskId: "T2", text: "meanwhile" }),
+    update({ kind: "task-settled", taskId: "T1", status: "failed", reason: "the engine crashed", wallMs: 1000, installMs: 0 }),
+    update({ kind: "task-started", taskId: "T1" }),
+    update({ kind: "text", taskId: "T1", text: "second go" }),
+    update({ kind: "text", taskId: "T2", text: "still going" }),
+  ]);
+  const blocks = run?.stream ?? [];
+  assert.deepEqual(blocks.map((block) => [block.taskId, block.attempt]), [["T1", 1], ["T2", 1], ["T1", 1], ["T2", 1], ["T1", 2], ["T2", 1]]);
+  assert.equal(run?.lanes["T1"]?.attempts, 2);
+  assert.equal(run?.lanes["T2"]?.attempts, 1);
 });

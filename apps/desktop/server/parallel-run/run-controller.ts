@@ -16,6 +16,7 @@ export interface StartRunInput {
   readonly engineId: string;
   readonly fallbackEngineIds?: readonly string[];
   readonly runKey: string;
+  readonly configOptions?: Readonly<Record<string, string>>;
   readonly setUpGit?: boolean;
   readonly send: (message: ServerMessage) => void;
 }
@@ -32,7 +33,12 @@ function outcomeOf(result: PlanAndRunResult): RunOutcome {
 }
 
 function engineConfig(input: StartRunInput) {
-  return { engine: input.engineId, fallbackEngines: (input.fallbackEngineIds ?? []).filter((id) => id !== input.engineId) };
+  const chosen = input.configOptions ?? {};
+  return {
+    engine: input.engineId,
+    fallbackEngines: (input.fallbackEngineIds ?? []).filter((id) => id !== input.engineId),
+    ...(Object.keys(chosen).length > 0 ? { configOptions: { ...chosen } } : {}),
+  };
 }
 
 function requestProblem(request: string): string | null {

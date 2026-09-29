@@ -10,6 +10,7 @@ export function emptyLane(task: RunPlanTask): Lane {
     taskId: task.id,
     title: task.title,
     dependsOn: task.dependsOn,
+    startsAfter: task.startsAfter ?? [],
     allowedPaths: task.allowedPaths,
     readOnlyPaths: task.readOnlyPaths ?? [],
     subtasks: task.subtasks ?? [],
@@ -21,6 +22,11 @@ export function emptyLane(task: RunPlanTask): Lane {
     verifyRung: task.verifyRung ?? null,
     complexity: task.complexity ?? null,
     status: "waiting",
+    activity: null,
+    verifyingRung: null,
+    changedFiles: 0,
+    wallMs: null,
+    installMs: null,
     attempts: 0,
     settledCostUsd: 0,
     attemptCostUsd: 0,
@@ -40,6 +46,8 @@ function startedAttempt(lane: Lane): Lane {
     ...lane,
     status: "running",
     attempts: lane.attempts + 1,
+    activity: null,
+    verifyingRung: null,
     reason: null,
     merge: null,
     blockedReason: null,
@@ -57,12 +65,17 @@ export function applyLaneUpdate(lane: Lane, update: LaneUpdate): Lane {
     case "thought":
     case "tool":
     case "tool-update":
-    case "file":
       return lane;
+    case "file":
+      return { ...lane, changedFiles: lane.changedFiles + 1 };
+    case "activity":
+      return { ...lane, activity: update.activity };
+    case "verifying":
+      return { ...lane, verifyingRung: update.rung };
     case "cost":
       return { ...lane, attemptCostUsd: update.costUsd };
     case "task-settled":
-      return { ...lane, status: update.status, reason: update.reason, blockedReason: null };
+      return { ...lane, status: update.status, reason: update.reason, blockedReason: null, verifyingRung: null, activity: null, wallMs: update.wallMs, installMs: update.installMs };
     case "merge":
       return { ...lane, merge: { status: update.status, detail: update.detail } };
     case "employee-assigned":

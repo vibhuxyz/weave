@@ -1,6 +1,7 @@
 import type { Blueprint } from "../blueprint/index.ts";
 import { CONTRACT_ENTRY_PATHS, CONTRACT_PACKAGE_NAME, CONTRACT_PACKAGE_PATH } from "./constants.ts";
 import { contractLanguageFor, renderContractEntry, type ContractLanguage } from "./render/index.ts";
+import { buildWorkspaceFiles } from "./workspace.ts";
 import type { Contract } from "./types.ts";
 
 function renderPackageJson(language: ContractLanguage): string {
@@ -17,6 +18,7 @@ export function buildContract(blueprint: Blueprint, version: number): Contract {
     language,
     entryPath,
     files: [
+      ...buildWorkspaceFiles(blueprint, language),
       { path: CONTRACT_PACKAGE_PATH, content: renderPackageJson(language) },
       { path: entryPath, content: renderContractEntry(blueprint, version, language) },
     ],

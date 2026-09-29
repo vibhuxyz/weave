@@ -13,3 +13,4 @@ export const MAX_INBOX_PROMPT_BYTES = 24_000;
 export const MAX_INBOX_FILE_BYTES = 8_000;
 export const MAX_INBOX_LISTED_EVENTS = 40;
 export const OUTPUT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+export const MAX_EXPAND_PATHS = 10;

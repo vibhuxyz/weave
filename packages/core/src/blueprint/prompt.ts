@@ -5,7 +5,7 @@ const MAX_REQUEST_BYTES = 8192;
 
 const OUTPUT_SHAPE = `{
   "stack": "TypeScript, Hono, SQLite",
-  "components": [{ "name": "api", "responsibility": "HTTP API", "paths": ["apps/api/**"] }],
+  "components": [{ "name": "api", "responsibility": "HTTP API and storage", "paths": ["src/**"] }],
   "schemas": [{ "name": "Note", "fields": [{ "name": "id", "type": "string" }, { "name": "body", "type": "string", "isOptional": true }] }],
   "endpoints": [{ "id": "createNote", "method": "POST", "path": "/notes", "summary": "create a note", "request": "CreateNoteRequest", "response": "Note" }],
   "events": [{ "name": "note.created", "summary": "a note was saved", "data": "Note" }],
@@ -19,6 +19,7 @@ export function buildBlueprintPrompt(request: string): string {
     "Rules:",
     "- Stack, components, schemas, endpoints, events and a smoke flow. Nothing more.",
     `- At most ${MAX_COMPONENTS} components, taken from: frontend, api, worker, infra.`,
+    "- Components are areas of the app, not packages. List the ones the request really has and keep them inside one package at the repository root (src/api/**, src/ui/**), unless the request describes separately deployed parts.",
     "- Field types are string, number, boolean, or the name of another schema, optionally followed by [].",
     "- The smoke flow is the acceptance test: ordered requests and the result each must produce.",
     "- Keep it small. Anything a worker can decide locally does not belong here.",

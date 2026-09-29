@@ -28,6 +28,7 @@ export type {
   SetupConsent,
   QuestionNotice,
   RunOutcome,
+  FileChange,
   RunArtifact,
   RunArtifactKind,
   RunClassification,

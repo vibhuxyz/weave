@@ -4,6 +4,7 @@ export interface RunPlanTask {
   readonly id: string;
   readonly title: string;
   readonly dependsOn: readonly string[];
+  readonly startsAfter?: readonly string[];
   readonly allowedPaths: readonly string[];
   readonly readOnlyPaths?: readonly string[];
   readonly produces?: readonly string[];
@@ -61,6 +62,10 @@ export interface RunClassification {
 export type RunTaskStatus = "ok" | "failed" | "cancelled";
 
 export type NoteTone = "info" | "warning";
+
+export const FILE_CHANGES = ["created", "modified", "deleted"] as const;
+
+export type FileChange = (typeof FILE_CHANGES)[number];
 
 export interface RungResult {
   readonly rung: string;
@@ -145,9 +150,11 @@ export type RunUpdate =
   | { readonly kind: "thought"; readonly taskId: string; readonly text: string }
   | { readonly kind: "tool"; readonly taskId: string; readonly tool: RunToolCall }
   | { readonly kind: "tool-update"; readonly taskId: string; readonly tool: RunToolPatch }
-  | { readonly kind: "file"; readonly taskId: string; readonly path: string }
+  | { readonly kind: "file"; readonly taskId: string; readonly path: string; readonly change: FileChange }
+  | { readonly kind: "activity"; readonly taskId: string; readonly activity: string }
+  | { readonly kind: "verifying"; readonly taskId: string; readonly rung: string }
   | { readonly kind: "cost"; readonly taskId: string; readonly costUsd: number }
-  | { readonly kind: "task-settled"; readonly taskId: string; readonly status: RunTaskStatus; readonly reason: string | null }
+  | { readonly kind: "task-settled"; readonly taskId: string; readonly status: RunTaskStatus; readonly reason: string | null; readonly wallMs: number; readonly installMs: number }
   | { readonly kind: "merge"; readonly taskId: string; readonly status: MergeStatus; readonly detail: string }
   | { readonly kind: "contract-changed"; readonly version: number; readonly requestedBy: string; readonly rerun: readonly string[] }
   | { readonly kind: "employee-assigned"; readonly taskId: string; readonly employeeId: string | null; readonly reasons: readonly string[] }

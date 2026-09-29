@@ -1,4 +1,5 @@
-import type { RunState, StreamBlock } from "../types";
+import { lanePhase } from "./lane-phase";
+import type { Lane, RunState, StreamBlock } from "../types";
 
 export interface RunHeader {
   readonly runKey: string | null;
@@ -39,5 +40,21 @@ export function selectRunStream(state: { readonly run: RunState | null }): RunSt
     outcome: run?.outcome ?? null,
     plannerLabel: run?.planning?.planner ?? null,
     isPlanning: run !== null && run.plan === null && run.outcome === null,
+  };
+}
+
+export interface WorkforceView {
+  readonly running: number;
+  readonly waiting: number;
+  readonly capacity: number;
+}
+
+export function selectWorkforce(state: { readonly run: RunState | null }): WorkforceView {
+  const lanes = state.run?.lanes ?? {};
+  const phases = Object.keys(lanes).map((taskId) => lanePhase(lanes[taskId] as Lane, lanes));
+  return {
+    running: phases.filter((phase) => phase === "running" || phase === "partially-blocked" || phase === "verifying").length,
+    waiting: phases.filter((phase) => phase === "pending").length,
+    capacity: state.run?.workerCount?.workers ?? 0,
   };
 }

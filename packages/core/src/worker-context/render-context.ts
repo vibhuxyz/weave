@@ -59,6 +59,22 @@ export function selectSkills(input: SkillSelectionInput): SkillPick {
   }, input.requested ?? []);
 }
 
+function dependencyLines(task: ContextSources["task"]): readonly string[] {
+  const dependencies = task.dependencies ?? [];
+  if (dependencies.length === 0) return [];
+  const needed = dependencies.filter((dependency) => dependency.requiredOutputs.length > 0);
+  const whole = dependencies.filter((dependency) => dependency.requiredOutputs.length === 0);
+  return [
+    ...(needed.length > 0
+      ? [
+          `Start now. Later you will need ${needed.map((dependency) => `${dependency.requiredOutputs.join(", ")} from ${dependency.task}`).join("; ")}.`,
+          "Do everything that does not need them first. When you reach the point where you genuinely need one, publish a dependency.blocked event naming that output and carry on with whatever else you can do; Weave delivers it to you as soon as it exists.",
+        ]
+      : []),
+    ...(whole.length > 0 ? [`${whole.map((dependency) => dependency.task).join(", ")} finished before you started, so their work is already in your copy.`] : []),
+  ];
+}
+
 function milestoneLines(task: ContextSources["task"]): readonly string[] {
   const subtasks = task.subtasks ?? [];
   if (subtasks.length === 0) return [];
@@ -84,7 +100,7 @@ function taskSection(sources: ContextSources): Rendered {
     escaped(goal.text, "task"),
     ...(task.allowedPaths?.length ? [`You may write only: ${task.allowedPaths.join(", ")}`] : []),
     ...(task.readOnlyPaths?.length ? [`Read but never edit: ${task.readOnlyPaths.join(", ")}`] : []),
-    ...(task.dependencies?.length ? [`Depends on: ${task.dependencies.map((dependency) => `${dependency.task} (${dependency.requiredOutputs.join(", ") || "all"})`).join("; ")}`] : []),
+    ...dependencyLines(task),
     ...(task.produces?.length ? [`Publish these outputs as soon as each one exists, before the rest of your task: ${task.produces.join(", ")}`] : []),
     ...milestoneLines(task),
     ...verificationLine(task),

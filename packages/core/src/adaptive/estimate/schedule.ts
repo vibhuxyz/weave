@@ -1,9 +1,15 @@
-import type { GraphTask, Schedule, ScheduledInterval } from "./types.ts";
+import type { GraphDependency, GraphTask, Schedule, ScheduledInterval } from "./types.ts";
+
+// Only a dependency on a whole task delays a start. One that names outputs is
+// fetched mid-flight, so both tasks run side by side (see scheduler/).
+function gatingDependencies(task: GraphTask): readonly GraphDependency[] {
+  return (task.dependencies ?? []).filter((dependency) => (dependency.requiredOutputs ?? []).length === 0);
+}
 
 export function bottomLevels(tasks: readonly GraphTask[], durationOf: (taskId: string) => number): ReadonlyMap<string, number> {
   const dependents = new Map<string, string[]>();
   for (const task of tasks) {
-    for (const dependency of task.dependencies ?? []) dependents.set(dependency.task, [...(dependents.get(dependency.task) ?? []), task.id]);
+    for (const dependency of gatingDependencies(task)) dependents.set(dependency.task, [...(dependents.get(dependency.task) ?? []), task.id]);
   }
   const levels = new Map<string, number>();
   const visit = (taskId: string, trail: ReadonlySet<string>): number => {
@@ -25,7 +31,7 @@ export function criticalPathMs(tasks: readonly GraphTask[], durationOf: (taskId:
 }
 
 function isReady(task: GraphTask, finished: ReadonlyMap<string, number>, now: number): boolean {
-  return (task.dependencies ?? []).every((dependency) => (finished.get(dependency.task) ?? Infinity) <= now);
+  return gatingDependencies(task).every((dependency) => (finished.get(dependency.task) ?? Infinity) <= now);
 }
 
 export type IsExclusive = (a: string, b: string) => boolean;
@@ -46,7 +52,7 @@ export function listSchedule(tasks: readonly GraphTask[], durationOf: (taskId: s
     const laneFree = Math.min(...lanes);
     const lane = lanes.indexOf(laneFree);
     const candidates = byPriority.filter((task) => !intervals.has(task.id));
-    const readyAt = (task: GraphTask): number => Math.max(laneFree, ...(task.dependencies ?? []).map((dependency) => finished.get(dependency.task) ?? Infinity));
+    const readyAt = (task: GraphTask): number => Math.max(laneFree, ...gatingDependencies(task).map((dependency) => finished.get(dependency.task) ?? Infinity));
     const next = candidates.find((task) => isReady(task, finished, laneFree)) ?? [...candidates].sort((a, b) => readyAt(a) - readyAt(b))[0];
     if (!next || !Number.isFinite(readyAt(next))) break;
     const startMs = Math.max(readyAt(next), exclusiveUntil(next.id, intervals, isExclusive));

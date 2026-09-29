@@ -84,6 +84,12 @@ test("a decision is parsed strictly and only names tasks in the plan", async () 
   ]);
 });
 
+test("an engine error in place of a decision is reported as what the engine said", () => {
+  const parsed = parseReplanDecision("API Error: the engine  refused this message");
+  assert.equal(parsed.ok, false);
+  assert.match(parsed.ok ? "" : parsed.issues.join(" "), /the engine answered: "API Error: the engine refused this message"/);
+});
+
 test("an unusable answer, twice, lets the run stand rather than blocking it", async () => {
   const prompts: string[] = [];
   const outcome = await decideReplan({

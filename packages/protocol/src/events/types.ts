@@ -2,8 +2,8 @@ import type { CoordinationEvent, ResourceRef } from "../coordination/index.ts";
 import type { CheckpointReason } from "../continuation/index.ts";
 import type { TaskComplexity } from "../task/index.ts";
 import type { VerificationRung } from "../verification/index.ts";
-
-export type EventSeq = number;
+import type { BaseEvent } from "./base.ts";
+import type { LifecycleEvent } from "./lifecycle.ts";
 
 export interface PlanCritiqueFact {
   outcome: "approved" | "revised" | "kept";
@@ -22,6 +22,7 @@ export interface PlannedTaskFact {
   title: string;
   allowedPaths: string[];
   dependsOn: string[];
+  startsAfter?: string[];
   readOnlyPaths?: string[];
   produces?: string[];
   subtasks?: string[];
@@ -33,13 +34,6 @@ export interface PlannedTaskFact {
 }
 
 export type WorkerLimit = "plan" | "setting" | "machine" | "budget";
-
-interface BaseEvent {
-  runId: string;
-  seq: EventSeq;
-  at: string;
-  taskId?: string;
-}
 
 export type WeaveEvent =
   | (BaseEvent & {
@@ -288,6 +282,7 @@ export type WeaveEvent =
     })
   | (BaseEvent & { type: "employee.assigned"; taskId: string; employeeId: string | null; score: number; reasons: string[] })
   | (BaseEvent & { type: "employee.verified"; taskId: string; employeeId: string; ok: boolean; rungs: { rung: VerificationRung; ok: boolean; wallMs: number }[]; detail: string })
-  | (BaseEvent & { type: "employee.memory.recorded"; taskId: string; employeeId: string; entries: number });
+  | (BaseEvent & { type: "employee.memory.recorded"; taskId: string; employeeId: string; entries: number })
+  | LifecycleEvent;
 
 export type WeaveEventType = WeaveEvent["type"];

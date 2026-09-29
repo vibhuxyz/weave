@@ -35,6 +35,7 @@ import { buildHistoryArchive, restoreArchivedTurns } from "./acpChat/history-arc
 import { appendAnswersSegment, appendTextSegment, appendThoughtSegment, appendToolSegment } from "./acpChat/turn-segments";
 import { latestPlanEntries, planChangeEntries, planChanges } from "./acpChat/plan-changes";
 import { useArchiveChannel } from "./acpChat/use-archive-channel";
+import { userTurn } from "./acpChat/user-turn";
 import type { ArchiveChannelOptions } from "./acpChat/use-archive-channel";
 import { useQuestionChannel, type AnsweredQuestion } from "./question";
 import { useRunChannel } from "@/features/runs";
@@ -1089,6 +1090,16 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     socket.send(JSON.stringify({ type: "save-history", sessionId: activeSessionId, ...archive }));
   }, [unarchivedNoticeId, activeSessionId, turns]);
 
+  /**
+   * Put a message the user typed in the transcript without prompting the
+   * engine. `/parallel` runs through the run channel, not a prompt, and the
+   * request still belongs in the chat where they typed it.
+   */
+  const showUserMessage = useCallback((text: string) => {
+    const turn = userTurn(text, crypto.randomUUID(), Date.now());
+    if (turn) setTurns((current) => [...current, turn]);
+  }, []);
+
   const send = useCallback(
     (
       text: string,
@@ -1391,6 +1402,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     submitSetupConsent,
     isOpeningChat: openingSessionId !== null,
     send,
+    showUserMessage,
     compact,
     isCompacting,
     isCompactSupported,

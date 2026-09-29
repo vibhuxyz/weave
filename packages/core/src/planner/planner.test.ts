@@ -189,3 +189,19 @@ test("buildPlannerPrompt lists the skill catalog inside its tag", () => {
   assert.equal(prompt.split("</skill-catalog>").length, 2);
   assert.match(prompt, /names from the skill catalog/);
 });
+
+const ENGINE_ERROR = "API Error: Opus 5's safeguards flagged this message (https://www.anthropic.com/legal/aup).\nTry rephrasing the request in a new session or change your model.";
+
+test("an engine that answers with its own error is reported as that, not as broken JSON", () => {
+  const parsed = parsePlan(ENGINE_ERROR, CWD);
+  assert.equal(parsed.ok, false);
+  const issue = parsed.ok ? "" : parsed.issues.join("\n");
+  assert.match(issue, /the engine answered: "API Error: Opus 5's safeguards flagged this message/);
+  assert.doesNotMatch(issue, /\n/);
+});
+
+test("the planner prompt never asks the engine to expose its reasoning", () => {
+  const prompt = buildPlannerPrompt({ request: "add payouts", kind: "existing", rungs: [], blueprint: null, contract: null });
+  assert.doesNotMatch(prompt, /thinking|think out loud|your reasoning/i);
+  assert.match(prompt, /reply with one JSON object in a ```json fence/);
+});

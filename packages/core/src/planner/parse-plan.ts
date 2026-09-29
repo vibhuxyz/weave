@@ -1,5 +1,5 @@
-import { isRecord, parseJsonBlock, readList, readOptionalString, readString, readStringList, type FieldContext } from "../shared/index.ts";
-import { MAX_GOAL_CHARS, MAX_NOTES, MAX_NOTE_CHARS, MAX_PLAN_TASKS, MAX_REASON_CHARS } from "./constants.ts";
+import { isRecord, parseJsonBlock, readList, readOptionalString, readString, readStringList, unparsedIssue, type FieldContext } from "../shared/index.ts";
+import { MAX_ANSWER_EXCERPT_CHARS, MAX_GOAL_CHARS, MAX_NOTES, MAX_NOTE_CHARS, MAX_PLAN_TASKS, MAX_REASON_CHARS } from "./constants.ts";
 import { validateGraph } from "./graph.ts";
 import { parseClassification } from "./parse-classification.ts";
 import { parseTask } from "./parse-task.ts";
@@ -11,7 +11,7 @@ function fail(...issues: string[]): ParsePlanResult {
 
 export function parsePlan(text: string, cwd: string): ParsePlanResult {
   const parsed = parseJsonBlock(text);
-  if (!parsed.ok) return fail(parsed.issue);
+  if (!parsed.ok) return fail(unparsedIssue(parsed.issue, text, MAX_ANSWER_EXCERPT_CHARS));
   if (!isRecord(parsed.value)) return fail("Plan must be a JSON object");
 
   const issues: string[] = [];

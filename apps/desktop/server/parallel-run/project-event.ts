@@ -51,11 +51,21 @@ function projectTaskEvent(event: WeaveEvent, taskId: string): RunUpdate | null {
     case "agent.message":
       return projectAgentMessage(event, taskId);
     case "file.written":
-      return { kind: "file", taskId, path: event.path };
+      return { kind: "file", taskId, path: event.path, change: "modified" };
+    case "file.created":
+      return { kind: "file", taskId, path: event.path, change: "created" };
+    case "file.modified":
+      return { kind: "file", taskId, path: event.path, change: "modified" };
+    case "file.deleted":
+      return { kind: "file", taskId, path: event.path, change: "deleted" };
+    case "worker.progress":
+      return { kind: "activity", taskId, activity: capped(event.activity, MAX_DETAIL_CHARS) };
+    case "verification.rung":
+      return { kind: "verifying", taskId, rung: event.rung };
     case "usage":
       return event.costUsd === undefined ? null : { kind: "cost", taskId, costUsd: event.costUsd };
     case "pool.task.settled":
-      return { kind: "task-settled", taskId, status: event.status, reason: event.reason && capped(event.reason, MAX_DETAIL_CHARS) };
+      return { kind: "task-settled", taskId, status: event.status, reason: event.reason && capped(event.reason, MAX_DETAIL_CHARS), wallMs: event.wallMs, installMs: event.installMs };
     case "merge.finished":
       return { kind: "merge", taskId, status: event.status, detail: capped(event.detail, MAX_DETAIL_CHARS) };
     default:
@@ -72,6 +82,7 @@ function projectPlanTask(task: PlannedTaskFact): RunPlanTask {
     id: task.id,
     title: task.title,
     dependsOn: task.dependsOn,
+    ...(task.startsAfter ? { startsAfter: task.startsAfter.slice(0, MAX_SCOPE_PATHS) } : {}),
     allowedPaths: task.allowedPaths.slice(0, MAX_SCOPE_PATHS),
     ...(task.readOnlyPaths ? { readOnlyPaths: task.readOnlyPaths.slice(0, MAX_SCOPE_PATHS) } : {}),
     ...(task.produces ? { produces: task.produces.slice(0, MAX_TASK_OUTPUTS) } : {}),

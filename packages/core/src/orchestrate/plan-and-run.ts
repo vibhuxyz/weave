@@ -28,12 +28,17 @@ const DEFAULT_MAX_WORKERS = 4;
 const PLAN_NOT_APPROVED = "The plan was not approved, so nothing ran.";
 const RUN_STOPPED = "The run was stopped.";
 
+function startsAfter(task: PlannedTask): string[] {
+  return (task.dependencies ?? []).filter((dependency) => dependency.requiredOutputs.length === 0).map((dependency) => dependency.task);
+}
+
 function taskFact(task: PlannedTask, employeeId: string | undefined, engineId: string | undefined): PlannedTaskFact {
   return {
     id: task.id,
     title: task.title,
     allowedPaths: [...(task.allowedPaths ?? [])],
     dependsOn: (task.dependencies ?? []).map((dependency) => dependency.task),
+    ...(startsAfter(task).length > 0 ? { startsAfter: startsAfter(task) } : {}),
     ...(task.readOnlyPaths?.length ? { readOnlyPaths: [...task.readOnlyPaths] } : {}),
     ...(task.produces ? { produces: [...task.produces] } : {}),
     ...(task.subtasks ? { subtasks: [...task.subtasks] } : {}),
@@ -91,7 +96,13 @@ async function plan(options: PlanAndRunOptions, context: PlanContext, sources: P
   const withTurn = (runTurn: TurnRunner, reviewTurn: TurnRunner | undefined) =>
     planTasks({ ...context, request: options.request, projectContext, employeeRoster: sources.roster, employeeIds: sources.employeeIds, engineCandidates: sources.engineCandidates, runTurn, reviewTurn, signal: options.signal });
   if (options.runTurn) return withTurn(options.runTurn, options.reviewTurn);
-  return withPlannerWorkspace({ ...context, engineId: engines.plannerId, reviewerEngineId: engines.reviewerId }, withTurn);
+  return withPlannerWorkspace({
+    ...context,
+    engineId: engines.plannerId,
+    reviewerEngineId: engines.reviewerId,
+    engineIds: enginesFor(options.config),
+    ...(options.config ? { config: options.config } : {}),
+  }, withTurn);
 }
 
 type Planned = Extract<PlanningOutcome, { status: "planned" }>;
@@ -175,7 +186,14 @@ function reviserFor(options: PlanAndRunOptions, context: ExecuteContext, runWork
     ledger,
     openTurn: async () => turn
       ? { runTurn: turn, close: async () => undefined }
-      : openCoordinatorTurn({ repoRoot, weaveDir, ledger, engineId: choosePlanningEngines(context.engineCandidates).plannerId }),
+      : openCoordinatorTurn({
+          repoRoot,
+          weaveDir,
+          ledger,
+          engineId: choosePlanningEngines(context.engineCandidates).plannerId,
+          engineIds: enginesFor(options.config),
+          ...(options.config ? { config: options.config } : {}),
+        }),
     ...(options.signal ? { signal: options.signal } : {}),
     ...(next ? { next } : {}),
   });
