@@ -6,6 +6,7 @@ import {
   PlusIcon,
   SettingsIcon,
   SquarePenIcon,
+  UserRoundIcon,
 } from "lucide-react";
 import { DefaultProjectGlyphIcon } from "@/features/projects/ui";
 import { cn } from "@/shared/lib";
@@ -15,7 +16,7 @@ import type { ProjectEntry } from "@/features/projects/hooks";
 import { ProjectChatList } from "./ProjectChatList";
 import { ProjectRow } from "./ProjectRow";
 
-export type SidebarView = "home" | "chat" | "agents" | "plugins" | "skills" | "project" | "settings";
+export type SidebarView = "home" | "chat" | "agents" | "personas" | "plugins" | "skills" | "project" | "settings";
 
 export interface SidebarProps {
   projects: ProjectEntry[];
@@ -43,6 +44,7 @@ export interface SidebarProps {
 
 const NAV = [
   { id: "home", label: "Home", icon: HomeIcon, view: "home" as const },
+  { id: "personas", label: "Personas", icon: UserRoundIcon, view: "personas" as const },
   { id: "agents", label: "Employees", icon: BotIcon, view: "agents" as const },
   { id: "skills", label: "Skills", icon: BookOpenIcon, view: "skills" as const },
   { id: "project", label: "Project", icon: NetworkIcon, view: "project" as const },

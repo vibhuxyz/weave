@@ -6,7 +6,7 @@ export type MenuAction = "edit" | "customize" | "duplicate" | "toggle-home" | "r
 export type CardAction = "view" | "chat" | MenuAction;
 
 export function menuActionsFor(agent: Agent, entry: EmployeeEntry | undefined): readonly MenuAction[] {
-  if (agent.origin.kind === "persona") return ["toggle-home", "delete"];
+  if (agent.origin.kind === "persona") return agent.builtin ? ["toggle-home"] : ["edit", "toggle-home", "delete"];
   if (!entry) return ["toggle-home"];
   if (entry.employee.source !== "project") return ["customize", "duplicate", "toggle-home"];
   return ["edit", "duplicate", "toggle-home", entry.overrides ? "reset" : "delete"];

@@ -1,2 +1,2 @@
-export { copyFormValues, emptyFormValues, idFromName, toEmployeeFields, toFormValues } from "./employee-form";
+export { copyFormValues, emptyFormValues, idFromName, linesOf, toEmployeeFields, toFormValues } from "./employee-form";
 export type { EmployeeFormValues } from "./employee-form";

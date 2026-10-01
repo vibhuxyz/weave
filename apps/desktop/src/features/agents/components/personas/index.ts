@@ -1,0 +1,1 @@
+export { PersonasView } from "./PersonasView";

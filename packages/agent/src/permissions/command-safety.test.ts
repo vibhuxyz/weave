@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspectCommandBoundaries } from "./command-safety.ts";
+import { isUserSkillPath } from "./path-confinement.ts";
 
 const SPACED_CWD = "/Users/tester/Documents/full stack";
 
@@ -71,6 +72,25 @@ test("a parent path is refused when the cd before it might not have happened", (
     assert.equal(check.allowed, false, command);
     assert.match(check.reason ?? "", /traversal/);
   }
+});
+
+test("skill files under the home skill roots are readable and neighboring secrets are not", () => {
+  const home = mkdtempSync(join(tmpdir(), "weave-home-"));
+  const skill = join(home, ".agents", "skills", "mentor", "SKILL.md");
+  const bundled = join(home, ".grok", "bundled", "skills", "docx", "SKILL.md");
+  const secret = join(home, ".ssh", "id_rsa");
+  mkdirSync(join(home, ".agents", "skills", "mentor"), { recursive: true });
+  mkdirSync(join(home, ".grok", "bundled", "skills", "docx"), { recursive: true });
+  mkdirSync(join(home, ".ssh"), { recursive: true });
+  writeFileSync(secret, "secret");
+  symlinkSync(secret, join(home, ".agents", "skills", "mentor", "linked-secret"));
+
+  assert.equal(isUserSkillPath(skill, home), true);
+  assert.equal(isUserSkillPath(bundled, home), true);
+  assert.equal(isUserSkillPath(secret, home), false);
+  assert.equal(isUserSkillPath(join(home, ".grok", "auth.json"), home), false);
+  assert.equal(isUserSkillPath(join(home, ".agents", "skills-evil", "SKILL.md"), home), false);
+  assert.equal(isUserSkillPath(join(home, ".agents", "skills", "mentor", "linked-secret"), home), false);
 });
 
 test("a parent path through a symlinked directory is judged where it really lands", () => {

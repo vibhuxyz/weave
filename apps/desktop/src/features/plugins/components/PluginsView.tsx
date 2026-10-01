@@ -8,6 +8,8 @@ import { capabilitySummary, type NormalizedPlugin } from "@weave/core/browser";
 import type { ProjectPlugin } from '@/features/projects/hooks';
 import { compatLine, pluginTier, TIER_META, type PluginTier } from '@/features/plugins/lib';
 import { PluginGlyph } from '@/features/plugins/components/PluginGlyph';
+import { useSkillPlugins } from "../hooks";
+import { SavedPluginNotes } from "./SavedPluginNotes";
 
 type Mode = "off" | "manual" | "always";
 
@@ -43,6 +45,7 @@ export function PluginsView({
   hasProject: boolean;
 }) {
   const [query, setQuery] = useState("");
+  const { plugins: savedNotes, remove: removeSavedNote } = useSkillPlugins();
 
   const modeOf = (id: string): Mode =>
     projectPlugins.find((p) => p.id === id)?.mode ?? "off";
@@ -89,9 +92,9 @@ export function PluginsView({
         </Button>
       </div>
       <p className="mb-6 max-w-2xl text-muted-foreground text-sm">
-        Browsed from Claude Code's marketplace, grouped by which engines can run
-        them. Set each to Always, Manual, or Off per project — the same way agents
-        attach.
+        Install one from a marketplace or a GitHub repo, then attach it to this
+        project. Weave reads the catalog already installed under ~/.claude/plugins,
+        including marketplace repos. Set each to Always, Manual, or Off.
       </p>
 
       <div className="relative mb-10 max-w-md">
@@ -104,6 +107,8 @@ export function PluginsView({
         />
       </div>
 
+      <SavedPluginNotes plugins={savedNotes} onRemove={removeSavedNote} />
+
       {!hasProject && (
         <p className="mb-8 rounded-lg border border-border/50 border-dashed p-3 text-center text-muted-foreground text-xs">
           Open a project to attach plugins to it.
@@ -112,9 +117,8 @@ export function PluginsView({
 
       {catalog.length === 0 ? (
         <p className="rounded-xl border border-border/50 border-dashed p-8 text-center text-muted-foreground text-sm">
-          No plugins found. The catalog comes from <code>~/.claude/plugins/</code> —
-          run <code>claude</code> and open <code>/plugin</code> once to populate it,
-          then Refresh.
+          No plugins found. Install them from a marketplace or a GitHub marketplace
+          repo, then Refresh. Weave reads <code>~/.claude/plugins/</code>.
         </p>
       ) : total === 0 ? (
         <p className="py-12 text-center text-muted-foreground text-sm">

@@ -36,8 +36,8 @@ export function EmployeesView({ actions, hasProject, onChat, focusEmployeeId, on
         <div className="mx-auto w-full max-w-5xl flex-1 overflow-y-auto p-8">
           <header className="mb-8">
             <h1 className="font-medium text-lg text-foreground">Employees</h1>
-            <p className="mt-1 text-muted-foreground text-sm">
-              Who Weave assigns work to: their responsibilities, permissions, engines and checks.
+            <p className="mt-1 max-w-2xl text-muted-foreground text-sm">
+              Who does the work. A frontend or backend employee says what to build and which skills and rules to follow. Choose skills while creating one.
             </p>
           </header>
           {page.actionError && (
@@ -48,7 +48,7 @@ export function EmployeesView({ actions, hasProject, onChat, focusEmployeeId, on
           )}
           <ListingNotice listing={page.listing} hasProject={hasProject} />
           <EmployeeGrid
-            agents={page.agents}
+            agents={page.agents.filter((agent) => agent.origin.kind === "employee")}
             entriesById={page.entriesById}
             isPinned={page.isPinned}
             canCreate={page.listing.status === "ready"}

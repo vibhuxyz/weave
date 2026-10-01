@@ -27,8 +27,7 @@ export function IdentityFields({ register, errors, isIdLocked }: IdentityFieldsP
       />
       <TextField register={register} name="description" label="Description" placeholder="What this employee owns" />
       <TextField register={register} name="responsibilities" label="Responsibilities" rows={4} hint={`${LIST_HINT} Matched against task text to assign work.`} />
-      <TextField register={register} name="skills" label="Skills" rows={3} hint={LIST_HINT} />
-      <TextField register={register} name="rules" label="Rules" rows={3} hint={LIST_HINT} />
+      <TextField register={register} name="rules" label="Rules" rows={3} hint={`${LIST_HINT} Standards this employee follows.`} />
       <TextField register={register} name="instructions" label="Instructions" rows={8} hint="Markdown given to the employee on every task." />
     </fieldset>
   );

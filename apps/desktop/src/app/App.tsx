@@ -45,7 +45,7 @@ import type { BlockAction } from "@/agent/normalize";
 import { collectTurnDiffs } from "@/agent/diff";
 import { Sidebar } from "./Sidebar";
 import { CreateProjectDialog, toneColor } from '@/features/projects/components';
-import { AgentAvatar, EmployeesView, ConversationStart } from '@/features/agents/components';
+import { AgentAvatar, EmployeesView, PersonasView, ConversationStart } from '@/features/agents/components';
 import { SkillsView } from "@/features/skills";
 import { ProjectView } from "@/features/project-intelligence";
 import { formatSkillPluginsSystemPrompt, usePlugins, useSkillPlugins } from '@/features/plugins/hooks';
@@ -103,7 +103,7 @@ const NO_PROJECT_LABEL = "No project";
 const NEW_CHAT_TITLE = "New chat";
 
 export function App() {
-  const [previousView, setPreviousView] = useState<"home" | "chat" | "agents" | "plugins" | "skills" | "project">("home");
+  const [previousView, setPreviousView] = useState<"home" | "chat" | "agents" | "personas" | "plugins" | "skills" | "project">("home");
   const { state: project, choose, startWith } = useProject();
   const server = project.status === "running" ? project.server : null;
   // Ported from Berd's onboarding gate: Home never requires a project — it's
@@ -221,12 +221,12 @@ export function App() {
       ? projects.find((p) => p.dir === project.dir)
       : undefined;
   const [view, setView] = usePersistedState<
-    "home" | "chat" | "agents" | "plugins" | "skills" | "project" | "settings"
+    "home" | "chat" | "agents" | "personas" | "plugins" | "skills" | "project" | "settings"
   >(
     "berd:view",
     "home",
     (v, d) =>
-      v === "home" || v === "agents" || v === "plugins" || v === "skills" || v === "project" || v === "settings" ? v : d,
+      v === "home" || v === "agents" || v === "personas" || v === "plugins" || v === "skills" || v === "project" || v === "settings" ? v : d,
   );
 
   const openSettings = useCallback(() => {
@@ -1304,6 +1304,8 @@ export function App() {
             focusEmployeeId={focusEmployeeId}
             onFocusHandled={clearEmployeeFocus}
           />
+        ) : view === "personas" ? (
+          <PersonasView onChat={handleChatWithEmployee} />
         ) : view === "plugins" ? (
           <PluginsView
             catalog={pluginCatalog}
@@ -1325,8 +1327,7 @@ export function App() {
           />
         ) : view === "skills" ? (
           <SkillsView
-            projectDir={activeDir}
-            projectLabel={activeDir ? basename(activeDir) : undefined}
+            hasProject={activeDir !== undefined}
             onOpenEmployee={openEmployee}
             onRefreshSkills={refreshSkills}
           />

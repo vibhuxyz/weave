@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { idFromName, toEmployeeFields, type EmployeeActions, type EmployeeFormValues } from "@/features/employees";
 import type { EmployeeDialogState } from "@/features/agents/hooks";
 import { Button, Sheet, SheetContent, SheetTitle } from "@/shared/ui";
-import { IdentityFields, PermissionFields, PolicyFields } from "../employee-form-fields";
+import { IdentityFields, PermissionFields, PolicyFields, SkillPicker } from "../employee-form-fields";
 import { DIALOG_TITLES, defaultValuesFor, replacesIdFor } from "./default-values";
 
 interface EmployeeDialogProps {
@@ -48,6 +48,7 @@ export function EmployeeDialog({ state, saveEmployee, onClose, onSaved }: Employ
           </div>
           <div className="min-h-0 flex-1 space-y-8 overflow-y-auto px-7 pb-5">
             <IdentityFields register={register} errors={formState.errors} isIdLocked={state.mode === "customize"} />
+            <SkillPicker control={control} />
             <PermissionFields register={register} control={control} />
             <PolicyFields register={register} control={control} />
           </div>

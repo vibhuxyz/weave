@@ -1,6 +1,9 @@
 import { existsSync } from "node:fs";
+import { Transform, type Readable } from "node:stream";
 import type { AuthMethod } from "@weave/protocol";
 import { getEngine, grokCliPath, resolveEngineEntry } from "./engines.ts";
+
+const GROK_SKILL_RELOAD_ID = "skills-reload";
 
 const GROK_ON_PATH = process.platform === "win32" ? "grok.exe" : "grok";
 
@@ -46,6 +49,38 @@ function grokLoginMethod(method: GrokLoginMethod): AuthMethod {
       "terminal-auth": { command: method.command, args: [...method.args], label: method.name },
     },
   } as unknown as AuthMethod;
+}
+
+function isUnsolicitedGrokSkillReload(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("{")) return false;
+  try {
+    const message: unknown = JSON.parse(trimmed);
+    if (typeof message !== "object" || message === null) return false;
+    if (!("id" in message)) return false;
+    return message.id === GROK_SKILL_RELOAD_ID && !("method" in message);
+  } catch (error) {
+    if (error instanceof SyntaxError) return false;
+    throw error;
+  }
+}
+
+export function dropUnsolicitedGrokResponses(stdout: Readable): Readable {
+  let pending = "";
+  return stdout.pipe(
+    new Transform({
+      transform(chunk: Buffer | string, _encoding, callback) {
+        pending += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+        const lines = pending.split("\n");
+        pending = lines.pop() ?? "";
+        const kept = lines.filter((line) => !isUnsolicitedGrokSkillReload(line));
+        callback(null, kept.length === 0 ? "" : `${kept.join("\n")}\n`);
+      },
+      flush(callback) {
+        callback(null, pending.length > 0 && !isUnsolicitedGrokSkillReload(pending) ? pending : undefined);
+      },
+    }),
+  );
 }
 
 export function grokTerminalAuthMethods(): AuthMethod[] {

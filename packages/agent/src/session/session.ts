@@ -2,6 +2,7 @@ import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type { AuthMethod, SessionConfigOption, Usage } from "@weave/protocol";
 import { isAuthRequiredError } from "@weave/protocol";
+import { dropUnsolicitedGrokResponses } from "../engines/index.ts";
 import { spawnAgent, type SpawnedAgent } from "../spawn/index.ts";
 import { confineToTaskDir, type PermissionPolicy } from "../permissions/index.ts";
 import { SessionClient } from "./client.ts";
@@ -49,9 +50,10 @@ function createClientConnection(
     throw new Error("Spawned agent process missing stdin or stdout stream");
   }
 
+  const agentStdout = spawned.engine.id === "grok" ? dropUnsolicitedGrokResponses(stdout) : stdout;
   const stream = acp.ndJsonStream(
     Writable.toWeb(stdin) as WritableStream<Uint8Array>,
-    Readable.toWeb(stdout) as ReadableStream<Uint8Array>,
+    Readable.toWeb(agentStdout) as ReadableStream<Uint8Array>,
   );
   return new acp.ClientSideConnection(() => client, stream);
 }

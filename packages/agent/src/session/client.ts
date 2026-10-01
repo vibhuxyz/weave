@@ -7,6 +7,7 @@ import {
   firstMatch,
   isInside,
   isPlanModeExit,
+  isUserSkillPath,
   relativeInside,
   toAcpResponse,
   type PermissionDecision,
@@ -83,6 +84,7 @@ export class SessionClient implements acp.Client {
     const absolute = isAbsolute(requestedPath)
       ? requestedPath
       : resolve(this.task.cwd, requestedPath);
+    if (mode === "read" && isUserSkillPath(absolute)) return absolute;
     if (!isInside(this.task.cwd, absolute)) {
       throw new Error(`Refused path outside the task dir: ${requestedPath}`);
     }

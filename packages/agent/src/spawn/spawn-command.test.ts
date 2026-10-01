@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ENGINES } from "../engines/index.ts";
+import { Readable } from "node:stream";
+import { ENGINES, dropUnsolicitedGrokResponses } from "../engines/index.ts";
 import { resolveSpawnCommand } from "./spawn.ts";
 
 test("a native engine runs its binary directly; a node engine runs through node", () => {
@@ -18,4 +19,15 @@ test("Gemini CLI, OpenCode, and Grok are registered with their ACP entry points"
     [ENGINES.grok?.packageName, ENGINES.grok?.binName, ENGINES.grok?.args, ENGINES.grok?.runtime],
     ["@xai-official/grok", "grok", ["agent", "--no-leader", "stdio"], "native"],
   );
+});
+
+test("a grok skills-reload response is dropped and other ACP messages stay", async () => {
+  const input = Readable.from([
+    '{"jsonrpc":"2.0","id":1,"method":"session/update","params":{}}\n{"jsonrpc":"2.0","id":"skills-re',
+    'load","result":{"ok":true}}\n{"jsonrpc":"2.0","id":2,"result":true}\n',
+  ]);
+  const output = Buffer.concat(await dropUnsolicitedGrokResponses(input).toArray()).toString("utf8");
+  assert.equal(output.includes("skills-reload"), false);
+  assert.match(output, /"id":1/);
+  assert.match(output, /"id":2/);
 });
