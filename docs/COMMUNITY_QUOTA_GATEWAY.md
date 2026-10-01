@@ -1,5 +1,7 @@
 # Community Quota Gateway: Sharing 20% of Google CLI / Antigravity Quota
 
+> Design proposal. This is not current product behavior. Current behavior is [PRODUCT](PRODUCT.md).
+
 Architecture and implementation plan for offering a zero-setup, free-tier experience in Weave by sharing up to 20% of your Google CLI (`agy` / Gemini) quota with users who download the app.
 
 ---

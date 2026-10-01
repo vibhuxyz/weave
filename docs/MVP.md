@@ -1,5 +1,7 @@
 # MVP — Basic parallel multi-agent execution
 
+> Tier history. Current behavior is [PRODUCT](PRODUCT.md).
+
 **Definition:** several agents on one machine, isolated, on a plan you can
 inspect, merged sequentially with verification — on **both** new and existing
 projects.

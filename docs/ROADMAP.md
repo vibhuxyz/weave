@@ -1,5 +1,7 @@
 # Roadmap — design verdict and product tiers
 
+> This is the tier plan, not the current product spec. Current behavior is [PRODUCT](PRODUCT.md).
+
 *Status doc. What the design gets right, what to change, and what ships at each
 product tier.*
 

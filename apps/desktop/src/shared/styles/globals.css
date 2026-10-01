@@ -2816,6 +2816,7 @@ button.avatar-scatter-item:active:not(:disabled) .avatar-scatter-media,
   );
   background-size: var(--dot-spacing) var(--dot-spacing);
   background-position: 0 0;
+  background-attachment: scroll;
 }
 
 /* Big fixed wordmark the avatars pan behind. */

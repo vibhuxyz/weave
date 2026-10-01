@@ -1,5 +1,7 @@
 # UI Architecture & Implementation Guide — Agent Response Cards
 
+> Product behavior is [PRODUCT](PRODUCT.md). This file is the chat-stream UI note. Layouts it marks as removed are not current.
+
 > **Current design (2026-09-24) — supersedes the card layout below.** The boxed
 > response card (`AgentMessage`, `AgentHeader`, `WorkingRow`, the Overview/Activity
 > tabs, `ToolSteps`, `TurnDiffBar`) and the Brief/Normal/Deep depth control (§10)

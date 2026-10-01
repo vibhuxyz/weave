@@ -1,5 +1,7 @@
 # What has been built, phase by phase
 
+> Current product behavior is [PRODUCT](PRODUCT.md). This page is the phase log.
+
 The work was requested in phases. The docs are organised by version tier
 ([LADDER](LADDER.md)), so this page maps each phase to its tier, its commits and its detail.
 
@@ -125,6 +127,8 @@ scenario lost. The benchmark runs the real pool, worktrees and merges, but the e
 ---
 
 ## Phase 6 — AI employee runtime
+
+The desktop now has an Employees screen and a separate Personas screen. That split is [PRODUCT](PRODUCT.md). The desktop server does not pass `employees.userDir`.
 
 Employees are configuration files (`.weave/employees/*.yaml|json`, a user directory, or six
 built-ins), not classes. Each has identity, responsibilities, skills, rules, memory,

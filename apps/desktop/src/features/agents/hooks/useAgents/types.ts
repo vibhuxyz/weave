@@ -15,6 +15,7 @@ export interface Agent {
   icon?: string;
   character?: string;
   builtin?: boolean;
+  overridesBuiltin?: boolean;
   origin: AgentOrigin;
   createdAt: number;
   updatedAt: number;

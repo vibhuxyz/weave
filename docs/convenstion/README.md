@@ -6,13 +6,15 @@ For humans and AI agents (Weave, Claude Code) alike.
 Copy this folder into any repo as `docs/conventions/`. Put project-only exceptions in
 `docs/conventions/PROJECT.md`, never by editing these files per project.
 
+Product behavior is [../PRODUCT.md](../PRODUCT.md), not these files.
+
 | File | Read it when you touch |
 | :--- | :--- |
-| [BACKEND.md](./BACKEND.md) | APIs, workers, queues, realtime servers, shared packages |
-| [FRONTEND.md](./FRONTEND.md) | React / Next.js / Vite apps |
-| [DATABASE.md](./DATABASE.md) | schema, migrations, queries, caches |
-| [AI.md](./AI.md) | you are an agent, you review agent output, or the app calls an LLM |
-| [CODE_QUALITY.md](./CODE_QUALITY.md) | always |
+| [backend-conventions.md](./backend-conventions.md) | APIs, workers, queues, realtime servers, shared packages |
+| [frontend-conventions.md](./frontend-conventions.md) | React / Next.js / Vite apps |
+| [database-conventions.md](./database-conventions.md) | schema, migrations, queries, caches |
+| [ai-conventions.md](./ai-conventions.md) | you are an agent, you review agent output, or the app calls an LLM |
+| [code-quality-conventions.md](./code-quality-conventions.md) | always |
 
 ## How the rules work
 

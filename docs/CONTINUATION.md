@@ -1,5 +1,7 @@
 # Continuation — one task, many engines
 
+> V1.2 history. Current behavior is [PRODUCT](PRODUCT.md).
+
 **The feature:** you stop Claude Code halfway through a task, pick Codex, and
 Codex carries on from where Claude stopped. No lost work, no restart, no
 transcript dump.

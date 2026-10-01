@@ -1,5 +1,7 @@
 # The Weave Worker Model
 
+> Notes on workers, workspaces, and branches. Where this disagrees with the code, [PRODUCT](PRODUCT.md) and the code win.
+
 This document clarifies the relationship between worker processes, workspaces, and Git branches, explaining how Weave safely orchestrates concurrent AI coding agents.
 
 ## 1. Process, Workspace, and Branch

@@ -1,5 +1,7 @@
 # Version ladder
 
+> Status board for the version tiers. Current product behavior is [PRODUCT](PRODUCT.md).
+
 **The status board.** One screen: what is shipped, what is next, where each
 version lives.
 
@@ -53,8 +55,9 @@ so none of this has cleared the gate that was meant to justify it.
 | 6 | `95580cf` | **AI employee runtime**: employees as YAML/JSON config (built-in, user, project), registry with `extends`, resolver and assignment, permissions compiled into task policy and enforced by the runner, verification policy run before merge, per-employee memory and performance. | [EMPLOYEES](EMPLOYEES.md) |
 
 What is still open across the three: live-engine measurement of routing, read permissions are
-not enforced, the worker count is fixed per run, an engine budget stops a task instead of
-falling back, and there is no UI for employees, budgets or the event stream.
+not enforced, the worker count is fixed per run, and an engine budget stops a task instead of
+falling back. The desktop now has Employees, Personas, Skills, and plugin attachment.
+Budgets and the event stream still have no dedicated screen. Current behavior is [PRODUCT](PRODUCT.md).
 
 ---
 

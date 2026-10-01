@@ -1,11 +1,14 @@
 # Architecture
 
+> Current product behavior is [PRODUCT](PRODUCT.md). This file is the package and process map. Where a path or a screen name below disagrees with the tree, the tree and PRODUCT.md win.
+
 How the pieces fit, and why the seams are where they are.
 
-> **Naming.** The product is **Weave**. The code is not renamed yet: packages
-> are `@berd/*`, the CLI is `berd`, runtime output is `.berd/`. Every path here
-> is the real one. The rename is tracked in [V1](V1.md) under V1.1.
+> **Naming.** Packages are `@weave/*`, the CLI is `weave`, and run output is
+> `.weave/runs/<runId>/events.ndjson`. Some older sentences in this file still
+> say `@berd` or `.berd`. Those names are history.
 
+Current behavior: [PRODUCT](PRODUCT.md) · [index](README.md).
 Tiers: [V1](V1.md) · [CONTINUATION](CONTINUATION.md) · [MVP](MVP.md) ·
 [V2](V2.md) · [V3](V3.md) · [V4](V4.md) ·
 [ROADMAP](ROADMAP.md) · [LADDER](LADDER.md) · [FINDINGS](FINDINGS.md) ·
@@ -23,6 +26,8 @@ protocol  ←  agent  ←  core  ←  cli
 
 **Nothing points back.** `packages/core` must never import from
 `apps/desktop`, from `@tauri-apps/*`, or from React.
+
+This checkout has no `packages/cli`. The desktop server and `@weave/core` are the runners that exist. The diagram above is the intended direction, not a folder that is present.
 
 The reason is not tidiness. V1.1 is an eval harness that runs 12 fixtures × 2
 configs × 3 repeats unattended, possibly overnight. If that path goes through a
@@ -54,8 +59,11 @@ grep -rn "@tauri-apps\|from \"react\"\|apps/desktop" packages/ --include=*.ts
 
 ### `agent` — one engine process, nothing more
 
-- `engines-registry.ts` / `engines.ts` — registry of supported engines (`antigravity`,
-  `claude-code`, `codex`, `amp`), their manifests, capability flags, and CLI arguments.
+Flat names below (`session.ts`, `permissions.ts`, `spawn.ts`) are the folders `session/`, `permissions/`, `engines/`, `spawn/`, and `supervisor/`.
+
+- `engines/registry.ts` / `engines/engines.ts` — registry of supported engines (`antigravity`,
+  `claude-code`, `codex`, `grok`, `gemini`, `opencode`, `amp`), their manifests, capability flags, and CLI arguments.
+  Grok resolves `GROK_PATH` or `~/.grok/bin/grok` before the npm package. See [PRODUCT](PRODUCT.md).
 - `engine-capabilities.ts` — `EngineCapabilities`, `EngineTokenReporting`, and the
   per-engine declared capability data. Split out of `engines-registry.ts` once the
   capability dimensions from the "control plane" checklist (`planning`, `subagents`,
@@ -65,8 +73,9 @@ grep -rn "@tauri-apps\|from \"react\"\|apps/desktop" packages/ --include=*.ts
 - `policy.ts` — `TaskPolicy` → `PermissionPolicy` translation: `compilePolicyPaths`
   folds `filesystem.write` into `TaskContract.allowedPaths`; `withPolicy` adds
   command-pattern checks for `git.commit` and `deployment.allowed` on top of a base
-  policy (`confineToTaskDir` by default). `network.allowed` is recorded, not
-  enforced — see §10.
+  policy (`confineToTaskDir` by default). `network.allowed: false` rejects network
+  commands. Reads of home skill files are allowed after the task directory check fails.
+  Writes stay inside the task directory. See [PRODUCT](PRODUCT.md).
 - `supervisor.ts` — `EngineSupervisor`. Keeps warm engine child processes and manages
   per-session engine switches with prompt supersession.
 - `auth.ts` — engine authentication handling: terminal login runners (`runTerminalAuth`),
@@ -80,9 +89,10 @@ grep -rn "@tauri-apps\|from \"react\"\|apps/desktop" packages/ --include=*.ts
   shell command *strings* for `..` traversal and credential-dir references,
   not just `toolCall.locations`), `rejectAll`, `isInside` (symlink-resolving —
   see [FINDINGS](FINDINGS.md)). `permissions.test.ts` covers the boundary.
-- `engines.ts` / `engines-registry.ts` — `resolveEngineArgs` makes
+- `engines/registry.ts` — `resolveEngineArgs` makes
   `--no-sandbox` conditional per project/task; a `sandboxed` task on macOS is
-  additionally wrapped in `sandbox-exec` with kernel-level deny rules.
+  additionally wrapped in `sandbox-exec` with kernel-level deny rules
+  (`spawn/spawn.ts`).
 - `config-options.ts` — apply `model`/`mode`/`effort`/`fast`, report refusals.
 
 `agent` knows nothing about ledgers or runs. It emits through a sink; who
@@ -97,33 +107,29 @@ Built:
   enforce `maxTurns` and `timeoutMs`.
 - `sessions-store.ts` — which conversation belongs to which project.
 - `git.ts` — branch and porcelain status.
-- `skills.ts` — discovers `.weave/skills/` (and `.agents/skills/`), each a
-  folder with a `SKILL.md`; renders a pointer catalog for the system prompt.
+- `discovery/skills.ts` — discovers skill directories, each a folder with a
+  `SKILL.md`; renders a pointer catalog for the system prompt.
   Task-matched, read on demand — the body is never loaded until a skill's
-  description matches what the agent is about to do.
+  description matches what the agent is about to do. Desktop search order is in [PRODUCT](PRODUCT.md).
 - `rules.ts` — discovers `.weave/rules/` (and `.agents/rules/`), flat
   Markdown files this time, not folders — a rule is small enough to inline
   wholesale. Renders `<project-rules>`, standing constraints applied on every
   turn rather than a catalog consulted on demand. A rule that outgrows "small"
   belongs in `skills.ts` instead.
-- `agents/` — `BUILTIN_AGENTS`: six portable, provider-neutral role profiles
-  (frontend/backend/database/devops/AI engineer, reviewer), one file per role
-  plus a shared `types.ts` and `base.prompt.ts` (priority order, trust rules,
-  scope, and the DONE/BLOCKED report format every profile's prompt is built
-  from). Data plus a formatter; not wired into the desktop's separate
-  user-editable Persona store.
+- `agents/` — `BUILTIN_AGENTS`: role profiles plus `base.prompt.ts`. This module
+  is not the desktop persona list. Desktop personas are Builder, Teacher,
+  Committer, and Debugger, documented in [PRODUCT](PRODUCT.md).
 - `builtin-skills/` — `BUILTIN_SKILLS`: seven short skills Weave ships itself
   (typescript, frontend, backend, api-conventions, database, security, testing),
   one file per skill, rendered as `<builtin-skills>` with bodies inlined. Kept
   separate from `skills.ts`'s pointer catalog because the shapes differ —
   inline body vs. read-on-demand file.
-- `worktree.ts` — `createWorktree` / `removeWorktree` / `listWeaveWorktrees`:
+- `worktree/` — `createWorktree` / `removeWorktree` / `listWeaveWorktrees`:
   a task's isolated execution boundary, `git worktree add -b weave/<taskId>`
-  under `.weave/worktrees/<taskId>`. Single-task only — no pool, no scheduler,
-  no auto-merge; that is the integrator, still MVP.1.
-- `task-workspace.ts` — `resolveTaskWorkspace`, the one decision `runner.ts`
-  defers to: isolate into a worktree, or run in place. Kept out of `runner.ts`
-  itself to keep that file's diff small for this change.
+  under `.weave/worktrees/<taskId>`. This folder is the single-task boundary.
+  The pool, scheduler, and integrator are their own folders. Status is [LADDER](LADDER.md).
+- `worktree/workspace.ts` — `resolveTaskWorkspace`, the decision `runner.ts`
+  defers to: isolate into a worktree, or run in place.
 
 Built since MVP, one folder per feature (detail in the linked docs):
 
@@ -139,8 +145,9 @@ Built since MVP, one folder per feature (detail in the linked docs):
   live. `policy/` combines them into one logged decision.
 - `employees/` — the AI employee runtime ([EMPLOYEES](EMPLOYEES.md)). Config parsing (a strict
   YAML subset plus JSON), the registry with `extends`, resolver, assignment, prompt brief,
-  verification policy, memory and performance. The `agents/` profiles above now feed the
-  built-in employees' instructions.
+  verification policy, memory and performance. Profiles in `agents/` supply instructions for the
+  backend, frontend, database, and devops built-ins. QA and security carry their own text.
+  `ai-engineer` and `reviewer` are profiles only. They are not desktop employees. See [PRODUCT](PRODUCT.md).
 
 `planAndRun` turns the last two on with `adaptive` and `employees` options; coordination is
 always on inside the pool.
@@ -162,13 +169,9 @@ Planned, by tier — each tier file has the detail:
 not a new workspace member here — the "a new version adds a file to an existing
 package" rule still holds.
 
-### `cli` — how you actually drive it
+### `cli`
 
-`berd run | eval | replay | runs`. This is V1.0's acceptance surface and stays
-the primary one; the desktop is a convenience.
-
-`INIT_CWD` is honoured, because `pnpm -F @berd/cli start` runs with cwd =
-`packages/cli` and `--dir .` would otherwise silently mean the wrong directory.
+`packages/cli` is not in this checkout. `package.json` has no `weave run` script. Headless orchestration is `@weave/core`. The app starts `apps/desktop/server`.
 
 ### `eval` — the harness
 
@@ -208,7 +211,10 @@ React + Tauri. Built in three layers:
      `PlanApprovalModal` lets the user edit/reorder/re-prioritise steps, then
      the edited plan (or rejection feedback) is sent back as the next prompt —
      engine-agnostic because it never calls an engine API.
-   - `AgentsView` & `SkillsView`: persona management and skill plugins.
+   - Sidebar: Home, Personas, Employees, Skills, Project. Settings opens from the shell.
+     Personas set how an engine replies. Employees are the job config in [EMPLOYEES](EMPLOYEES.md).
+     Skills are `SKILL.md` guides. Plugins from `~/.claude/plugins` attach in the chat context panel.
+     A Plugins view exists and the sidebar does not open it. See [PRODUCT](PRODUCT.md).
    - `EnginePicker`, `ProvidersDialog`, and `EngineAuthPanel`: engine selection,
      install status, and credential/terminal sign-in.
    - `ContextPanel`: project git status, running dev servers with stop controls,
@@ -226,7 +232,7 @@ React + Tauri. Built in three layers:
 
 ## 3. The ledger
 
-`.berd/runs/<runId>/events.ndjson` — one JSON object per line, append-only.
+`.weave/runs/<runId>/events.ndjson` — one JSON object per line, append-only.
 
 Design choices worth keeping:
 
@@ -235,7 +241,7 @@ Design choices worth keeping:
 - **Raw payloads.** `agent.message` carries the ACP notification verbatim.
   Deriving a friendlier shape is a reader's job; discarding the original is
   unrecoverable.
-- **Self-ignoring.** `.berd/.gitignore` contains `*`, so the directory hides
+- **Self-ignoring.** `.weave/.gitignore` contains `*`, so the directory hides
   itself from the repo it lives in — without touching that repo's config.
   Without this, every run shows as an untracked change and pollutes any diff the
   agent is asked to review.
@@ -391,8 +397,8 @@ repeated expensive read.
 
 | Need | Through V3 | V4 |
 |---|---|---|
-| Event history | `.berd/runs/*/events.ndjson` (built) | same, plus shipping |
-| Task / run state | SQLite `.berd/state.db` | Postgres |
+| Event history | `.weave/runs/<runId>/events.ndjson` | same, plus shipping |
+| Task / run state | JSON under `.weave/runs/<runId>/`, including `run.json`. This tree has no `state.db` | Postgres |
 | Worker liveness | in-process registry + child `exit` | heartbeats + leases + fencing |
 | Locks / ownership | in-memory map in `core` | Redis |
 | Vector index | `sqlite-vec` or a flat file | pgvector |
@@ -401,9 +407,9 @@ Design the interfaces now — every write carries a `leaseId`, every worker has 
 id independent of its process — and implement none of it until a worker runs
 somewhere you cannot watch it exit.
 
-**Everything written at runtime goes under `.berd/`.** Worktrees, event logs,
-diffs, metrics, context cache. One gitignore line, one directory to delete when
-state gets weird, and the same path whether the desktop or the CLI is driving.
+**Runtime files for a run go under `.weave/`.** Worktrees, event logs, employee
+files, and memory. `packages/core/src/shared/ledger.ts` writes `.weave/.gitignore`
+containing `*` when that file is missing, so the directory hides itself.
 
 ---
 
@@ -434,16 +440,16 @@ this section names it.
 
 | Weave owns | Translated by / into | File |
 |---|---|---|
-| Engine-neutral session lifecycle | ACP itself — `initialize · newSession · prompt · cancel` — the same six calls regardless of which engine is behind the process | `agent/session.ts`, `agent/supervisor.ts` |
-| Which engines exist, what each can do | `EngineDescriptor` / `EngineCapabilities` — a capability flag per engine, not a hardcoded `if (provider === …)` | `agent/engines-registry.ts` |
-| Whether a plugin's commands/skills/agents/MCP/hooks/LSP survive on a given engine | `planActivation()` → `ActivationPlan` — resolved per (plugin, engine) pair into what's natively enabled, what falls back to an MCP adapter, and what becomes prose instructions | `core/plugins/resolve.ts` |
-| Project-wide standing constraints, portable across engines | `rules.ts` — `<project-rules>`, inlined; the same file works whichever engine is running | `core/rules.ts` |
-| Task-matched expertise, portable across engines | `skills.ts` — a pointer catalog every engine gets the same way | `core/skills.ts` |
-| What a tool call is allowed to touch | `PermissionPolicy` — a policy Weave owns, translated to each ACP response via `toAcpResponse` | `agent/permissions.ts` |
-| What happened, durably, engine-agnostic | The ledger — raw ACP payloads, verbatim | `core/ledger.ts`, `protocol/events.ts` |
-| What state a task is in right now | `foldTaskState()` — a pure fold over the ledger, not a second source of truth an engine could drift from | `core/state.ts` |
-| Whether a result is actually correct | The verification ladder — engine-agnostic; it never asks the engine whether it succeeded | `core/intake.ts`, `core/verify.ts` |
-| Carrying a task across engines mid-flight | `buildBrief()` — a bounded, trust-sectioned handoff, not a transcript dump | `core/handoff.ts`, `core/checkpoint.ts` |
+| Engine-neutral session lifecycle | ACP itself — `initialize · newSession · prompt · cancel` — the same six calls regardless of which engine is behind the process | `packages/agent/src/session/`, `packages/agent/src/supervisor/` |
+| Which engines exist, what each can do | `EngineDescriptor` / `EngineCapabilities` — a capability flag per engine, not a hardcoded `if (provider === …)` | `packages/agent/src/engines/registry.ts` |
+| Whether a plugin's commands/skills/agents/MCP/hooks/LSP survive on a given engine | `planActivation()` → `ActivationPlan` — resolved per (plugin, engine) pair into what's natively enabled, what falls back to an MCP adapter, and what becomes prose instructions | `packages/core/src/plugins/resolve.ts` |
+| Project-wide standing constraints, portable across engines | `<project-rules>`, inlined; the same file works whichever engine is running | `packages/core/src/discovery/rules.ts` |
+| Task-matched expertise, portable across engines | A pointer catalog every engine gets the same way | `packages/core/src/discovery/skills.ts`, `packages/core/src/skills/` |
+| What a tool call is allowed to touch | `PermissionPolicy` — a policy Weave owns, translated to each ACP response | `packages/agent/src/permissions/` |
+| What happened, durably, engine-agnostic | The ledger — raw ACP payloads, verbatim | `packages/core/src/shared/ledger.ts`, `packages/protocol/src/events/` |
+| What state a task is in right now | `foldTaskState()` — a pure fold over the ledger, not a second source of truth an engine could drift from | `packages/core/src/state/` |
+| Whether a result is actually correct | The verification ladder — engine-agnostic; it never asks the engine whether it succeeded | `packages/core/src/intake/`, `packages/core/src/verify/` |
+| Carrying a task across engines mid-flight | `buildBrief()` — a bounded, trust-sectioned handoff, not a transcript dump | `packages/core/src/handoff/`, `packages/core/src/checkpoint/` |
 
 The reason "engine adapter layer" cost almost nothing to build here is that
 ACP already *is* that layer for the six calls above — see §9. What Weave adds
@@ -454,31 +460,28 @@ actually happened so a task can move engines without losing what it knew.
 
 Updated since this section was first written:
 
-- **Per-task workspace isolation** is now built — `core/worktree.ts` +
-  `core/task-workspace.ts`, opt-in via `RunTaskOptions.isolate` /
-  `weave run --isolate`. Deliberately single-task: no pool, no scheduler, no
-  auto-merge. `TaskContract.allowedPaths` is now enforced accordingly
-  (`agent/permissions.ts`), closing the precondition [MVP.1](MVP.md) named for
-  it. The rest of MVP.1 — the pool, the scheduler, the integrator — is still
-  not built and still gated behind the item below.
-- **Capability discovery** is now live-checked for the one dimension ACP
-  actually reports (`resume`, cross-checked against `agentCapabilities.loadSession`
-  at `initialize` — `agent/capability-check.ts`, the `engine.capabilities`
-  ledger event). The Weave-specific dimensions (`planning`, `subagents`,
-  `skills`, `sandbox`, `browser`, `computerUse`) have no ACP wire
-  representation at all and stay hand-declared — see `engine-capabilities.ts`'s
-  doc comment.
-- **Declarative policy** now exists (`protocol/policy.ts`, `agent/policy.ts`):
-  filesystem-write and git-commit/deployment dimensions are real; `network` is
-  recorded but not enforced (see `policy.ts`'s doc comment) — true network
-  isolation needs a process-level sandbox boundary, which is a separate,
-  larger change.
+- **Per-task workspace isolation** is `packages/core/src/worktree/`.
+  `resolveTaskWorkspace` chooses a worktree or the project directory.
+  `TaskContract.allowedPaths` is enforced in `packages/agent/src/permissions/`.
+  The pool, scheduler, and integrator are separate folders. What has been run
+  live is [LADDER](LADDER.md), not this paragraph.
+- **Capability discovery** checks the one dimension ACP reports (`resume`,
+  cross-checked against `agentCapabilities.loadSession` at `initialize` —
+  `packages/agent/src/engines/capability-check.ts`). The Weave-specific
+  dimensions (`planning`, `subagents`, `skills`, `sandbox`, `browser`,
+  `computerUse`) have no ACP wire representation and stay hand-declared on
+  `EngineCapabilities` in `packages/agent/src/engines/types.ts`.
+- **Declarative policy** is `packages/agent/src/permissions/policy.ts`.
+  `network.allowed: false` rejects commands that match the network pattern in
+  that file (curl, wget, ssh, git push/pull/fetch/clone, package installs, and
+  the listed deploy commands). That is command matching. It is not a process
+  sandbox. Writes stay inside the task directory. Reads of home skill files
+  are allowed after that check fails. See [PRODUCT](PRODUCT.md).
 
-Still genuinely not done, and still not an oversight:
+Still open, and not an oversight:
 
-- **MVP.1's pool/scheduler/integrator** — multiple concurrent workers,
-  sequential merge-and-verify. See [ROADMAP](ROADMAP.md) §3.5 and §"the tier
-  rule".
+- **Live measurement of the pool.** The folders exist. The ladder says which
+  of them have been run against a real engine.
 - **The V1 exit-criteria baseline itself** — `weave eval` runs the full
   12-fixture × ≥2-config × ≥3-repeat matrix mechanically today, but that
   matrix has not actually been executed end to end (real API cost and wall

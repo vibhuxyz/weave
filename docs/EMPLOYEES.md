@@ -1,6 +1,8 @@
 # Employees
 
-Built as Phase 6 (commit `95580cf`).
+The product split between personas, employees, skills, and plugins is [PRODUCT](PRODUCT.md). This file is the employee config and what a team run does with it.
+
+Built as Phase 6 (commit `95580cf`). The desktop Employees screen is part of the current app, not a later phase.
 
 An employee is a **configuration**, not a class: identity, responsibilities, skills, rules, memory,
 permissions, capabilities, engine policy and verification policy. Weave assigns each planned task to
@@ -22,6 +24,10 @@ and overrides only the ones you write (maps merge; lists replace). `id: backend-
 `extends: backend-engineer` edits the built-in in place. Invalid files, duplicate ids, `extends`
 cycles and symlinks that leave the directory are skipped and reported as `error` events in the run
 ledger. Nothing is dropped silently.
+
+The desktop server calls `loadEmployeeRegistry({ projectRoot })` and does not pass `employees.userDir`. On the Employees screen the list is project files plus the six built-ins until a project is open, then the project registry. Customize writes a project file that replaces the built-in and keeps the same id. Reset deletes that file. Skills on the form are a checklist of discovered `SKILL.md` skills, plus names already saved on the employee that discovery does not know.
+
+A persona is not an employee. Personas are how an engine replies. They are documented in [PRODUCT](PRODUCT.md).
 
 ## Format
 

@@ -3,7 +3,10 @@ import type { Agent } from "@/features/agents/hooks";
 import { Badge } from "@/shared/ui";
 
 function badgeText(agent: Agent, entry: EmployeeEntry | undefined): string {
-  if (agent.origin.kind === "persona") return agent.builtin ? "Built-in" : "Custom";
+  if (agent.origin.kind === "persona") {
+    if (agent.overridesBuiltin) return "Customized";
+    return agent.builtin ? "Built-in" : "Custom";
+  }
   if (entry?.overrides) return "Customized";
   switch (agent.origin.source) {
     case "builtin":

@@ -27,14 +27,18 @@ import pollies13 from "../assets/characters/pollies-13.png";
 import pollies17 from "../assets/characters/pollies-17.png";
 import pollies21 from "../assets/characters/pollies-21.png";
 
-const CHARACTER_BY_SEED: Record<string, string> = {
-  "backend-engineer": gloopies1,
-  "frontend-engineer": gloopies10,
-  "devops-engineer": gloopies4,
-  "qa-engineer": gloopies7,
-  "security-engineer": gloopies13,
-  "database-engineer": gloopies16,
+const ASSIGNED_KEY_BY_SEED: Record<string, string> = {
+  "backend-engineer": "gloopies-1",
+  "frontend-engineer": "gloopies-10",
+  "devops-engineer": "gloopies-4",
+  "qa-engineer": "gloopies-7",
+  "security-engineer": "gloopies-13",
+  "database-engineer": "gloopies-16",
 };
+
+const FALLBACK_CHARACTER_KEY = "gloopies-1";
+const DJB2_SEED = 5381;
+const DJB2_SHIFT = 5;
 
 /**
  * Every character by a stable key.
@@ -66,21 +70,22 @@ const BY_KEY: Record<string, string> = {
 
 export const CHARACTER_KEYS: readonly string[] = Object.keys(BY_KEY);
 
-export const CHARACTERS: readonly string[] = Object.values(BY_KEY);
-
-/** The art for a chosen character key, or undefined if the key is unknown. */
 export function characterByKey(key: string | undefined): string | undefined {
   return key ? BY_KEY[key] : undefined;
 }
 
-/** An assigned character when the seed has one, else DJB2 over the seed. */
-export function resolveCharacter(seed: string): string {
-  const assigned = CHARACTER_BY_SEED[seed];
+export function characterKeyForSeed(seed: string): string {
+  const assigned = ASSIGNED_KEY_BY_SEED[seed];
   if (assigned) return assigned;
 
-  let hash = 5381;
+  let hash = DJB2_SEED;
   for (let i = 0; i < seed.length; i += 1) {
-    hash = ((hash << 5) + hash + seed.charCodeAt(i)) | 0;
+    hash = ((hash << DJB2_SHIFT) + hash + seed.charCodeAt(i)) | 0;
   }
-  return CHARACTERS[Math.abs(hash) % CHARACTERS.length] ?? "";
+  const key = CHARACTER_KEYS[Math.abs(hash) % CHARACTER_KEYS.length];
+  return key ?? FALLBACK_CHARACTER_KEY;
+}
+
+export function resolveCharacter(seed: string): string {
+  return characterByKey(characterKeyForSeed(seed)) ?? "";
 }

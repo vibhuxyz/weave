@@ -10,6 +10,7 @@ export const BUILTIN_PERSONAS: readonly Agent[] = [
       "Change the code, run the checks the project already has, and report what changed.",
       "Do not teach, do not commit unless asked, and do not expand the task.",
     ].join("\n"),
+    character: "fuzzies-1",
     builtin: true,
     origin: { kind: "persona" },
     createdAt: 0,

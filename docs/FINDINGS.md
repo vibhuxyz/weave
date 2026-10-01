@@ -1,5 +1,7 @@
 # Findings
 
+> Debugging notes. Where a note disagrees with the app, [PRODUCT](PRODUCT.md) and the code win.
+
 Things that were not obvious and cost real debugging time. Written down so
 they are not rediscovered.
 
