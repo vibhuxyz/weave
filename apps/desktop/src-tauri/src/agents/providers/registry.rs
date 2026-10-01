@@ -12,6 +12,8 @@ const PROVIDERS: &[ProviderConfig] = &[
         id: "claude-acp",
         aliases: &["claude-code", "claude"],
         binary_candidates: &["claude-agent-acp"],
+        spawn_args: &[],
+        probe_method_id: None,
         auth: AuthStrategy::CliAuth(CliAuthCommands {
             login_args: &["--cli", "auth", "login"],
             status_args: &["--cli", "auth", "status"],
@@ -21,6 +23,8 @@ const PROVIDERS: &[ProviderConfig] = &[
         id: "codex-acp",
         aliases: &["codex"],
         binary_candidates: &["codex-acp"],
+        spawn_args: &[],
+        probe_method_id: None,
         auth: AuthStrategy::CliAuth(CliAuthCommands {
             login_args: &["cli", "login"],
             status_args: &["cli", "login", "status"],
@@ -30,6 +34,16 @@ const PROVIDERS: &[ProviderConfig] = &[
         id: "antigravity-acp",
         aliases: &["antigravity", "gemini", "agy"],
         binary_candidates: &["agy-acp"],
+        spawn_args: &[],
+        probe_method_id: None,
+        auth: AuthStrategy::AcpAuth,
+    },
+    ProviderConfig {
+        id: "grok-acp",
+        aliases: &["grok", "grok-build"],
+        binary_candidates: &["grok"],
+        spawn_args: &["agent", "--no-leader", "stdio"],
+        probe_method_id: Some("cached_token"),
         auth: AuthStrategy::AcpAuth,
     },
 ];

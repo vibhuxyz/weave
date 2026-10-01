@@ -1,4 +1,5 @@
 import type { ChatTurn, ToolEntry } from "@/features/chat/hooks";
+import { readableAgentText } from "@/features/runs/lib";
 import { Prose } from "../Prose";
 import { ThoughtRow } from "./ThoughtRow";
 import { AnsweredQuestions } from "./AnsweredQuestions";
@@ -11,7 +12,7 @@ export function TurnSegments({ turn, onOpenDiff }: { readonly turn: ChatTurn; re
     <>
       {segmentsOf(turn).map((segment) => {
         if (segment.kind === "text") {
-          return segment.text.trim() ? <Prose key={segment.id}>{segment.text}</Prose> : null;
+          return segment.text.trim() ? <Prose key={segment.id}>{readableAgentText(segment.text)}</Prose> : null;
         }
         if (segment.kind === "thought") {
           return segment.text.trim() ? <ThoughtRow key={segment.id} text={segment.text} /> : null;

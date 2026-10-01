@@ -205,7 +205,7 @@ test("a shared-workspace run is committed onto the run branch and shows up in gi
   };
   const pooled = await runPool({ repoRoot: repo, weaveDir, ledger, tasks, concurrency: 2, runWorker: worker, shouldInstall: false });
   assert.deepEqual(pooled.tasks.map((entry) => entry.status), ["ok", "ok"]);
-  assert.deepEqual(pooled.tasks.map((entry) => entry.branch), [null, null], "disjoint tasks share the project directory");
+  assert.deepEqual(pooled.tasks.map((entry) => entry.branch), ["weave/run1/T1", "weave/run1/T2"], "shared tasks also record their own files on a branch");
 
   const committed = await commitProject({ repoRoot: repo, runBranch: "weave/run-shared", message: "weave: add backend and frontend" });
   assert.ok(committed.ok, committed.ok ? "" : committed.reason);

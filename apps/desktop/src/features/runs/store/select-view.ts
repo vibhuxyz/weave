@@ -7,6 +7,7 @@ interface StoreShape {
 
 const NO_FILES: readonly FileChangeEntry[] = [];
 const NO_EVENTS: readonly RunEventEntry[] = [];
+const DONE_PHASES: ReadonlySet<TaskPhase> = new Set(["completed", "verified"]);
 
 export interface FilesView {
   readonly files: readonly FileChangeEntry[];
@@ -53,7 +54,7 @@ export function runSummaryOf(run: RunState, now: number): RunSummaryView {
   const order = run.laneOrder;
   const completed = order.filter((taskId) => {
     const lane = run.lanes[taskId];
-    return lane !== undefined && lanePhase(lane, run.lanes) === "completed";
+    return lane !== undefined && DONE_PHASES.has(lanePhase(lane, run.lanes));
   }).length;
   const running = order.filter((taskId) => {
     const lane = run.lanes[taskId];

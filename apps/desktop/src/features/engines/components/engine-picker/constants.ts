@@ -16,6 +16,7 @@ export interface DisplayEffort {
 export const DISPLAY_AGENTS: readonly DisplayAgent[] = [
   { id: "claude-code", label: "Claude Code" },
   { id: "codex", label: "Codex" },
+  { id: "grok", label: "Grok" },
   { id: "antigravity", label: "Gemini" },
 ] as const;
 

@@ -1,4 +1,4 @@
-export { INTEGRATION_WORKTREE_ID, integrate } from "./integrator.ts";
+export { INTEGRATION_WORKTREE_ID, integrate, realChecksOf } from "./integrator.ts";
 export { verifyWithLadder } from "./verify-workspace.ts";
 export type {
   IntegrateOptions,

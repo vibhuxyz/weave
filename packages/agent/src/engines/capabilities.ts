@@ -49,6 +49,16 @@ export const CODEX_CAPABILITIES: EngineCapabilities = {
   ...UNDOCUMENTED_DEVICE_CAPABILITIES,
 };
 
+export const GROK_CAPABILITIES: EngineCapabilities = {
+  ...BASE_ACP_CAPABILITIES,
+  mcp: true,
+  planning: true,
+  subagents: true,
+  skills: true,
+  sandbox: false,
+  ...UNDOCUMENTED_DEVICE_CAPABILITIES,
+};
+
 export const AMP_CAPABILITIES: EngineCapabilities = {
   ...BASE_ACP_CAPABILITIES,
   mcp: false,

@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkCleanBase, describeUntrackedFiles } from "./preflight.ts";
-import { harvestWorktree } from "./harvest.ts";
+import { commitAll, harvestWorktree } from "./harvest.ts";
 import { detectInstallCommand, installWorktree } from "./install.ts";
 import { runGit } from "./run-git.ts";
 import { createWorktree, listWeaveWorktrees, removeWorktree } from "./worktree.ts";
@@ -43,7 +43,17 @@ test("untracked files are named, but ignored files and Weave's own folder are no
   await mkdir(join(repo, "state"), { recursive: true });
   await writeFile(join(repo, "state", "ledger.ndjson"), "{}\n");
   const warning = await describeUntrackedFiles(repo, join(repo, "state"));
-  assert.match(warning ?? "", /^1 file\(s\) are not in the last commit: src\/api\/app file\.ts\. The planner/);
+  assert.match(warning ?? "", /^1 file\(s\) are not committed, so the planner cannot open them\.[^\n]*Files: src\/api\/app file\.ts$/);
+});
+
+test("commitAll commits every change in the folder and returns the new HEAD", async () => {
+  const repo = await makeRepo();
+  await writeFile(join(repo, "README.md"), "changed\n");
+  await writeFile(join(repo, "new.ts"), "export {};\n");
+  const committed = await commitAll(repo, "weave: work before team run");
+  assert.deepEqual(committed, { ok: true, value: await git(repo, "rev-parse", "HEAD") });
+  assert.equal(await git(repo, "status", "--porcelain"), "");
+  assert.equal(await git(repo, "log", "-1", "--format=%an %s"), "Weave weave: work before team run");
 });
 
 test("os noise files do not block a run, but a real change next to them does", async () => {

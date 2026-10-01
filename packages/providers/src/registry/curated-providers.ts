@@ -52,6 +52,28 @@ export const CURATED_PROVIDERS: readonly AgentProvider[] = [
     },
   },
   {
+    id: "grok-acp",
+    name: "Grok",
+    runtime: {
+      command: "grok",
+      args: ["agent", "--no-leader", "stdio"],
+    },
+    auth: {
+      type: "acp_auth",
+      server: {
+        command: "grok",
+        args: ["agent", "--no-leader", "stdio"],
+      },
+      preferredMethodId: "cached_token",
+    },
+    capabilities: {
+      models: true,
+      reasoning: true,
+      tools: true,
+      sessions: true,
+    },
+  },
+  {
     id: "antigravity-acp",
     name: "Google Antigravity",
     runtime: {
@@ -86,6 +108,9 @@ export function normalizeProviderId(id: string): string {
   }
   if (id === "codex" || id === "codex-acp") {
     return "codex-acp";
+  }
+  if (id === "grok" || id === "grok-build" || id === "grok-acp") {
+    return "grok-acp";
   }
   if (id === "antigravity" || id === "gemini" || id === "agy" || id === "antigravity-acp") {
     return "antigravity-acp";

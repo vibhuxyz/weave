@@ -601,6 +601,7 @@ fn check_installed_engines(app: tauri::AppHandle) -> Result<Vec<String>, String>
     for (id, pkg) in [
         ("claude-code", "@agentclientprotocol/claude-agent-acp"),
         ("codex", "@agentclientprotocol/codex-acp"),
+        ("grok", "@xai-official/grok"),
         ("amp", "@sourcegraph/amp"),
         ("antigravity", "agy-acp"),
     ] {

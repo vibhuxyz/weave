@@ -45,7 +45,7 @@ async function promptFor(options: RelayOptions, attempt: AttemptContext): Promis
     model,
     state,
     engineId,
-    task: { id: task.id, goal: task.prompt, allowedPaths: task.allowedPaths, readOnlyPaths: task.readOnlyPaths, produces: task.produces, subtasks: task.subtasks, subtasksDone, skills: task.skills, verify: task.verify, verifyRung: task.verifyRung, dependencies: task.dependencies?.map((dependency) => ({ task: dependency.task, requiredOutputs: [...(dependency.requiredOutputs ?? [])] })) },
+    task: { id: task.id, goal: task.prompt, allowedPaths: task.allowedPaths, readOnlyPaths: task.readOnlyPaths, produces: task.produces, subtasks: task.subtasks, subtasksDone, skills: task.skills, verify: task.verify, verifyRung: task.verifyRung, sharedWith: task.sharedWith, dependencies: task.dependencies?.map((dependency) => ({ task: dependency.task, requiredOutputs: [...(dependency.requiredOutputs ?? [])] })) },
   });
   if (state === null && context.unknownSkills.length > 0) {
     options.ledger.append("error", { where: "worker-context.skills", message: `Task ${task.id} asked for unknown skills: ${context.unknownSkills.join(", ")}` });

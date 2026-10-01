@@ -7,6 +7,7 @@ import type {
   TaskContract,
   Usage,
 } from "@weave/protocol";
+import type { McpServer } from "@agentclientprotocol/sdk";
 import type { PermissionPolicy } from "../permissions/index.ts";
 import type { SessionModes } from "./modes.ts";
 
@@ -55,6 +56,7 @@ export interface OpenSessionOptions {
   sandboxed?: boolean;
   /** Silence allowed during a turn before the engine is killed. 0 disables. */
   stallTimeoutMs?: number;
+  mcpServers?: readonly McpServer[];
 }
 
 export type PromptBlock =

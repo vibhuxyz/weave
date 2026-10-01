@@ -16,6 +16,35 @@ export function selectRunHeader(state: { readonly run: RunState | null }): RunHe
   return { runKey: state.run?.runKey ?? null, approval: state.run?.approval ?? "none", request: state.run?.request ?? null, outcome: state.run?.outcome ?? null, laneOrder: state.run?.laneOrder ?? NO_LANES };
 }
 
+export interface RouteNoteView {
+  readonly reason: string | null;
+  readonly request: string | null;
+  readonly canKeepInChat: boolean;
+}
+
+export function selectRouteNote(state: { readonly run: RunState | null }): RouteNoteView {
+  const run = state.run;
+  return {
+    reason: run?.routeReason ?? null,
+    request: run?.request ?? null,
+    canKeepInChat: run !== null && run.outcome === null && run.approval !== "approved",
+  };
+}
+
+export interface ResultReviewView {
+  readonly runKey: string | null;
+  readonly outcome: RunState["outcome"] | null;
+  readonly decision: RunState["resultDecision"];
+}
+
+export function selectResultReview(state: { readonly run: RunState | null }): ResultReviewView {
+  return { runKey: state.run?.runKey ?? null, outcome: state.run?.outcome ?? null, decision: state.run?.resultDecision ?? null };
+}
+
+export function selectRepoSetup(state: { readonly run: RunState | null }): string | null {
+  return state.run?.repoSetup ?? null;
+}
+
 export function selectIsRunActive(state: { readonly run: RunState | null }): boolean {
   return state.run !== null && state.run.outcome === null;
 }

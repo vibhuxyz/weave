@@ -1,3 +1,6 @@
+import type { VerificationRung } from "@weave/protocol";
+import type { IntegrationReport, MergeStatus } from "../integrator/index.ts";
+import type { PoolTaskReport } from "../pool/index.ts";
 export interface LandOptions {
   readonly repoRoot: string;
   readonly runBranch: string;
@@ -32,3 +35,32 @@ export interface ProjectCommit {
 export type CommitProjectResult =
   | { readonly ok: true; readonly committed: ProjectCommit }
   | { readonly ok: false; readonly reason: string };
+
+export type WorkerState = "verified" | "completed" | "rejected" | "failed" | "cancelled" | "skipped";
+
+export interface WorkerResult {
+  readonly taskId: string;
+  readonly state: WorkerState;
+  readonly reason: string | null;
+  readonly ranIn: PoolTaskReport["ranIn"];
+  readonly branch: string | null;
+  readonly commit: string | null;
+  readonly files: readonly string[];
+  readonly merge: { readonly status: MergeStatus; readonly checks: readonly VerificationRung[]; readonly detail: string } | null;
+}
+
+export type DeliveryStatus = IntegrationReport["status"] | "not-merged";
+
+export interface DeliveryPlan {
+  readonly runId: string;
+  readonly baseCommit: string;
+  readonly integrationHead: string | null;
+  readonly integrationStatus: DeliveryStatus;
+  readonly detail: string;
+  readonly sharedFiles: readonly string[];
+  readonly isolatedFiles: readonly string[];
+  readonly mergedFiles: readonly string[];
+  readonly workers: readonly WorkerResult[];
+}
+
+export type DeliveryResult = { readonly ok: true; readonly summary: string } | { readonly ok: false; readonly reason: string };

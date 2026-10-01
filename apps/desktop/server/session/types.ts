@@ -1,3 +1,4 @@
+import type { McpServer } from "@agentclientprotocol/sdk";
 import type { TasksStore, Ledger } from "@weave/core";
 import type {
   AuthMethod,
@@ -28,4 +29,5 @@ export interface SessionContext {
   readonly compaction: CompactionController;
   readonly history: HistoryStore;
   readonly replayGate: ReplayGate;
+  readonly mcpServers: readonly McpServer[];
 }

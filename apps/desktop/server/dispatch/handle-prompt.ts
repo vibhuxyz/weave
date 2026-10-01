@@ -1,4 +1,4 @@
-import { titleFromPrompt, readGitStatus } from "@weave/core";
+import { commitAll, judgeHandoff, renderEstimateNotes, titleFromPrompt, readGitStatus, TEAM_HANDOFF_SECTION } from "@weave/core";
 import { EngineStalledError } from "@weave/agent";
 import { resolveSessionPlugins, composeSystemPrompt, buildPromptBlocks, parsePersonaIds } from "../chat/index.ts";
 import { compactBeforePrompt } from "../compaction/index.ts";
@@ -9,6 +9,9 @@ import type { ClientMessage, ServerMessage } from "../shared/index.ts";
 import type { Ledger, TasksStore, NormalizedPlugin } from "@weave/core";
 import type { ProjectChats, SkillSelector } from "../chat/index.ts";
 import type { DecisionLog } from "../decisions/index.ts";
+import { errorMessage } from "../shared/index.ts";
+import { CHAT_TASK_ID, settleHandoff, TEAM_RUN_COMMIT_MESSAGE, watchTurn, type TeamRunStart } from "../team-handoff/index.ts";
+import type { TurnEstimates } from "../team-tools/index.ts";
 
 export interface PromptOptions {
   readonly msg: Extract<ClientMessage, { readonly type: "prompt" }>;
@@ -26,6 +29,9 @@ export interface PromptOptions {
   readonly decisions: DecisionLog;
   readonly send: (msg: ServerMessage) => void;
   readonly sendChats: () => Promise<void>;
+  readonly startTeamRun: (start: TeamRunStart) => void;
+  readonly confirmTeamCommit: (message: string) => Promise<boolean>;
+  readonly teamEstimates: TurnEstimates;
 }
 
 export async function handlePrompt({
@@ -44,6 +50,9 @@ export async function handlePrompt({
   decisions,
   send,
   sendChats,
+  startTeamRun,
+  confirmTeamCommit,
+  teamEstimates,
 }: Readonly<PromptOptions>): Promise<void> {
   if (!sessionMgr.supervisor) {
     send({
@@ -91,6 +100,7 @@ export async function handlePrompt({
   }
 
   const text = msg.text;
+  const canHandOff = msg.allowHandoff === true && (msg.images?.length ?? 0) === 0;
   const isFirstPrompt = !sessionMgr.taskCreated;
   if (isFirstPrompt) {
     sessionMgr.taskCreated = true;
@@ -113,10 +123,13 @@ export async function handlePrompt({
     decisionsBlock: decisions.formatBlock(),
     builtinSkillCatalog: await selectBuiltinSkills(text),
     skillCatalog,
+    teamHandoff: canHandOff ? TEAM_HANDOFF_SECTION : undefined,
   });
   sessionMgr.pendingPreamble = null;
 
   const blocks = buildPromptBlocks(outgoing, msg.images);
+  if (canHandOff) teamEstimates.clear();
+  const watch = canHandOff ? watchTurn(ledger, CHAT_TASK_ID) : null;
 
   try {
     if (isFirstPrompt) {
@@ -138,6 +151,8 @@ export async function handlePrompt({
     }
 
     const { stopReason, usage } = await sessionMgr.supervisor.current.prompt([...blocks]);
+    const turnText = watch?.read() ?? null;
+    watch?.close();
 
     send({ type: "turn-end", stopReason, usage });
     compaction.recordTurnCompleted(sessionMgr.supervisor.current.sessionId);
@@ -160,8 +175,18 @@ export async function handlePrompt({
       chats.rememberLastSession(sessionId);
     }
     await sendChats();
-    send({ type: "git-status", git: await readGitStatus(projectDir) });
+    const git = await readGitStatus(projectDir);
+    send({ type: "git-status", git });
+    if (turnText !== null) {
+      const verdict = judgeHandoff({ text: turnText, uncommitted: git.changes.map((change) => change.path) });
+      const commitWork = () => commitAll(projectDir, TEAM_RUN_COMMIT_MESSAGE);
+      const estimate = teamEstimates.latest();
+      const estimateNotes = estimate ? renderEstimateNotes(estimate) : "";
+      settleHandoff({ verdict, request: text, estimateNotes, ledger, send, startTeamRun, confirmCommit: confirmTeamCommit, commitWork })
+        .catch((error: unknown) => send({ type: "error", message: `Cannot hand this to a team: ${errorMessage(error)}` }));
+    }
   } catch (err: unknown) {
+    watch?.close();
     if (sessionMgr.handleAuthError(err, sessionMgr.currentEngineId)) return;
     const errMsg = err instanceof Error ? err.message : String(err);
     ledger.append("error", {

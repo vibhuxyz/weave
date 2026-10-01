@@ -1,5 +1,8 @@
 import type { AuthMethod } from "@weave/protocol";
-import { resolveCodexCliEntry, type EngineDescriptor } from "../engines/index.ts";
+import { grokTerminalAuthMethods, resolveCodexCliEntry, type EngineDescriptor } from "../engines/index.ts";
+import { AuthRequiredError } from "./errors.ts";
+
+const GROK_LOGIN_HINT = "Run grok login first";
 
 function getAgyFallbackAuth(): AuthMethod[] {
   return [
@@ -89,6 +92,22 @@ function getCodexFallbackAuth(engine: EngineDescriptor): AuthMethod[] {
   ];
 }
 
+export async function authenticateGrok(
+  engineId: string,
+  authMethods: readonly AuthMethod[],
+  authenticate: (methodId: string) => Promise<unknown>,
+): Promise<void> {
+  if (engineId !== "grok") return;
+  if (!authMethods.some((method) => method.id === "cached_token")) {
+    throw new AuthRequiredError(engineId, grokTerminalAuthMethods(), new Error(GROK_LOGIN_HINT));
+  }
+  try {
+    await authenticate("cached_token");
+  } catch (error) {
+    throw new AuthRequiredError(engineId, grokTerminalAuthMethods(), error);
+  }
+}
+
 export function resolveFallbackAuthMethods(
   error: unknown,
   engine: EngineDescriptor,
@@ -96,6 +115,7 @@ export function resolveFallbackAuthMethods(
 ): AuthMethod[] {
   const errorData = (error as { data?: { authMethods?: AuthMethod[] } })?.data;
   const methods = errorData?.authMethods ?? initialMethods;
+  if (engine.id === "grok") return grokTerminalAuthMethods();
   if (methods.length > 0) return methods;
 
   if (engine.id === "agy" || engine.id === "antigravity") {

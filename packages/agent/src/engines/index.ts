@@ -4,4 +4,5 @@ export * from "./capability-check.ts";
 export * from "./codex.ts";
 export * from "./registry.ts";
 export * from "./engines.ts";
+export { grokTerminalAuthMethods, requireGrokCliEntry } from "./grok.ts";
 export * from "./setup.ts";

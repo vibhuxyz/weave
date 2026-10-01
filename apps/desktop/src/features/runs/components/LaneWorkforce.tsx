@@ -1,8 +1,14 @@
 import { useEmployeeListing } from "@/features/employees";
 import { cn } from "@/shared/lib";
-import type { AwaitedOutput, Lane, LaneEmployee } from "../types";
+import type { AwaitedOutput, Lane, LaneEmployee, MergeResult } from "../types";
 
 const WORKING: ReadonlySet<Lane["status"]> = new Set(["waiting", "running"]);
+
+const VERDICT_CLASS = {
+  passed: "text-agent-success",
+  failed: "text-agent-critical-fg",
+  unverified: "text-agent-warn",
+} as const satisfies Record<"passed" | "failed" | "unverified", string>;
 
 function awaitedText(entry: AwaitedOutput): string {
   const from = entry.producer ? ` from ${entry.producer}` : "";
@@ -34,6 +40,32 @@ function AwaitedLines({ awaited }: { readonly awaited: readonly AwaitedOutput[] 
   );
 }
 
+function mergeText(merge: MergeResult): string {
+  switch (merge.status) {
+    case "merged":
+      return merge.checks.length > 0 ? `merged · checked with ${merge.checks.join(", ")}` : "merged · no checks could run";
+    case "empty":
+      return "nothing to merge: no files changed";
+    case "conflict":
+    case "merge-error":
+    case "verify-failed":
+      return `not merged: ${merge.detail}`;
+    default: {
+      const unreachable: never = merge.status;
+      return unreachable;
+    }
+  }
+}
+
+function mergeTone(merge: MergeResult): string {
+  if (merge.status === "merged") return merge.checks.length > 0 ? "text-agent-success" : "text-agent-warn";
+  return merge.status === "empty" ? "text-agent-text-faint" : "text-agent-critical-fg";
+}
+
+function MergeLine({ merge }: { readonly merge: MergeResult }) {
+  return <span className={cn("truncate text-[11px]", mergeTone(merge))} title={merge.detail}>{mergeText(merge)}</span>;
+}
+
 function EmployeeLine({ employee }: { readonly employee: LaneEmployee }) {
   const listing = useEmployeeListing();
   const reasons = employee.reasons.join("; ");
@@ -53,10 +85,13 @@ export function LaneWorkforce({ lane }: { readonly lane: Lane }) {
       {blockedReason && WORKING.has(lane.status) && <span className="text-[11px] text-agent-warn">Blocked: {blockedReason}</span>}
       {claims.length > 0 && <span className="truncate font-mono text-[11px] text-agent-text-faint" title={claims.join(", ")}>owns {claims.join(", ")}</span>}
       {verification && (
-        <span className={cn("text-[11px]", verification.ok ? "text-agent-success" : "text-agent-critical-fg")} title={verification.detail}>
-          checks {verification.ok ? "passed" : "failed"}: {verification.rungs.map((rung) => `${rung.rung} ${rung.ok ? "ok" : "failed"}`).join(", ") || "none"}
+        <span className={cn("text-[11px]", VERDICT_CLASS[verification.verdict])} title={verification.detail}>
+          {verification.verdict === "unverified"
+            ? "not verified: no checks could run in this project"
+            : `checks ${verification.verdict}: ${verification.rungs.map((rung) => `${rung.rung} ${rung.ok ? "ok" : "failed"}`).join(", ")}`}
         </span>
       )}
+      {lane.merge && <MergeLine merge={lane.merge} />}
       {notes.length > 0 && (
         <ul className="flex flex-col gap-0.5 text-[11px]">
           {notes.map((note) => (

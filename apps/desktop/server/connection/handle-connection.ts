@@ -24,6 +24,7 @@ import { handleClientMessage } from "./dispatch.ts";
 import { handleEmployeeMessage } from "../employees/index.ts";
 import { sendSkillListing } from "../skills/index.ts";
 import { createProjectModelCache } from "../project-model/index.ts";
+import { estimateDepsFor, openConnectionTools } from "../team-tools/index.ts";
 import { CompactionController } from "../compaction/index.ts";
 import { ReplayGate } from "../history/index.ts";
 import { EngineAuthStates, type ActiveAuthSession } from "../auth/index.ts";
@@ -85,6 +86,7 @@ const KNOWN_CLIENT_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   "read-file",
   "cancel-run",
   "decide-run-plan",
+  "decide-run-result",
   ...EMPLOYEE_CLIENT_MESSAGE_TYPES,
   ...SKILL_CLIENT_MESSAGE_TYPES,
   ...PROJECT_CLIENT_MESSAGE_TYPES,
@@ -175,6 +177,8 @@ export async function handleConnection(
     send({ type: "session-capabilities", sessionId, supportsCompaction }),
   );
 
+  const projectModels = createProjectModelCache({ projectDir, dataDir });
+  const tools = openConnectionTools(storage.teamTools, estimateDepsFor(projectDir, projectModels.read));
   const initialEngineId = process.env.ENGINE_ID || DEFAULT_ENGINE_ID;
   const sessionMgr = new DesktopSessionManager(initialEngineId, {
     projectDir,
@@ -193,9 +197,9 @@ export async function handleConnection(
     compaction,
     history,
     replayGate,
+    mcpServers: tools.mcpServers,
   });
 
-  const projectModels = createProjectModelCache({ projectDir, dataDir });
   const selectBuiltinSkills = createSkillSelector(projectModels);
   const [ruleCatalog, skillCatalog] = await Promise.all([
     discoverRules(storage.ruleDirs).then(formatRulesBlock),
@@ -265,6 +269,7 @@ export async function handleConnection(
         compaction,
         history,
         runs,
+        teamEstimates: tools,
         projectDir,
         skillDirs: storage.skillDirs,
         projectModels,
@@ -302,6 +307,7 @@ export async function handleConnection(
     pendingQuestions.cancelAll();
     activeSetup.cancel();
     runs.cancel();
+    tools.close();
     if (sessionMgr.supervisor) {
       unregisterLiveSupervisor(sessionMgr.supervisor);
       sessionMgr.supervisor.killAll();

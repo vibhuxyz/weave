@@ -15,6 +15,13 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     takesPrompt: true,
   },
   {
+    id: "chat",
+    trigger: "/chat",
+    title: "Keep it in this chat",
+    hint: "Sends it to one agent here, even when Weave would run it with a team",
+    takesPrompt: true,
+  },
+  {
     id: "plan",
     trigger: "/plan",
     title: "Plan it first",

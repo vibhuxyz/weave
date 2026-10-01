@@ -21,6 +21,8 @@ async function makeRepo(): Promise<string> {
 
 const task = (id: string, extra: Partial<TaskContract> = {}): TaskContract => ({ id, prompt: id, cwd: "", ...extra });
 const verifyOk: VerifyWorkspace = async () => ({ ok: true, rungs: ["build"], detail: "ok" });
+const MAX_OVERLAP_WAIT_MS = 5_000;
+const POLL_MS = 10;
 
 test("acceptance: 3 disjoint tasks run concurrently, merge cleanly, and the ledger says who touched what", async () => {
   const repo = await makeRepo();
@@ -29,7 +31,8 @@ test("acceptance: 3 disjoint tasks run concurrently, merge cleanly, and the ledg
   const worker: RunWorker = async ({ task: running }) => {
     active += 1;
     peak = Math.max(peak, active);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const deadline = Date.now() + MAX_OVERLAP_WAIT_MS;
+    while (active < 3 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, POLL_MS));
     await writeFile(join(running.cwd, `${running.id.toLowerCase()}.ts`), `export const ${running.id} = 1;\n`);
     active -= 1;
     return { status: "ok" };

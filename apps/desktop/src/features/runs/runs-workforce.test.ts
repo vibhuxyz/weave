@@ -22,13 +22,16 @@ test("a lane records its employee, claims, verification and a block that clears 
   const later = applyRunMessages(run, [
     update({ kind: "task-started", taskId: "T1" }),
     update({ kind: "claimed", taskId: "T1", resources: ["file:api/index.ts"] }),
-    update({ kind: "employee-verified", taskId: "T1", ok: false, rungs: [{ rung: "tests", ok: false }], detail: "1 failing" }),
+    update({ kind: "employee-verified", taskId: "T1", ok: false, verdict: "failed", rungs: [{ rung: "tests", ok: false }], detail: "1 failing" }),
   ]);
   const lane = later?.lanes["T1"];
   assert.equal(lane?.blockedReason, null);
   assert.deepEqual(lane?.employee, { employeeId: "backend-engineer", reasons: ["responsibility: api"] });
   assert.deepEqual(lane?.claims, ["file:api/index.ts"]);
   assert.equal(lane?.verification?.ok, false);
+  assert.equal(lane?.verification?.verdict, "failed");
+  const unchecked = applyRunMessages(run, [update({ kind: "employee-verified", taskId: "T1", ok: true, verdict: "unverified", rungs: [], detail: "no checks" })]);
+  assert.equal(unchecked?.lanes["T1"]?.verification?.verdict, "unverified");
 });
 
 test("a dependency found mid-run adds an edge once, and notes keep only the latest few", () => {

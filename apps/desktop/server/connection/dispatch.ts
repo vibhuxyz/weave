@@ -9,7 +9,8 @@ import { parseProjectDirs } from "../chat/index.ts";
 import { handleChatAction, handleDeleteProject, parseAutoArchiveDays } from "../archive/index.ts";
 import type { ChatAction } from "../archive/index.ts";
 import { createCheckpointTask, runCancelCheckpoint } from "./checkpoint-task.ts";
-import { answerQuestion } from "../questions/index.ts";
+import { answerQuestion, createUserAsker } from "../questions/index.ts";
+import { askToCommit } from "../team-handoff/index.ts";
 import { handleEmployeeMessage } from "../employees/index.ts";
 import { sendSkillListing } from "../skills/index.ts";
 import { handleProjectMessage } from "../project-model/index.ts";
@@ -55,6 +56,7 @@ export function handleClientMessage(
     compaction,
     history,
     runs,
+    teamEstimates,
     send,
     sendChats,
     sendEngineList,
@@ -64,6 +66,14 @@ export function handleClientMessage(
     publishAuth,
   } = ctx;
 
+  const runStartBase = () => ({
+    projectDir,
+    engineId: sessionMgr.currentEngineId,
+    fallbackEngineIds: installedEngines().map((engine) => engine.id),
+    configOptions: readSelectValues(sessionMgr.supervisor?.current.configOptions ?? []),
+    runKey: uuidV7(Date.now()),
+    send,
+  });
   const checkpointTask = createCheckpointTask({ sessionMgr, projectDir, dataDir, continuationTaskId, ledger, tasksStore });
 
   switch (msg.type) {
@@ -259,16 +269,13 @@ export function handleClientMessage(
     }
 
     case "start-run":
-      void runs.start({
-        request: msg.request,
-        projectDir,
-        engineId: sessionMgr.currentEngineId,
-        fallbackEngineIds: installedEngines().map((engine) => engine.id),
-        configOptions: readSelectValues(sessionMgr.supervisor?.current.configOptions ?? []),
-        runKey: uuidV7(Date.now()),
-        setUpGit: msg.setUpGit === true,
-        send,
-      });
+      void runs.start({ ...runStartBase(), request: msg.request });
+      return;
+
+    case "decide-run-result":
+      if (typeof msg.runKey === "string" && (msg.decision === "accept" || msg.decision === "discard")) {
+        runs.decideResult(msg.runKey, msg.decision, send).catch((error: unknown) => send({ type: "error", message: `Cannot finish the run: ${errorMessage(error)}` }));
+      }
       return;
 
     case "decide-run-plan":
@@ -324,6 +331,9 @@ export function handleClientMessage(
           decisions,
           send,
           sendChats,
+          startTeamRun: (start) => void runs.start({ ...runStartBase(), ...start }),
+          confirmTeamCommit: (message) => askToCommit(createUserAsker({ pending: pendingQuestions, send }), message),
+          teamEstimates,
         }),
       );
       return;

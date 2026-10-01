@@ -1,3 +1,4 @@
+import type { VerificationRung } from "@weave/protocol";
 import { createWorktree, installWorktree, removeWorktree, runGit, type Worktree } from "../worktree/index.ts";
 import { describeConflict, mergeBranch } from "./merge.ts";
 import type { IntegrateOptions, IntegrationReport, MergeCandidate, MergeReport, VerifyResult } from "./types.ts";
@@ -6,6 +7,17 @@ export const INTEGRATION_WORKTREE_ID = "integration";
 
 const UNVERIFIED_DETAIL =
   "verification already fails on the base commit, so no merge can be blamed for a failure; merges were checked for conflicts only";
+const STRUCTURAL_ONLY_DETAIL =
+  "merged, but this project has no lint, typecheck, test or build command, so only a structural check ran; the result is unverified";
+const STRUCTURAL_RUNG = "diff-review";
+
+function isStructuralOnly(merges: readonly MergeReport[]): boolean {
+  return merges.every((merge) => merge.rungs.every((rung) => rung === STRUCTURAL_RUNG));
+}
+
+export function realChecksOf(rungs: readonly VerificationRung[]): readonly VerificationRung[] {
+  return rungs.filter((rung) => rung !== STRUCTURAL_RUNG);
+}
 
 function report(candidate: MergeCandidate, fields: Omit<MergeReport, "taskId">): MergeReport {
   return { taskId: candidate.taskId, ...fields };
@@ -75,6 +87,7 @@ function summarize(merges: readonly MergeReport[], baseline: VerifyResult): Pick
   const broken = merges.find(isBreaking);
   if (broken) return { status: "failed", brokenBy: broken.taskId, detail: `${broken.taskId}: ${broken.detail}` };
   if (!baseline.ok) return { status: "unverified", brokenBy: null, detail: UNVERIFIED_DETAIL };
+  if (isStructuralOnly(merges)) return { status: "unverified", brokenBy: null, detail: STRUCTURAL_ONLY_DETAIL };
   return { status: "ok", brokenBy: null, detail: `all ${merges.length} task(s) merged and verified` };
 }
 

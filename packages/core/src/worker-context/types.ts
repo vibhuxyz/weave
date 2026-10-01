@@ -15,6 +15,7 @@ export interface WorkerTask {
   readonly skills?: readonly string[];
   readonly verify?: string;
   readonly verifyRung?: string;
+  readonly sharedWith?: readonly { readonly id: string; readonly allowedPaths: readonly string[] }[];
 }
 
 export interface CodeSnippet {

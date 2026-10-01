@@ -42,7 +42,7 @@ export function applyWorkforceUpdate(lane: Lane, update: WorkforceLaneUpdate): L
     case "employee-assigned":
       return { ...lane, employee: { employeeId: update.employeeId, reasons: update.reasons } };
     case "employee-verified":
-      return { ...lane, verification: { ok: update.ok, rungs: update.rungs, detail: update.detail } };
+      return { ...lane, verification: { ok: update.ok, verdict: update.verdict, rungs: update.rungs, detail: update.detail } };
     case "claimed":
       return { ...lane, claims: update.resources, blockedReason: null };
     case "blocked":

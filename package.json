@@ -15,12 +15,14 @@
     "build": "bun run --filter desktop build",
     "build:app": "bun run --filter desktop tauri build && cp -a apps/desktop/src-tauri/target/release/bundle/macos/*.app ./",
     "typecheck": "bun run --workspaces typecheck",
-    "diagnose": "node --experimental-strip-types scripts/diagnose.mjs"
+    "diagnose": "node --experimental-strip-types scripts/diagnose.mjs",
+    "simulate:leases": "node --experimental-strip-types packages/eval/src/leases/main.ts"
   },
   "trustedDependencies": [
     "better-sqlite3",
     "esbuild",
-    "node-pty"
+    "node-pty",
+    "@xai-official/grok"
   ],
   "workspaces": [
     "apps/*",

@@ -22,15 +22,17 @@ function streamOf(messages: readonly RunMessage[]) {
   return applyRunMessages(null, [started, plan, ...messages])?.stream ?? [];
 }
 
-test("work from two tasks interleaves into separate badged blocks", () => {
+test("each worker's work stays in its own block, like one chat turn, while others stream", () => {
   const stream = streamOf([
     update({ kind: "text", taskId: "T1", text: "scaffolding the server" }),
     update({ kind: "text", taskId: "T2", text: "creating App.tsx" }),
     update({ kind: "text", taskId: "T1", text: " and package.json" }),
+    update({ kind: "tool", taskId: "T2", tool: { id: "c1", title: "npm test", toolKind: "execute", status: "pending" } }),
+    update({ kind: "text", taskId: "T2", text: "tests pass" }),
   ]);
-  assert.deepEqual(stream.map((block) => block.taskId), ["T1", "T2", "T1"]);
-  assert.equal(stream[0]?.turn.text, "scaffolding the server");
-  assert.equal(stream[2]?.turn.text, " and package.json");
+  assert.deepEqual(stream.map((block) => block.taskId), ["T1", "T2"]);
+  assert.equal(stream[0]?.turn.text, "scaffolding the server and package.json");
+  assert.deepEqual(stream[1]?.turn.segments?.map((segment) => segment.kind), ["text", "tools", "text"]);
 });
 
 test("a tool call becomes a tool segment that its later update completes", () => {
@@ -68,7 +70,7 @@ test("a re-run starts a new block and counts the attempt", () => {
 
 test("the stream is capped and reports how many blocks it dropped", () => {
   const messages = Array.from({ length: MAX_STREAM_BLOCKS + 3 }, (_, index) =>
-    update({ kind: "text", taskId: index % 2 === 0 ? "T1" : "T2", text: `chunk ${index}` }),
+    update({ kind: "text", taskId: `T${index}`, text: `chunk ${index}` }),
   );
   const run = applyRunMessages(null, [started, plan, ...messages]);
   assert.equal(run?.stream.length, MAX_STREAM_BLOCKS);
@@ -85,7 +87,7 @@ test("the stream selector returns the same block list every time, so React does 
   assert.equal(selectRunStream({ run }).blocks, selectRunStream({ run }).blocks);
 });
 
-test("interleaved work stays one attempt: the blocks are segments, not restarts", () => {
+test("work from two workers at once stays one block and one attempt each", () => {
   const run = applyRunMessages(null, [
     started,
     plan,
@@ -97,8 +99,7 @@ test("interleaved work stays one attempt: the blocks are segments, not restarts"
     update({ kind: "text", taskId: "T2", text: "and its styles" }),
   ]);
   const blocks = run?.stream ?? [];
-  assert.deepEqual(blocks.map((block) => [block.taskId, block.attempt]), [["T1", 1], ["T2", 1], ["T1", 1], ["T2", 1], ["T1", 1], ["T2", 1]]);
-  assert.ok(blocks.every((block) => block.attempt === 1), "no interleaving is a restart");
+  assert.deepEqual(blocks.map((block) => [block.taskId, block.attempt, block.turn.text]), [["T1", 1, "writing the apiand its routes"], ["T2", 1, "scaffolding the clientand its styles"]]);
   assert.equal(run?.lanes["T1"]?.attempts, 1);
 });
 
@@ -116,7 +117,7 @@ test("a real restart is the only thing that counts as the next attempt", () => {
     update({ kind: "text", taskId: "T2", text: "still going" }),
   ]);
   const blocks = run?.stream ?? [];
-  assert.deepEqual(blocks.map((block) => [block.taskId, block.attempt]), [["T1", 1], ["T2", 1], ["T1", 1], ["T2", 1], ["T1", 2], ["T2", 1]]);
+  assert.deepEqual(blocks.map((block) => [block.taskId, block.attempt, block.turn.text]), [["T1", 1, "first go"], ["T2", 1, "meanwhilestill going"], ["T1", 2, "second go"]]);
   assert.equal(run?.lanes["T1"]?.attempts, 2);
   assert.equal(run?.lanes["T2"]?.attempts, 1);
 });

@@ -12,7 +12,8 @@
   "scripts": {
     "start": "node --experimental-strip-types src/index.ts",
     "typecheck": "tsc --noEmit",
-    "bench:orchestration": "node --experimental-strip-types src/orchestration/main.ts"
+    "bench:orchestration": "node --experimental-strip-types src/orchestration/main.ts",
+    "simulate:leases": "node --experimental-strip-types src/leases/main.ts"
   },
   "dependencies": {
     "@weave/protocol": "workspace:*",

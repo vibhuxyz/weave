@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { runGit } from "@weave/core";
@@ -33,24 +33,20 @@ async function git(dir: string, args: readonly string[]): Promise<string> {
   return run.output.trim();
 }
 
-test("a plain folder is reported, not changed, until setup is asked for", async () => {
-  const dir = await folderWithFiles();
-  const check = await prepareRepo(dir, { shouldSetUp: false });
-  assert.ok(!check.ok && check.needsSetup);
-  assert.match(check.reason, /is not a git repository/);
-  assert.equal((await runGit(dir, ["rev-parse", "--is-inside-work-tree"])).ok, false);
-});
-
-test("setup creates the repository, a .gitignore and a first commit holding the project files", async () => {
+test("a plain folder is set up without asking: repository, .gitignore and a first commit", async () => {
   const dir = await folderWithFiles();
   await withoutGlobalGitConfig(async () => {
-    assert.deepEqual(await prepareRepo(dir, { shouldSetUp: true }), { ok: true });
+    const check = await prepareRepo(dir);
+    assert.deepEqual(check, {
+      ok: true,
+      setupSummary: `Weave set up git here before the run: it created a git repository, added a .gitignore (${DEFAULT_GITIGNORE_LINES.join(", ")}), and committed 2 file(s) as "${INITIAL_COMMIT_MESSAGE}". Workers branch from that commit.`,
+    });
     assert.deepEqual((await git(dir, ["ls-files"])).split("\n"), [".gitignore", "index.js"]);
     assert.equal(await git(dir, ["log", "-1", "--format=%s %ae"]), `${INITIAL_COMMIT_MESSAGE} ${FALLBACK_AUTHOR_EMAIL}`);
     assert.equal((await runGit(dir, ["config", "--local", "user.email"])).ok, false);
   });
   assert.equal(await readFile(join(dir, ".gitignore"), "utf8"), `${DEFAULT_GITIGNORE_LINES.join("\n")}\n`);
-  assert.deepEqual(await prepareRepo(dir, { shouldSetUp: false }), { ok: true });
+  assert.deepEqual(await prepareRepo(dir), { ok: true, setupSummary: null });
 });
 
 test("a repository with no commits keeps its own .gitignore and gets a first commit", async () => {
@@ -58,8 +54,21 @@ test("a repository with no commits keeps its own .gitignore and gets a first com
   await git(dir, ["init", "--quiet"]);
   await writeFile(join(dir, ".gitignore"), "secret.txt\n");
   await writeFile(join(dir, "secret.txt"), "shh");
-  await withoutGlobalGitConfig(() => prepareRepo(dir, { shouldSetUp: true }));
+  const check = await withoutGlobalGitConfig(() => prepareRepo(dir));
+  assert.match(check.ok ? check.setupSummary ?? "" : "", /used the existing repository, kept your \.gitignore, and committed 2 file\(s\)/);
   assert.equal(await readFile(join(dir, ".gitignore"), "utf8"), "secret.txt\n");
+  assert.deepEqual((await git(dir, ["ls-files"])).split("\n"), [".gitignore", "index.js"]);
+});
+
+test("a .gitignore that misses node_modules or .env gets them added before the first commit", async () => {
+  const dir = await folderWithFiles();
+  await writeFile(join(dir, ".gitignore"), "dist/");
+  await mkdir(join(dir, "node_modules", "left-pad"), { recursive: true });
+  await writeFile(join(dir, "node_modules", "left-pad", "index.js"), "1\n");
+  await writeFile(join(dir, ".env"), "TOKEN=secret\n");
+  const check = await withoutGlobalGitConfig(() => prepareRepo(dir));
+  assert.match(check.ok ? check.setupSummary ?? "" : "", /added node_modules\/, \.env to your \.gitignore so they are not committed/);
+  assert.equal(await readFile(join(dir, ".gitignore"), "utf8"), "dist/\nnode_modules/\n.env\n");
   assert.deepEqual((await git(dir, ["ls-files"])).split("\n"), [".gitignore", "index.js"]);
 });
 

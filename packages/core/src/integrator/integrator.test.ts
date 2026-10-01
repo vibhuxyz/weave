@@ -86,3 +86,11 @@ test("when the base already fails verification, merges still run but nothing is 
   assert.equal(integration.brokenBy, null);
   assert.deepEqual(integration.merges.map((merge) => merge.status), ["merged", "empty"]);
 });
+
+test("a merge checked only structurally is reported as unverified, not ok", async () => {
+  const structuralOnly: VerifyWorkspace = async () => ({ ok: true, rungs: ["diff-review"], detail: "structural sanity" });
+  const { integration } = await runAndIntegrate({ T1: { "T1.txt": "1" }, T2: { "T2.txt": "2" } }, structuralOnly);
+  assert.equal(integration.status, "unverified");
+  assert.match(integration.detail, /only a structural check ran/);
+  assert.deepEqual(integration.merges.map((merge) => merge.status), ["merged", "merged"]);
+});

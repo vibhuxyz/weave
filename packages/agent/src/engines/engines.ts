@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { EngineDescriptor } from "./types.ts";
 import { ENGINES, DEFAULT_ENGINE_ID } from "./registry.ts";
@@ -62,16 +64,29 @@ export function resolveEngineEntry(engine: EngineDescriptor): string {
   return resolve(dirname(located.manifestPath), relative);
 }
 
+const GROK_EXECUTABLE = process.platform === "win32" ? "grok.exe" : "grok";
+
+export function grokCliPath(): string | null {
+  const override = process.env.GROK_PATH;
+  if (override && existsSync(override)) return override;
+  const root = process.env.GROK_HOME ?? join(homedir(), ".grok");
+  const canonical = join(root, "bin", GROK_EXECUTABLE);
+  return existsSync(canonical) ? canonical : null;
+}
+
+function engineIsPresent(engine: EngineDescriptor): boolean {
+  if (engine.id === "grok" && grokCliPath() !== null) return true;
+  try {
+    resolveEngineEntry(engine);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function installedEngines(): EngineDescriptor[] {
   const uniqueEngines = Array.from(
     new Map(Object.values(ENGINES).map((e) => [e.id, e])).values(),
   );
-  return uniqueEngines.filter((engine) => {
-    try {
-      resolveEngineEntry(engine);
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  return uniqueEngines.filter(engineIsPresent);
 }

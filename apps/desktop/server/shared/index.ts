@@ -4,7 +4,7 @@ export type { ArchivedChatMeta, ConversationMeta, GitStatus, GitChange } from ".
 export type { SetupConsent, PermissionOption, PromptImageData, ClientMessage, CompactionEvent, CompactionTrigger, ContextSnapshot, CheckpointStats, EngineAuthState, EngineEntry, ServerMessage, AcpServerHandle } from "./types.ts";
 export type { QuestionAnswerValue, QuestionField, QuestionOption, QuestionNotice } from "./question-types.ts";
 export { FILE_CHANGES } from "./run-types.ts";
-export type { FileChange, BudgetAlert, NoteTone, RunArtifact, RunArtifactKind, RunClassification, RunCritique, RunExecutionPlan, RunExecutionSlot, RunOutcome, RunPlanTask, RunReplanAction, RunReplanRerun, RunReplanTrigger, RunTaskStatus, RunToolCall, RunToolKind, RunToolPatch, RunToolStatus, RunUpdate, RunWorkerCount, RungResult, MergeStatus, WorkerLimit } from "./run-types.ts";
+export type { FileChange, BudgetAlert, NoteTone, RunArtifact, RunArtifactKind, RunClassification, RunCritique, RunExecutionPlan, RunExecutionSlot, RunOutcome, RunPlanTask, RunReplanAction, RunReplanRerun, RunReplanTrigger, RunReview, RunReviewWorker, RunWorkerState, ResultDecision, RunTaskStatus, RunToolCall, RunToolKind, RunToolPatch, RunToolStatus, RunUpdate, RunWorkerCount, RungResult, MergeStatus, WorkerLimit } from "./run-types.ts";
 export { RUN_TOOL_KINDS, RUN_TOOL_STATUSES } from "./run-types.ts";
 export { uuidV7 } from "./uuid-v7.ts";
 export { EMPLOYEE_CLIENT_MESSAGE_TYPES } from "./employee-types.ts";

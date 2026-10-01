@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { RunUpdate } from "../../../server/index.ts";
 import { durationMinutes, engineText, slotStartText } from "./lib";
 import { applyRunMessages } from "./store/apply-run-message";
+import { selectResultReview } from "./store/select-header";
 import type { RunMessage } from "./types";
 
 const started: RunMessage = { type: "run-started", runKey: "k1", request: "add payouts" };
@@ -37,4 +38,17 @@ test("the execution plan is kept on the run, and slots read as a schedule", () =
   assert.equal(engineText(slot), "codex (then claude-code)");
   assert.equal(durationMinutes(slot.endMs - slot.startMs), 2);
   assert.equal(durationMinutes(10), 1);
+});
+
+test("the finished result waits for a decision, and the latest decision is the one shown", () => {
+  const review = { status: "unverified", detail: "merged", files: ["new.ts"], hiddenFileCount: 0, workers: [], hiddenWorkerCount: 0, canAccept: true } as const;
+  const outcome = { status: "ran", result: "unverified", branch: "weave/r1/integration", review } as const;
+  const waiting = applyRunMessages(null, [started, { type: "run-finished", runKey: "k1", outcome }]);
+  assert.deepEqual(selectResultReview({ run: waiting }), { runKey: "k1", outcome, decision: null });
+  const decided = applyRunMessages(waiting, [
+    update({ kind: "result-decision", status: "refused", summary: "Your branch moved since the run started" }),
+    update({ kind: "result-decision", status: "accepted", summary: "Accepted" }),
+  ]);
+  assert.deepEqual(selectResultReview({ run: decided }).decision, { status: "accepted", summary: "Accepted" });
+  assert.equal(decided?.events.at(-1)?.text.includes("Accepted"), true);
 });

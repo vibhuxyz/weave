@@ -1,9 +1,10 @@
-import type { planAndRun } from "@weave/core";
+import { deliveryPlanOf, type DeliveryPlan, type planAndRun } from "@weave/core";
 import type { WeaveEvent } from "@weave/protocol";
-import type { RunOutcome, ServerMessage } from "../shared/index.ts";
+import type { ResultDecision, RunOutcome, ServerMessage } from "../shared/index.ts";
 import { errorMessage } from "../shared/index.ts";
 import { MAX_REQUEST_CHARS } from "./constants.ts";
 import { projectRunEvent } from "./project-event.ts";
+import { createPendingResult, reviewOf } from "./result-review/index.ts";
 import { createApprovalGate, type ApprovalGate } from "./approval-gate.ts";
 import { DEFAULT_RUN_DEPENDENCIES, preflight, type RunDependencies } from "./run-preflight.ts";
 
@@ -17,7 +18,8 @@ export interface StartRunInput {
   readonly fallbackEngineIds?: readonly string[];
   readonly runKey: string;
   readonly configOptions?: Readonly<Record<string, string>>;
-  readonly setUpGit?: boolean;
+  readonly routeReason?: string;
+  readonly plannerNotes?: string;
   readonly send: (message: ServerMessage) => void;
 }
 
@@ -25,11 +27,12 @@ export interface RunController {
   readonly start: (input: StartRunInput) => Promise<void>;
   readonly cancel: () => void;
   readonly decide: (runKey: string, approved: boolean) => void;
+  readonly decideResult: (runKey: string, decision: ResultDecision, send: (message: ServerMessage) => void) => Promise<void>;
 }
 
-function outcomeOf(result: PlanAndRunResult): RunOutcome {
+function outcomeOf(result: PlanAndRunResult, plan: DeliveryPlan | null): RunOutcome {
   if (result.status !== "ran") return { status: result.status, reason: result.reason };
-  return { status: "ran", result: result.report.status, branch: result.report.integration?.branch ?? null };
+  return { status: "ran", result: result.report.status, branch: result.report.integration?.branch ?? null, review: plan ? reviewOf(plan) : null };
 }
 
 function engineConfig(input: StartRunInput) {
@@ -49,6 +52,7 @@ function requestProblem(request: string): string | null {
 
 export function createRunController(runPlanAndRun: PlanAndRun, dependencies: RunDependencies = DEFAULT_RUN_DEPENDENCIES): RunController {
   const active: { abort: AbortController | null; runKey: string | null; gate: ApprovalGate | null } = { abort: null, runKey: null, gate: null };
+  const pending = createPendingResult();
 
   const start = async (input: StartRunInput): Promise<void> => {
     const request = input.request.trim();
@@ -58,12 +62,13 @@ export function createRunController(runPlanAndRun: PlanAndRun, dependencies: Run
     const abort = new AbortController();
     active.abort = abort;
     const { runKey, send } = input;
-    send({ type: "run-started", runKey, request });
-    const ready = await preflight({ projectDir: input.projectDir, setUpGit: input.setUpGit === true }, dependencies);
+    send({ type: "run-started", runKey, request, ...(input.routeReason ? { routeReason: input.routeReason } : {}) });
+    const ready = await preflight({ projectDir: input.projectDir }, dependencies);
     if (!ready.ok) {
       active.abort = null;
       return send({ type: "run-finished", runKey, outcome: ready.outcome });
     }
+    if (ready.repoSetup) send({ type: "run-update", runKey, update: { kind: "repo-setup", summary: ready.repoSetup } });
     const gate = createApprovalGate(abort.signal, {
       onWaiting: () => send({ type: "run-update", runKey, update: { kind: "awaiting-approval" } }),
       onApproved: () => send({ type: "run-update", runKey, update: { kind: "plan-approved" } }),
@@ -75,10 +80,12 @@ export function createRunController(runPlanAndRun: PlanAndRun, dependencies: Run
     };
     try {
       const result = await runPlanAndRun({
-        request, repoRoot: input.projectDir, config: engineConfig(input), signal: abort.signal, onEvent,
+        request: input.plannerNotes ? `${request}\n\n${input.plannerNotes}` : request, repoRoot: input.projectDir, config: engineConfig(input), signal: abort.signal, onEvent,
         employees: {}, adaptive: { budgets: ready.budgets }, approvePlan: gate.wait,
       });
-      send({ type: "run-finished", runKey, outcome: outcomeOf(result) });
+      const plan = result.status === "ran" ? deliveryPlanOf(result.report) : null;
+      pending.offer(plan ? { runKey, projectDir: input.projectDir, plan } : null);
+      send({ type: "run-finished", runKey, outcome: outcomeOf(result, plan) });
     } catch (error: unknown) {
       send({ type: "run-finished", runKey, outcome: { status: "error", reason: `Parallel run failed: ${errorMessage(error)}` } });
     } finally {
@@ -90,5 +97,5 @@ export function createRunController(runPlanAndRun: PlanAndRun, dependencies: Run
     if (active.runKey === runKey) active.gate?.decide(approved);
   };
 
-  return { start, cancel: () => active.abort?.abort(), decide };
+  return { start, cancel: () => active.abort?.abort(), decide, decideResult: pending.decide };
 }

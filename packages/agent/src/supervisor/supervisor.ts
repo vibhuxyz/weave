@@ -46,6 +46,7 @@ export async function createEngineSupervisor(
       resumeSessionId,
       sandboxed: options.sandboxed ?? options.task.sandboxed,
       stallTimeoutMs: options.stallTimeoutMs,
+      mcpServers: options.mcpServers,
     });
 
   const first = await open(currentEngineId, options.resumeSessionId);

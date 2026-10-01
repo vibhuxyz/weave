@@ -30,6 +30,13 @@ export const DEFAULT_HARNESSES: readonly HarnessDescriptor[] = [
     authUrl: "https://auth.openai.com",
   },
   {
+    id: "grok",
+    label: "Grok",
+    subtitle: "xAI's coding agent",
+    packageName: "@xai-official/grok",
+    authUrl: "https://accounts.x.ai",
+  },
+  {
     id: "antigravity",
     label: "Gemini",
     subtitle: "Google DeepMind's agentic coding harness",

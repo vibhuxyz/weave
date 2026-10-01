@@ -1,5 +1,5 @@
 import type { TaskContract } from "@weave/protocol";
-import type { AgentSession, QuestionAsker, SessionSink } from "../session/index.ts";
+import type { AgentSession, OpenSessionOptions, QuestionAsker, SessionSink } from "../session/index.ts";
 import type { PermissionPolicy } from "../permissions/index.ts";
 
 export interface EngineSupervisor {
@@ -30,4 +30,5 @@ export interface CreateSupervisorOptions {
   sandboxed?: boolean;
   /** Silence allowed during a turn before the engine is killed. 0 disables. */
   stallTimeoutMs?: number;
+  mcpServers?: OpenSessionOptions["mcpServers"];
 }

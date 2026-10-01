@@ -13,10 +13,20 @@ export interface RungCheck {
   readonly detail: string;
 }
 
+export type VerificationVerdict = "passed" | "failed" | "unverified";
+
 export interface WorkVerification {
   readonly ok: boolean;
+  readonly verdict: VerificationVerdict;
   readonly checks: readonly RungCheck[];
   readonly detail: string;
+}
+
+const UNVERIFIED_DETAIL = "no checks could run in this project, so the work is unverified";
+
+function verdictOf(checks: readonly RungCheck[]): VerificationVerdict {
+  if (checks.some((check) => !check.ok)) return "failed";
+  return checks.length === 0 ? "unverified" : "passed";
 }
 
 export async function verifyEmployeeWork(cwd: string, policy: VerificationPolicy): Promise<WorkVerification> {
@@ -31,7 +41,8 @@ export async function verifyEmployeeWork(cwd: string, policy: VerificationPolicy
     const run = await runDetectedRung(entry, cwd, {});
     checks.push({ rung, ok: run.ok, wallMs: run.wallMs, detail: run.ok ? `${run.command} passed` : `${run.command} failed: ${flatten(run.output).slice(-MAX_DETAIL_CHARS)}` });
   }
+  const verdict = verdictOf(checks);
   const failed = checks.filter((check) => !check.ok);
-  const detail = failed.length > 0 ? failed.map((check) => check.detail).join("; ") : checks.length > 0 ? `passed ${checks.map((check) => check.rung).join(", ")}` : "no rungs to run";
-  return { ok: failed.length === 0, checks, detail };
+  const detail = verdict === "failed" ? failed.map((check) => check.detail).join("; ") : verdict === "passed" ? `passed ${checks.map((check) => check.rung).join(", ")}` : UNVERIFIED_DETAIL;
+  return { ok: verdict !== "failed", verdict, checks, detail };
 }

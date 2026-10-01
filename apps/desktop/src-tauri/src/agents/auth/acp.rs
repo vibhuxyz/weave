@@ -54,8 +54,12 @@ pub(crate) fn read_jsonrpc_response(
     }
 }
 
-pub fn run_acp_auth(program: &Path, method_id: &str) -> Result<AcpAuthResult, String> {
-    let mut child = spawn_agent_process(program, &[], true, true)?;
+pub fn run_acp_auth(
+    program: &Path,
+    args: &[&str],
+    method_id: &str,
+) -> Result<AcpAuthResult, String> {
+    let mut child = spawn_agent_process(program, args, true, true)?;
     let mut stdin = child.stdin.take().ok_or("No child stdin")?;
     let stdout = child.stdout.take().ok_or("No child stdout")?;
     let mut reader = BufReader::new(stdout);

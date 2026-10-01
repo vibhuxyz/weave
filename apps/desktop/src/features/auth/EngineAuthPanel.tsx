@@ -149,6 +149,28 @@ const CODEX_PROFILE: AgentVisualProfile = {
   apiKeyDocsLabel: "Get OpenAI API Key",
 };
 
+const GROK_PROFILE: AgentVisualProfile = {
+  id: "grok",
+  name: "Grok",
+  provider: "xAI",
+  tagline: "xAI's coding agent",
+  renderIcon: (className = "size-6") => getProviderIcon("grok", className),
+  gradientAccent: "from-foreground via-foreground/80 to-foreground/60",
+  glowShadow: "shadow-lg",
+  cardBorder: "border-foreground/20",
+  cardBg: "bg-gradient-to-br from-foreground/[0.04] via-card to-background",
+  badgeClass: "bg-foreground/10 text-foreground border-foreground/15",
+  avatarBg: "bg-foreground/10 border-foreground/20",
+  avatarBorder: "border-foreground/25",
+  accentText: "text-foreground",
+  primaryButtonClass: "bg-foreground text-background hover:bg-foreground/90",
+  secondaryBorderHover: "hover:border-foreground/40 hover:bg-foreground/5",
+  ringColor: "focus-visible:ring-foreground/30",
+  apiKeyPlaceholder: "xai-...",
+  apiKeyDocsUrl: "https://console.x.ai",
+  apiKeyDocsLabel: "Get an xAI API key",
+};
+
 const ANTIGRAVITY_PROFILE: AgentVisualProfile = {
   id: "antigravity",
   name: "Google Antigravity",
@@ -210,6 +232,9 @@ function resolveAgentProfile(
     normLabel.includes("chatgpt")
   ) {
     return CODEX_PROFILE;
+  }
+  if (normId.includes("grok") || normLabel.includes("grok") || normLabel.includes("xai")) {
+    return GROK_PROFILE;
   }
   if (
     normId.includes("antigravity") ||
@@ -470,6 +495,21 @@ export function EngineAuthPanel({
             description: "Use Anthropic Console (API usage billing)",
           },
         ]
+      : engineId === "grok"
+      ? [
+          {
+            id: "grok-device-auth",
+            name: "Sign in with a device code",
+            kind: "terminal" as const,
+            description: "Sign in with a one-time code. Works when this machine cannot open a browser.",
+          },
+          {
+            id: "grok-login",
+            name: "Sign in with Grok",
+            kind: "terminal" as const,
+            description: "Opens a browser to sign in to Grok.",
+          },
+        ]
       : engineId === "codex"
       ? [
           {
@@ -595,6 +635,7 @@ export function EngineAuthPanel({
           "pointer-events-none absolute -top-16 -left-16 size-48 rounded-full blur-3xl opacity-20 dark:opacity-30 transition-opacity",
           agent.id === "claude-code" && "bg-orange-500",
           agent.id === "codex" && "bg-emerald-500",
+          agent.id === "grok" && "bg-foreground",
           agent.id === "antigravity" && "bg-blue-500",
           agent.id === "amp" && "bg-rose-500",
           agent.id === "custom" && "bg-primary",

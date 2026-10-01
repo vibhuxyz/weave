@@ -1,4 +1,5 @@
 import { ENGINES } from "@weave/agent";
+import { realChecksOf } from "@weave/core";
 import type { PlannedTaskFact, WeaveEvent } from "@weave/protocol";
 import type { RunPlanTask, RunUpdate } from "../shared/index.ts";
 import { MAX_CRITIQUE_ISSUES, MAX_EXECUTION_SLOTS, MAX_DETAIL_CHARS, MAX_DOMAINS, MAX_PLAN_NOTES, MAX_PLAN_WARNINGS, MAX_REPLAN_RERUNS, MAX_REPLAN_TRIGGERS, MAX_SCOPE_PATHS, MAX_TASK_OUTPUTS, MAX_TASK_SKILLS, MAX_TASK_SUBTASKS, MAX_TEXT_CHUNK_CHARS, MAX_WARNING_CHARS } from "./constants.ts";
@@ -65,9 +66,9 @@ function projectTaskEvent(event: WeaveEvent, taskId: string): RunUpdate | null {
     case "usage":
       return event.costUsd === undefined ? null : { kind: "cost", taskId, costUsd: event.costUsd };
     case "pool.task.settled":
-      return { kind: "task-settled", taskId, status: event.status, reason: event.reason && capped(event.reason, MAX_DETAIL_CHARS), wallMs: event.wallMs, installMs: event.installMs };
+      return { kind: "task-settled", taskId, status: event.rejected ? "rejected" : event.status, reason: event.reason && capped(event.reason, MAX_DETAIL_CHARS), wallMs: event.wallMs, installMs: event.installMs };
     case "merge.finished":
-      return { kind: "merge", taskId, status: event.status, detail: capped(event.detail, MAX_DETAIL_CHARS) };
+      return { kind: "merge", taskId, status: event.status, checks: [...realChecksOf(event.rungs)], detail: capped(event.detail, MAX_DETAIL_CHARS) };
     default:
       return null;
   }

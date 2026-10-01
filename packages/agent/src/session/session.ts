@@ -6,7 +6,7 @@ import { spawnAgent, type SpawnedAgent } from "../spawn/index.ts";
 import { confineToTaskDir, type PermissionPolicy } from "../permissions/index.ts";
 import { SessionClient } from "./client.ts";
 import { AuthRequiredError, EngineStalledError } from "./errors.ts";
-import { resolveFallbackAuthMethods } from "./fallback-auth.ts";
+import { authenticateGrok, resolveFallbackAuthMethods } from "./fallback-auth.ts";
 import { asEngineFailure } from "./engine-failure.ts";
 import { createStallWatchdog } from "./stall-watchdog.ts";
 import { toSessionModes, withCurrentMode, type SessionModes } from "./modes.ts";
@@ -56,18 +56,28 @@ function createClientConnection(
   return new acp.ClientSideConnection(() => client, stream);
 }
 
+interface SessionScope {
+  readonly cwd: string;
+  readonly mcpServers: acp.McpServer[];
+}
+
+function supportedMcpServers(servers: readonly acp.McpServer[], capabilities: acp.AgentCapabilities | undefined): acp.McpServer[] {
+  const mcp = capabilities?.mcpCapabilities;
+  return servers.filter((server) => ("type" in server && server.type === "http" ? mcp?.http === true : !("type" in server) || mcp?.sse === true));
+}
+
 async function tryResume(
   connection: acp.ClientSideConnection,
   client: SessionClient,
   sessionId: string,
-  cwd: string,
+  scope: SessionScope,
 ): Promise<{ sessionId: string; configOptions: SessionConfigOption[]; modes: SessionModes | null } | null> {
   try {
     client.replaying = true;
     const loaded = await connection.loadSession({
       sessionId,
-      cwd,
-      mcpServers: [],
+      cwd: scope.cwd,
+      mcpServers: scope.mcpServers,
     });
     return {
       sessionId,
@@ -84,13 +94,13 @@ async function tryResume(
 async function tryCreateSession(
   connection: acp.ClientSideConnection,
   spawned: SpawnedAgent,
-  cwd: string,
+  scope: SessionScope,
   authMethods: AuthMethod[],
 ): Promise<{ sessionId: string; configOptions: SessionConfigOption[]; modes: SessionModes | null }> {
   try {
     const created = await connection.newSession({
-      cwd,
-      mcpServers: [],
+      cwd: scope.cwd,
+      mcpServers: scope.mcpServers,
     });
     return {
       sessionId: created.sessionId,
@@ -180,7 +190,16 @@ export async function openSession(
   sink.onCapabilities(init.agentCapabilities);
 
   const authMethods = init.authMethods ?? [];
+  try {
+    await startHandshake(spawned, () =>
+      authenticateGrok(spawned.engine.id, authMethods, (methodId) => connection.authenticate({ methodId })),
+    );
+  } catch (error) {
+    spawned.stop();
+    throw error;
+  }
   const canLoadSession = init.agentCapabilities?.loadSession === true;
+  const scope: SessionScope = { cwd: task.cwd, mcpServers: supportedMcpServers(options.mcpServers ?? [], init.agentCapabilities) };
 
   let sessionId = "";
   let configOptions: SessionConfigOption[] = [];
@@ -188,7 +207,7 @@ export async function openSession(
   let resumed = false;
 
   if (canLoadSession && options.resumeSessionId) {
-    const loaded = await tryResume(connection, client, options.resumeSessionId, task.cwd);
+    const loaded = await tryResume(connection, client, options.resumeSessionId, scope);
     if (loaded) {
       sessionId = loaded.sessionId;
       configOptions = loaded.configOptions;
@@ -200,7 +219,7 @@ export async function openSession(
   if (!resumed) {
     try {
       const created = await startHandshake(spawned, () =>
-        tryCreateSession(connection, spawned, task.cwd, authMethods),
+        tryCreateSession(connection, spawned, scope, authMethods),
       );
       sessionId = created.sessionId;
       configOptions = created.configOptions;
@@ -263,7 +282,7 @@ export async function openSession(
       await connection.setSessionConfigOption({ sessionId, configId, value });
     },
     async newSession() {
-      const created = await tryCreateSession(connection, spawned, task.cwd, authMethods);
+      const created = await tryCreateSession(connection, spawned, scope, authMethods);
       sessionId = created.sessionId;
       configOptions = created.configOptions;
       modes = created.modes;
@@ -272,7 +291,7 @@ export async function openSession(
     },
     async resumeSession(id: string) {
       if (!canLoadSession) return false;
-      const loaded = await tryResume(connection, client, id, task.cwd);
+      const loaded = await tryResume(connection, client, id, scope);
       if (!loaded) return false;
       sessionId = loaded.sessionId;
       configOptions = loaded.configOptions;

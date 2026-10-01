@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { resolve } from "node:path";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
@@ -9,6 +10,7 @@ import { handleConnection, openProjectStorage } from "./connection/index.ts";
 import { addLogSink, createFileSink, createLogger, parseLogLevel, setLogLevel } from "./logging/index.ts";
 import type { AcpServerHandle, ServerMessage } from "./shared/index.ts";
 import { WEAVE_HOME_ENV } from "./storage/index.ts";
+import { createTeamToolRegistry, isMcpRequest, serveMcp, type TeamToolHost } from "./team-tools/index.ts";
 
 export { DEFAULT_PORT } from "./shared/index.ts";
 export type {
@@ -28,6 +30,11 @@ export type {
   SetupConsent,
   QuestionNotice,
   RunOutcome,
+  RunReview,
+  RunReviewWorker,
+  RunWorkerState,
+  MergeStatus,
+  ResultDecision,
   FileChange,
   RunArtifact,
   RunArtifactKind,
@@ -65,6 +72,7 @@ export type { SessionModes, SessionModeInfo, TerminalKeyName, ConsentLink } from
 
 const LOOPBACK_HOST = "127.0.0.1";
 const HTTP_UPGRADE_REQUIRED = 426;
+const HTTP_INTERNAL_ERROR = 500;
 
 const log = createLogger("server");
 
@@ -100,9 +108,15 @@ export async function startAcpServer(options: {
 }): Promise<AcpServerHandle> {
   const projectDir = resolve(options.projectDir);
   const port = options.port ?? DEFAULT_PORT;
-  const httpServer = createServer((_request, response) => {
-    response.writeHead(HTTP_UPGRADE_REQUIRED).end();
+  const teamTools = createTeamToolRegistry();
+  const httpServer = createServer((request, response) => {
+    if (!isMcpRequest(request.url)) return void response.writeHead(HTTP_UPGRADE_REQUIRED).end();
+    serveMcp(request, response, teamTools).catch((error: unknown) => {
+      log.error("Team tool request failed", { message: error instanceof Error ? error.message : String(error) });
+      if (!response.headersSent) response.writeHead(HTTP_INTERNAL_ERROR).end();
+    });
   });
+  const toolHost: TeamToolHost = { registry: teamTools, baseUrl: () => `http://${LOOPBACK_HOST}:${(httpServer.address() as AddressInfo).port}` };
   const wss = new WebSocketServer({ noServer: true, handleProtocols: selectWeaveProtocol });
   const opened = await openProjectStorage({ projectDir, weaveHome: process.env[WEAVE_HOME_ENV], now: Date.now });
   const logFile = openLogFile(opened.logsDir);
@@ -119,7 +133,7 @@ export async function startAcpServer(options: {
   });
 
   wss.on("connection", (socket: WebSocket) => {
-    void handleConnection(socket, projectDir, opened.storage).catch((error: unknown) => {
+    void handleConnection(socket, projectDir, { ...opened.storage, teamTools: toolHost }).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       log.error("Connection handler failed", { message });
       safeSendError(socket, message);

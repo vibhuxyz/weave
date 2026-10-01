@@ -11,7 +11,11 @@ test("a native engine runs its binary directly; a node engine runs through node"
   assert.notEqual(script.spawnBin, "/engines/gemini.js");
 });
 
-test("Gemini CLI and OpenCode are registered with their ACP entry points", () => {
+test("Gemini CLI, OpenCode, and Grok are registered with their ACP entry points", () => {
   assert.deepEqual([ENGINES.gemini?.packageName, ENGINES.gemini?.binName, ENGINES.gemini?.args], ["@google/gemini-cli", "gemini", ["--acp"]]);
   assert.deepEqual([ENGINES.opencode?.packageName, ENGINES.opencode?.binName, ENGINES.opencode?.args, ENGINES.opencode?.runtime], ["opencode-ai", "opencode", ["acp"], "native"]);
+  assert.deepEqual(
+    [ENGINES.grok?.packageName, ENGINES.grok?.binName, ENGINES.grok?.args, ENGINES.grok?.runtime],
+    ["@xai-official/grok", "grok", ["agent", "--no-leader", "stdio"], "native"],
+  );
 });

@@ -5,7 +5,10 @@ import { AiProvidersView } from "./AiProvidersView";
 import { useHarnesses } from "../hooks/useHarnesses";
 import type { HarnessDescriptor, SettingsTabId } from "./types";
 
-const TERMINAL_SIGN_IN_ENGINES: ReadonlyMap<string, string> = new Map([["antigravity-acp", "antigravity"]]);
+const TERMINAL_SIGN_IN_ENGINES: ReadonlyMap<string, string> = new Map([
+  ["antigravity-acp", "antigravity"],
+  ["grok-acp", "grok"],
+]);
 
 interface SettingsViewProps {
   readonly initialTab?: SettingsTabId;

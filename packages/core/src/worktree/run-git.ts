@@ -7,9 +7,14 @@ export interface GitRun {
   readonly output: string;
 }
 
-export function runGit(cwd: string, args: readonly string[]): Promise<GitRun> {
+export interface GitRunOptions {
+  readonly env?: Readonly<Record<string, string>>;
+}
+
+export function runGit(cwd: string, args: readonly string[], options: GitRunOptions = {}): Promise<GitRun> {
   return new Promise((done) => {
-    const child = spawn("git", [...args], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const env = options.env ? { ...process.env, ...options.env } : process.env;
+    const child = spawn("git", [...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
     const chunks: string[] = [];
     let size = 0;
     const collect = (chunk: Buffer) => {

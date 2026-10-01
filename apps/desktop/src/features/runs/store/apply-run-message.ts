@@ -11,8 +11,8 @@ import { applyStreamUpdate } from "./stream";
 type LaneUpdate = Extract<RunUpdate, { readonly taskId: string }>;
 type PlanUpdate = Extract<RunUpdate, { readonly kind: "plan" }>;
 
-function startedRun(runKey: string, request: string): RunState {
-  return { runKey, request, approval: "none", startedAt: Date.now(), finishedAt: null, files: [], hiddenFileCount: 0, events: [], hiddenEventCount: 0, plan: null, review: null, planning: null, execution: null, workerCount: null, artifacts: [], hiddenArtifactCount: 0, replans: [], lanes: {}, laneOrder: [], stream: [], hiddenBlockCount: 0, contractVersion: null, integration: null, orchestration: null, budgetAlerts: [], hiddenAlertCount: 0, outcome: null };
+function startedRun(runKey: string, request: string, routeReason: string | null): RunState {
+  return { runKey, request, routeReason, repoSetup: null, resultDecision: null, approval: "none", startedAt: Date.now(), finishedAt: null, files: [], hiddenFileCount: 0, events: [], hiddenEventCount: 0, plan: null, review: null, planning: null, execution: null, workerCount: null, artifacts: [], hiddenArtifactCount: 0, replans: [], lanes: {}, laneOrder: [], stream: [], hiddenBlockCount: 0, contractVersion: null, integration: null, orchestration: null, budgetAlerts: [], hiddenAlertCount: 0, outcome: null };
 }
 
 function withPlan(run: RunState, update: PlanUpdate): RunState {
@@ -64,6 +64,10 @@ function applyUpdate(run: RunState, update: RunUpdate): RunState {
       return withReplanDecision(run, update);
     case "awaiting-approval":
       return { ...run, approval: "waiting" };
+    case "repo-setup":
+      return { ...run, repoSetup: update.summary };
+    case "result-decision":
+      return { ...run, resultDecision: { status: update.status, summary: update.summary } };
     case "plan-approved":
       return { ...run, approval: "approved" };
     case "orchestration":
@@ -77,7 +81,7 @@ function applyUpdate(run: RunState, update: RunUpdate): RunState {
 }
 
 export function applyRunMessage(run: RunState | null, message: RunMessage): RunState | null {
-  if (message.type === "run-started") return startedRun(message.runKey, message.request);
+  if (message.type === "run-started") return startedRun(message.runKey, message.request, message.routeReason ?? null);
   if (run?.runKey !== message.runKey) return run;
   if (message.type === "run-finished") return { ...run, outcome: message.outcome, finishedAt: Date.now() };
   return applyUpdate({ ...run, ...withEvent(run, message.update, MAX_RUN_EVENTS) }, message.update);

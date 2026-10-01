@@ -12,6 +12,8 @@ export const TASK_PHASES = [
   "partially-blocked",
   "verifying",
   "completed",
+  "verified",
+  "rejected",
   "failed",
 ] as const;
 
@@ -30,7 +32,7 @@ export interface RunEventEntry {
   readonly text: string;
 }
 
-export type MergeResult = Pick<Extract<RunUpdate, { readonly kind: "merge" }>, "status" | "detail">;
+export type MergeResult = Pick<Extract<RunUpdate, { readonly kind: "merge" }>, "status" | "checks" | "detail">;
 
 export type StreamBlockStatus = "running" | RunTaskStatus;
 
@@ -64,6 +66,7 @@ export interface AwaitedOutput {
 
 export interface LaneVerification {
   readonly ok: boolean;
+  readonly verdict: "passed" | "failed" | "unverified";
   readonly rungs: readonly RungResult[];
   readonly detail: string;
 }
@@ -155,6 +158,9 @@ export interface RunState {
   readonly hiddenEventCount: number;
   readonly approval: PlanApproval;
   readonly request: string;
+  readonly routeReason: string | null;
+  readonly repoSetup: string | null;
+  readonly resultDecision: ResultDecisionState | null;
   readonly plan: RunPlanSummary | null;
   readonly review: PlanReviewSummary | null;
   readonly planning: PlanningEnginesSummary | null;
@@ -173,4 +179,19 @@ export interface RunState {
   readonly budgetAlerts: readonly BudgetAlert[];
   readonly hiddenAlertCount: number;
   readonly outcome: RunOutcome | null;
+}
+
+export type DraftRoute =
+  | { readonly kind: "team"; readonly request: string }
+  | { readonly kind: "chat"; readonly text: string; readonly canHandOff: boolean };
+
+export interface DraftContext {
+  readonly imageCount: number;
+  readonly mentionCount: number;
+  readonly isRunActive: boolean;
+}
+
+export interface ResultDecisionState {
+  readonly status: "accepted" | "discarded" | "refused";
+  readonly summary: string;
 }

@@ -30,7 +30,7 @@ import { ENGINES, DEFAULT_ENGINE_ID, tokenReportingFor } from "@weave/agent/brow
 import { EnginePicker } from '@/features/engines/components';
 import { SettingsView } from '@/features/settings';
 import { ChatSkeleton, ContextPanel, EngineSetupPanel, hasSelectableModes, ModePicker, PermissionCard, QuestionCard, UserMessage, type ContextPanelTab } from '@/features/chat/components';
-import { parseRunCommand, RunPanel, RunStream, selectIsPlanOpen, selectIsRunActive, useRunStore } from '@/features/runs';
+import { chatCommandFor, routeDraft, RunPanel, RunStream, selectIsPlanOpen, selectIsRunActive, useRunStore } from '@/features/runs';
 import { FileViewer, useFileStore } from '@/features/files';
 import { LocalPathOpenerContext } from '@/shared/ui/ai-elements';
 
@@ -172,6 +172,7 @@ export function App() {
     updateTurnPlan,
     startRun,
     decidePlan,
+    decideResult,
     cancelRun,
     openFile,
     employeeActions,
@@ -512,7 +513,10 @@ export function App() {
   }, [modelOption, setConfig]);
 
   const [draft, setDraft] = useState("");
-  const setUpGitAndRun = useCallback((request: string) => startRun(request, { setUpGit: true }), [startRun]);
+  const keepInChat = useCallback((request: string) => {
+    cancelRun();
+    setDraft(chatCommandFor(request));
+  }, [cancelRun]);
   const [focusEmployeeId, setFocusEmployeeId] = useState<string | null>(null);
   const openEmployee = useCallback(
     (employeeId: string) => {
@@ -939,14 +943,15 @@ export function App() {
     if (busy || !ready) return;
     if (!draft.trim() && imageAttachments.length === 0) return;
     dismissFinishedRun();
-    const runRequest = parseRunCommand(draft);
-    if (runRequest !== null) {
+    const route = routeDraft(draft, { imageCount: imageAttachments.length, mentionCount: mentioned.length, isRunActive });
+    if (route.kind === "team") {
       showUserMessage(draft);
-      startRun(runRequest);
+      startRun(route.request);
       setDraft("");
       resetComposerHeight();
       return;
     }
+    if (!route.text.trim() && imageAttachments.length === 0) return;
     // Standing agents (`always` + manually toggled) plus this message's
     // @-mentions ride every prompt, so the persona can't drift over a chat.
     // The server merges this with the skills catalog into one <system> block.
@@ -963,8 +968,8 @@ export function App() {
     );
     const plugins = formatSkillPluginsSystemPrompt(skillPlugins, activeDir);
 
-    let textToSend = draft;
-    const trimmedDraft = draft.trim();
+    let textToSend = route.text;
+    const trimmedDraft = route.text.trim();
     const isPlanSlash = trimmedDraft.startsWith("/plan ") || trimmedDraft === "/plan";
     const isNaturalPlan =
       /^(?:create|make|propose|generate|write|draft)(?:\s+(?:a|an|one))?\s+plan\b/i.test(trimmedDraft) ||
@@ -990,6 +995,7 @@ export function App() {
       personas,
       images: imageAttachments,
       plugins: activePlugins.activeRefs,
+      canHandOff: route.canHandOff && !isPlanSlash && !isNaturalPlan,
       onWithdrawn: () => {
         setDraft((current) => mergeDraftText(current, withdrawnDraft));
         setImageAttachments((current) => mergeDraftImages(current, withdrawnImages));
@@ -1396,7 +1402,7 @@ export function App() {
             ),
           )}
 
-          <RunStream />
+          <RunStream onKeepInChat={keepInChat} onDecideResult={decideResult} />
 
           {tasks && <TasksPanel tasks={tasks} onClose={() => setIsTasksOpen(false)} />}
 
@@ -1458,7 +1464,6 @@ export function App() {
               )}
 
               <RunPanel
-                onSetUpGitAndRun={setUpGitAndRun}
                 onDecidePlan={decidePlan}
                 permissionRequest={permissionRequest}
                 onAnswerPermission={answerPermission}

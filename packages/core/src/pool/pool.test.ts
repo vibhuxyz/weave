@@ -9,6 +9,9 @@ import { listWeaveWorktrees, runGit } from "../worktree/index.ts";
 import { runPool } from "./pool.ts";
 import type { RunWorker } from "./types.ts";
 
+const MAX_OVERLAP_WAIT_MS = 5_000;
+const POLL_MS = 10;
+
 async function makeRepo(): Promise<string> {
   const repo = await mkdtemp(join(tmpdir(), "weave-pool-"));
   for (const args of [["init", "--quiet", "--initial-branch=main"], ["add", "-A"]]) await runGit(repo, args);
@@ -34,8 +37,9 @@ async function setup() {
   return { repo, weaveDir, ledger, base: { repoRoot: repo, weaveDir, ledger, shouldInstall: false } };
 }
 
-test("three independent tasks run at the same time in the shared workspace", async () => {
+test("three scoped tasks share the folder at once, and each one's files become its own branch", async () => {
   const { repo, weaveDir, ledger, base } = await setup();
+  const head = (await runGit(repo, ["rev-parse", "HEAD"])).output.trim();
   let active = 0;
   let peak = 0;
   const cwds = new Set<string>();
@@ -43,21 +47,42 @@ test("three independent tasks run at the same time in the shared workspace", asy
     active += 1;
     peak = Math.max(peak, active);
     cwds.add(input.task.cwd);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const deadline = Date.now() + MAX_OVERLAP_WAIT_MS;
+    while (active < 3 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, POLL_MS));
     active -= 1;
     return writesOwnFile(input);
   };
-  const report = await runPool({ ...base, tasks: [task("T1"), task("T2"), task("T3")], concurrency: 3, runWorker: overlapping });
+  const tasks = ["T1", "T2", "T3"].map((id) => task(id, { allowedPaths: [`${id}.txt`] }));
+  const report = await runPool({ ...base, tasks, concurrency: 3, runWorker: overlapping });
   assert.equal(peak, 3);
-  assert.equal(cwds.size, 1);
-  assert.deepEqual(report.tasks.map((entry) => [entry.taskId, entry.status, entry.harvest]), [
-    ["T1", "ok", null],
-    ["T2", "ok", null],
-    ["T3", "ok", null],
+  assert.deepEqual([...cwds], [repo]);
+  assert.deepEqual(report.tasks.map((entry) => [entry.taskId, entry.status, entry.branch, entry.harvest?.files]), [
+    ["T1", "ok", "weave/run1/T1", ["T1.txt"]],
+    ["T2", "ok", "weave/run1/T2", ["T2.txt"]],
+    ["T3", "ok", "weave/run1/T3", ["T3.txt"]],
   ]);
+  for (const entry of report.tasks) {
+    const tree = await runGit(repo, ["ls-tree", "--name-only", entry.branch ?? "", "--"]);
+    assert.deepEqual(tree.output.trim().split("\n"), [".gitignore", `${entry.taskId}.txt`]);
+  }
   assert.deepEqual(await listWeaveWorktrees(repo), []);
+  assert.equal((await runGit(repo, ["rev-parse", "HEAD"])).output.trim(), head, "the user's branch does not move");
+  assert.equal((await runGit(repo, ["status", "--porcelain"])).output.trim().split("\n").length, 3, "the work is still in the folder");
   const harvested = (await readLedger(weaveDir, ledger.runId)).filter((event) => event.type === "worktree.harvested");
-  assert.equal(harvested.length, 0);
+  assert.equal(harvested.length, 3);
+});
+
+test("tasks with no scope get their own worktrees, because a shared folder could not tell their files apart", async () => {
+  const { repo, base } = await setup();
+  const cwds = new Set<string>();
+  const recordCwd: RunWorker = async (input) => {
+    cwds.add(input.task.cwd);
+    return writesOwnFile(input);
+  };
+  const report = await runPool({ ...base, tasks: [task("T1"), task("T2")], concurrency: 2, runWorker: recordCwd });
+  assert.equal(cwds.has(repo), false);
+  assert.equal(cwds.size, 2);
+  assert.deepEqual(report.tasks.map((entry) => entry.harvest?.files), [["T1.txt"], ["T2.txt"]]);
 });
 
 test("the concurrency cap holds", async () => {
@@ -143,6 +168,22 @@ test("tasks start from the base commit in their own worktrees when the checkout 
     ["T1", "ok", ["T1.txt"]],
     ["T2", "ok", ["T2.txt"]],
   ]);
+});
+
+test("a worker in the shared folder learns who else works there; a worker in its own worktree does not", async () => {
+  const { repo, base } = await setup();
+  const seen = new Map<string, TaskContract["sharedWith"]>();
+  const recordTeam: RunWorker = async (input) => {
+    seen.set(input.task.id, input.task.sharedWith);
+    return writesOwnFile(input);
+  };
+  await runPool({ ...base, tasks: [task("T1", { allowedPaths: ["client/**"] }), task("T2", { allowedPaths: ["server/**"] })], concurrency: 2, runWorker: recordTeam });
+  assert.deepEqual(seen.get("T1"), [{ id: "T2", allowedPaths: ["server/**"] }]);
+  assert.deepEqual(seen.get("T2"), [{ id: "T1", allowedPaths: ["client/**"] }]);
+  const baseCommit = await commitOnSideBranch(repo, "contract.ts", "export {};\n");
+  seen.clear();
+  await runPool({ ...base, baseCommit, tasks: [task("T3")], concurrency: 1, runWorker: recordTeam });
+  assert.equal(seen.get("T3"), undefined);
 });
 
 test("cancelling stops running workers, cancels queued tasks and skips dependents", async () => {

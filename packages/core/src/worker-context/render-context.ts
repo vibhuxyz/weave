@@ -2,8 +2,8 @@ import { frameworksOf, layerOf, renderProjectContext, type ProjectAnswer } from 
 import { briefOf } from "../handoff/index.ts";
 import { pickSkills, renderSkills, type SkillPick } from "../skills/index.ts";
 import { TASK_NOTES_INSTRUCTION } from "../state/index.ts";
-import { MAX_TASK_BYTES, MAX_WORKER_CONTEXT_BYTES, SECTION_BUDGETS } from "./constants.ts";
-import type { ContextSection, ContextSectionName, ContextSources, WorkerContext } from "./types.ts";
+import { MAX_LISTED_TEAMMATES, MAX_TASK_BYTES, MAX_WORKER_CONTEXT_BYTES, SECTION_BUDGETS } from "./constants.ts";
+import type { ContextSection, ContextSectionName, ContextSources, WorkerContext, WorkerTask } from "./types.ts";
 
 interface Rendered {
   readonly name: ContextSectionName;
@@ -91,12 +91,22 @@ function verificationLine(task: ContextSources["task"]): readonly string[] {
   return task.verifyRung ? [`Your work must pass ${task.verifyRung} before it can merge.`] : [];
 }
 
+function teamLine(task: WorkerTask): string {
+  const teammates = task.sharedWith ?? [];
+  if (teammates.length === 0) {
+    return `You are worker ${task.id} on this run's team. Other workers may be changing their own copies of this repository at the same time; the paths and outputs below are how you stay out of their way.`;
+  }
+  const listed = teammates.slice(0, MAX_LISTED_TEAMMATES).map((mate) => `${mate.id} (${mate.allowedPaths.join(", ") || "any path"})`);
+  const more = teammates.length > MAX_LISTED_TEAMMATES ? ` and ${teammates.length - MAX_LISTED_TEAMMATES} more` : "";
+  return `You are worker ${task.id} on this run's team, and you share this folder with the other workers running at the same time: ${listed.join("; ")}${more}. Their edits appear on disk and in git status while you work; that is expected. Leave their files alone: do not edit, revert, commit or investigate them.`;
+}
+
 function taskSection(sources: ContextSources): Rendered {
   const { task } = sources;
   const goal = capBytes(task.goal, MAX_TASK_BYTES);
   const lines = [
     "<task>",
-    `You are worker ${task.id} on this run's team. Other workers may be changing their own copies of this repository at the same time; the paths and outputs below are how you stay out of their way.`,
+    teamLine(task),
     escaped(goal.text, "task"),
     ...(task.allowedPaths?.length ? [`You may write only: ${task.allowedPaths.join(", ")}`] : []),
     ...(task.readOnlyPaths?.length ? [`Read but never edit: ${task.readOnlyPaths.join(", ")}`] : []),

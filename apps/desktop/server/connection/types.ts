@@ -13,6 +13,7 @@ import type { RunController } from "../parallel-run/index.ts";
 import type { ChatDirectory, ProjectChats, SkillSelector } from "../chat/index.ts";
 import type { AuthMethod } from "@weave/protocol";
 import type { ProjectModelCache } from "../project-model/index.ts";
+import type { TeamToolHost, TurnEstimates } from "../team-tools/index.ts";
 
 export interface ConnectionStorage {
   readonly dataDir: string;
@@ -24,6 +25,7 @@ export interface ConnectionStorage {
   readonly weaveHome: string;
   readonly history: HistoryStore;
   readonly decisions: DecisionLog;
+  readonly teamTools: TeamToolHost;
 }
 
 export interface ClientMessageContext {
@@ -51,6 +53,7 @@ export interface ClientMessageContext {
   readonly compaction: CompactionController;
   readonly history: HistoryStore;
   readonly runs: RunController;
+  readonly teamEstimates: TurnEstimates;
   readonly send: (msg: ServerMessage) => void;
   readonly sendChats: () => Promise<void>;
   readonly sendEngineList: () => void;

@@ -54,6 +54,8 @@ export interface PoolTaskReport {
   readonly installMs: number;
   readonly agentMs: number;
   readonly wallMs: number;
+  readonly ranIn: "shared" | "worktree" | null;
+  readonly isRejected: boolean;
 }
 
 export interface PoolReport {
@@ -69,7 +71,7 @@ export interface PoolContext {
   readonly signal: AbortSignal;
   readonly shouldInstall: boolean;
   readonly baseCommit: string | undefined;
-  readonly canShareRoot: boolean;
+  readonly sharedBase: string | null;
   readonly inspectHarvest: InspectHarvest | undefined;
   readonly attempt: number;
   readonly coordinator: Coordinator;

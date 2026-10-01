@@ -22,7 +22,7 @@ const writesApp: RunWorker = async ({ task }) => {
   return { status: "ok" };
 };
 
-test("a single task that succeeds in the shared workspace makes the run ok, not failed", async () => {
+test("a single task that succeeds in a project with no checks makes the run unverified, not failed", async () => {
   const repo = await makeRepo();
   const tasks: TaskContract[] = [{ id: "T1", prompt: "build the app", cwd: repo, allowedPaths: ["index.html"] }];
 
@@ -30,9 +30,9 @@ test("a single task that succeeds in the shared workspace makes the run ok, not 
 
   assert.ok(result.ok, result.ok ? "" : result.reason);
   assert.deepEqual(result.value.pool.tasks.map((entry) => entry.status), ["ok"]);
-  assert.equal(result.value.integration, null, "a shared workspace has no branches to merge");
-  assert.equal(result.value.status, "ok", "nothing to integrate is not an integration failure");
-  assert.match(await readFile(join(repo, "index.html"), "utf8"), /doctype/);
+  assert.deepEqual(result.value.integration?.merges.map((merge) => [merge.taskId, merge.status]), [["T1", "merged"]]);
+  assert.equal(result.value.status, "unverified");
+  assert.match(await readFile(join(repo, "index.html"), "utf8"), /doctype/, "the work stays in the shared folder too");
 });
 
 test("a failing task still makes the run fail", async () => {

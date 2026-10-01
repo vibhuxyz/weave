@@ -13,7 +13,8 @@ function settledTriggers(pool: PoolReport): readonly ReplanTrigger[] {
   return pool.tasks.flatMap((entry): readonly ReplanTrigger[] => {
     if (entry.status === "ok") return [];
     if (entry.status === "skipped") return [{ kind: "worker-skipped", taskId: entry.taskId, detail: detailOf(entry.reason) }];
-    return [{ kind: "worker-failed", taskId: entry.taskId, detail: `${entry.status}: ${detailOf(entry.reason)}` }];
+    const settledAs = entry.isRejected ? "rejected" : entry.status;
+    return [{ kind: "worker-failed", taskId: entry.taskId, detail: `${settledAs}: ${detailOf(entry.reason)}` }];
   });
 }
 

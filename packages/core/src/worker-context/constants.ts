@@ -7,6 +7,7 @@ export const SECTION_BUDGETS = {
   state: 3_500,
 } as const;
 export const MAX_TASK_BYTES = 1_500;
+export const MAX_LISTED_TEAMMATES = 6;
 export const MAX_SNIPPETS = 6;
 export const MAX_SNIPPET_LINES = 40;
 export const MAX_SNIPPET_BYTES = 1_500;

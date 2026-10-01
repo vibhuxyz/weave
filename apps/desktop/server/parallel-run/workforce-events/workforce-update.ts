@@ -13,7 +13,7 @@ export function workforceUpdate(event: WeaveEvent): RunUpdate | null {
     case "employee.assigned":
       return { kind: "employee-assigned", taskId: event.taskId, employeeId: event.employeeId, reasons: cappedList(event.reasons.map((reason) => flattened(reason)), MAX_REASONS) };
     case "employee.verified":
-      return { kind: "employee-verified", taskId: event.taskId, ok: event.ok, rungs: event.rungs.map(({ rung, ok }) => ({ rung, ok })), detail: flattened(event.detail, MAX_DETAIL_CHARS) };
+      return { kind: "employee-verified", taskId: event.taskId, ok: event.ok, verdict: event.verdict ?? (event.ok ? "passed" : "failed"), rungs: event.rungs.map(({ rung, ok }) => ({ rung, ok })), detail: flattened(event.detail, MAX_DETAIL_CHARS) };
     case "ownership.claimed":
       return { kind: "claimed", taskId: event.taskId, resources: cappedList(event.resources.map((resource) => `${resource.kind}:${flattened(resource.id)}`), MAX_CLAIMS_SHOWN) };
     case "ownership.blocked":

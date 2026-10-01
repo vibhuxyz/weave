@@ -9,6 +9,7 @@ import { cn } from "@/shared/lib";
 const SUBTITLES: Record<string, { desc: string; detail?: string }> = {
   "claude-code": { desc: "Anthropic's agentic coding CLI", detail: "@agentclientprotocol/claude-agent-acp" },
   codex: { desc: "OpenAI's coding agent", detail: "@agentclientprotocol/codex-acp" },
+  grok: { desc: "xAI's coding agent", detail: "@xai-official/grok" },
   amp: { desc: "Sourcegraph Amp coding agent", detail: "@sourcegraph/amp" },
   antigravity: { desc: "Google's Antigravity agent", detail: "agy-acp" },
 };

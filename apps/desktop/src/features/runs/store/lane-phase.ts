@@ -1,6 +1,9 @@
+import type { MergeStatus } from "../../../../server/index.ts";
 import type { Lane, LaneStatus, TaskPhase } from "../types";
 
-const SETTLED: ReadonlySet<LaneStatus> = new Set(["ok", "failed", "cancelled"]);
+const SETTLED: ReadonlySet<LaneStatus> = new Set(["ok", "failed", "rejected", "cancelled"]);
+const REJECTING_MERGES: ReadonlySet<MergeStatus> = new Set(["conflict", "merge-error", "verify-failed"]);
+const FINISHED_PHASES: ReadonlySet<TaskPhase> = new Set(["completed", "verified", "rejected", "failed"]);
 
 export function laneProgress(lane: Lane): number | null {
   if (lane.subtasks.length === 0) return null;
@@ -8,8 +11,20 @@ export function laneProgress(lane: Lane): number | null {
   return Math.round((done / lane.subtasks.length) * 100);
 }
 
+function finishedPhase(lane: Lane): TaskPhase {
+  const { merge, verification } = lane;
+  if (merge && REJECTING_MERGES.has(merge.status)) return "rejected";
+  if (merge?.status === "merged" && merge.checks.length > 0) return "verified";
+  return verification?.verdict === "passed" ? "verified" : "completed";
+}
+
+function isFinishedPhase(phase: TaskPhase): boolean {
+  return FINISHED_PHASES.has(phase);
+}
+
 export function lanePhase(lane: Lane, lanes: Readonly<Record<string, Lane>>): TaskPhase {
-  if (lane.status === "ok") return "completed";
+  if (lane.status === "ok") return finishedPhase(lane);
+  if (lane.status === "rejected") return "rejected";
   if (lane.status === "failed" || lane.status === "cancelled") return "failed";
 
   if (lane.status === "running") {
@@ -30,9 +45,7 @@ export function runProgress(lanes: Readonly<Record<string, Lane>>, order: readon
   const total = order.reduce((sum, taskId) => {
     const lane = lanes[taskId];
     if (!lane) return sum;
-    const phase = lanePhase(lane, lanes);
-    if (phase === "completed") return sum + 100;
-    if (phase === "failed") return sum + 100;
+    if (isFinishedPhase(lanePhase(lane, lanes))) return sum + 100;
     return sum + (laneProgress(lane) ?? 0);
   }, 0);
   return Math.round(total / order.length);

@@ -35,5 +35,5 @@ export async function describeUntrackedFiles(repoRoot: string, weaveDir: string)
     .map((path) => path.replace(/\s+/g, " "))
     .sort();
   if (paths.length === 0) return null;
-  return `${paths.length} file(s) are not in the last commit: ${describeDirty(paths)}. The planner, and any worker that gets its own worktree, start from the last commit and cannot open them. Commit them so every step sees the same code.`;
+  return `${paths.length} file(s) are not committed, so the planner cannot open them. Workers in this folder can; workers in their own worktree cannot. Commit them first. Files: ${describeDirty(paths)}`;
 }

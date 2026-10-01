@@ -22,7 +22,7 @@ const ENGINES = [
 ];
 
 function entry(taskId: string, status: PoolTaskReport["status"], reason: string | null = null): PoolTaskReport {
-  return { taskId, status, reason, branch: null, harvest: null, finalMessage: null, installMs: 0, agentMs: 0, wallMs: 0 };
+  return { taskId, status, reason, branch: null, harvest: null, finalMessage: null, installMs: 0, agentMs: 0, wallMs: 0, ranIn: null, isRejected: false };
 }
 
 function poolWith(tasks: readonly PoolTaskReport[], coordination?: Partial<PoolReport["coordination"]>): PoolReport {

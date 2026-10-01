@@ -4,3 +4,4 @@ export type { ActivePluginRef } from "../plugins/resolve.ts";
 export { BUILTIN_EMPLOYEE_SUMMARIES } from "../employees/builtin/index.ts";
 export type { EmployeeSummary } from "../employees/builtin/index.ts";
 export { DEFAULT_MEMORY, DEFAULT_PERMISSIONS, EMPLOYEE_ID_PATTERN } from "../employees/model/index.ts";
+export { readTeamHandoff } from "../team-handoff/parse-handoff.ts";

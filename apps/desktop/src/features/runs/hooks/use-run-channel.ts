@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { ServerMessage } from "../../../../server/index.ts";
 import { useRunStore } from "../store";
+import type { ResultDecision } from "../../../../server/index.ts";
 import type { RunMessage } from "../types";
 
 function isRunMessage(message: ServerMessage): message is RunMessage {
@@ -45,11 +46,12 @@ export function useRunChannel(socketRef: RefObject<WebSocket | null>) {
   );
 
   const startRun = useCallback(
-    (request: string, options: { readonly setUpGit?: boolean } = {}) => sendMessage({ type: "start-run", request, ...(options.setUpGit ? { setUpGit: true } : {}) }),
+    (request: string) => sendMessage({ type: "start-run", request }),
     [sendMessage],
   );
   const cancelRun = useCallback(() => sendMessage({ type: "cancel-run" }), [sendMessage]);
   const decidePlan = useCallback((runKey: string, approved: boolean) => sendMessage({ type: "decide-run-plan", runKey, approved }), [sendMessage]);
+  const decideResult = useCallback((runKey: string, decision: ResultDecision) => sendMessage({ type: "decide-run-result", runKey, decision }), [sendMessage]);
 
-  return { handleMessage, startRun, cancelRun, decidePlan };
+  return { handleMessage, startRun, cancelRun, decidePlan, decideResult };
 }

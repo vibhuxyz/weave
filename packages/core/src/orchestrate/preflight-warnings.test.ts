@@ -35,6 +35,6 @@ test("files missing from the last commit are named to the user and to the planne
     },
   });
   assert.equal(result.status, "refused");
-  assert.match(warnings[0] ?? "", /^1 file\(s\) are not in the last commit: src\/api\/app\.ts\./);
-  assert.match(prompts[0] ?? "", /<preflight-warnings source="Weave: checked with git before planning">\n1 file\(s\) are not in the last commit: src\/api\/app\.ts/);
+  assert.match(warnings[0] ?? "", /^1 file\(s\) are not committed, so the planner cannot open them\.[^\n]*Files: src\/api\/app\.ts$/);
+  assert.match(prompts[0] ?? "", /<preflight-warnings source="Weave: checked with git before planning">\n1 file\(s\) are not committed[^\n]*Files: src\/api\/app\.ts/);
 });

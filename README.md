@@ -283,6 +283,7 @@ Adding one is a row plus an npm install, not an adapter.
 |---|---|---|
 | `claude-code` | `@agentclientprotocol/claude-agent-acp` | installed |
 | `codex` | `@agentclientprotocol/codex-acp` | binary confirmed |
+| `grok` | `@xai-official/grok agent stdio` | binary confirmed |
 | `amp` | `@sourcegraph/amp` | declared |
 | `gemini` | `@google/gemini-cli --experimental-acp` | binary confirmed |
 

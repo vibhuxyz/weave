@@ -27,6 +27,9 @@ function textOf(update: RunUpdate): string {
       return `${update.status} on ${update.branch}`;
     case "note":
       return update.text;
+    case "repo-setup":
+    case "result-decision":
+      return update.summary;
     default:
       return update.kind;
   }

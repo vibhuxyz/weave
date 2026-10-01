@@ -1,6 +1,7 @@
 import {
   ENGINES,
   getEngine,
+  grokTerminalAuthMethods,
   resolveEngineEntry,
   resolveCodexCliEntry,
 } from "@weave/agent";
@@ -126,6 +127,8 @@ export function resolveEngineFallbackMethods(
       return [...createClaudeCodeFallbacks()];
     }
   }
+
+  if (engineId === "grok") return [...grokTerminalAuthMethods()];
 
   if (engineId === "codex") {
     const codexExtras = createCodexFallbacks(initialMethods);

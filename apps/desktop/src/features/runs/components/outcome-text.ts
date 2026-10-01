@@ -9,7 +9,6 @@ export function outcomeText(outcome: RunOutcome): string {
     case "no-change-needed":
       return `No change needed: ${outcome.reason}`;
     case "error":
-    case "needs-git":
       return outcome.reason;
     default: {
       const unreachable: never = outcome;

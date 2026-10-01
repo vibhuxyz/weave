@@ -3,6 +3,7 @@ import type { EngineAuthMethod } from "@weave/protocol";
 export function engineLabelFallback(engineId: string): string {
   if (engineId === "claude-code") return "Claude Code";
   if (engineId === "codex") return "Codex";
+  if (engineId === "grok") return "Grok";
   return "Google Antigravity";
 }
 
@@ -19,6 +20,23 @@ export function authMethodsForEngine(engineId: string): EngineAuthMethod[] {
         id: "console-login",
         name: "Anthropic Console",
         description: "Use Anthropic Console (API usage billing)",
+        kind: "terminal",
+      },
+    ];
+  }
+
+  if (engineId === "grok") {
+    return [
+      {
+        id: "grok-device-auth",
+        name: "Sign in with a device code",
+        description: "Sign in with a one-time code. Works when this machine cannot open a browser.",
+        kind: "terminal",
+      },
+      {
+        id: "grok-login",
+        name: "Sign in with Grok",
+        description: "Opens a browser to sign in to Grok.",
         kind: "terminal",
       },
     ];

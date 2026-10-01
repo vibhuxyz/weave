@@ -34,6 +34,10 @@ function assertSafeName(kind: string, name: string): void {
   }
 }
 
+export function taskBranchName(runId: string, taskId: string): string {
+  return `${WEAVE_BRANCH_PREFIX}${runId}/${taskId}`;
+}
+
 function namesFor(input: CreateWorktreeInput): { branch: string; path: string } {
   assertSafeName("task id", input.taskId);
   if (input.runId === undefined) {
@@ -44,7 +48,7 @@ function namesFor(input: CreateWorktreeInput): { branch: string; path: string } 
   }
   assertSafeName("run id", input.runId);
   return {
-    branch: `${WEAVE_BRANCH_PREFIX}${input.runId}/${input.taskId}`,
+    branch: taskBranchName(input.runId, input.taskId),
     path: join(worktreesRoot(input.weaveDir), input.runId, input.taskId),
   };
 }

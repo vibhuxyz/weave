@@ -5,9 +5,13 @@ use tauri::AppHandle;
 
 fn search_dirs(app: &AppHandle) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
+    if let Some(grok_home) = std::env::var_os("GROK_HOME") {
+        dirs.push(PathBuf::from(grok_home).join("bin"));
+    }
     if let Some(home) = std::env::var_os("HOME") {
         let home_path = PathBuf::from(home);
         dirs.push(home_path.join(".local").join("bin"));
+        dirs.push(home_path.join(".grok").join("bin"));
         dirs.push(home_path.join(".cargo").join("bin"));
         dirs.push(home_path.join(".npm-global").join("bin"));
         dirs.push(home_path.join("Library/Application Support/dev.vibhu.weave/engines/node_modules/.bin"));

@@ -2,7 +2,7 @@ use crate::agents::agent_doctor::{doctor, AgentDoctorResult};
 use crate::agents::auth::acp::run_acp_auth;
 use crate::agents::auth::cli::run_cli_login;
 use crate::agents::providers::{
-    get_provider, resolve_provider_binary, AuthStrategy, CliAuthCommands,
+    get_provider, resolve_provider_binary, AuthStrategy, CliAuthCommands, ProviderConfig,
 };
 use serde_json::json;
 use std::path::Path;
@@ -31,7 +31,7 @@ fn run_cli_auth_strategy(
 }
 
 fn run_acp_auth_strategy(
-    provider_id: &str,
+    provider: &ProviderConfig,
     bin: &Path,
     method_id: Option<&str>,
     app: &AppHandle,
@@ -40,7 +40,7 @@ fn run_acp_auth_strategy(
         return Err("An authentication method must be selected for this provider".to_string());
     };
 
-    let res = run_acp_auth(bin, method_id)?;
+    let res = run_acp_auth(bin, provider.spawn_args, method_id)?;
     if res.success {
         return Ok(());
     }
@@ -49,7 +49,7 @@ fn run_acp_auth_strategy(
         .unwrap_or_else(|| "ACP authentication failed".to_string());
     emit_setup_state(
         app,
-        json!({ "state": "failed", "provider": provider_id, "error": error }),
+        json!({ "state": "failed", "provider": provider.id, "error": error }),
     );
     Err("ACP authentication failed".to_string())
 }
@@ -119,7 +119,7 @@ pub async fn setup_provider(
             run_cli_auth_strategy(&provider_id, &bin, commands, &app)?
         }
         AuthStrategy::AcpAuth => {
-            run_acp_auth_strategy(&provider_id, &bin, method_id.as_deref(), &app)?
+            run_acp_auth_strategy(provider, &bin, method_id.as_deref(), &app)?
         }
     }
 

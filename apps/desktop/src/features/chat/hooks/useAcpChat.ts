@@ -1110,6 +1110,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
         images?: ChatImageAttachmentDraft[];
         plugins?: ActivePluginRef[];
         onWithdrawn?: () => void;
+        canHandOff?: boolean;
       },
     ) => {
       const trimmed = text.trim();
@@ -1148,6 +1149,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           persona: opts?.persona,
           personaIds: personasRef.current?.map((persona) => persona.id),
           plugins: opts?.plugins?.length ? opts.plugins : undefined,
+          allowHandoff: opts?.canHandOff === true ? true : undefined,
           images: images?.map((image) => ({
             data: image.base64,
             mimeType: image.mimeType,
@@ -1387,6 +1389,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     answerQuestion: questionChannel.answer,
     startRun: runChannel.startRun,
     decidePlan: runChannel.decidePlan,
+    decideResult: runChannel.decideResult,
     cancelRun: runChannel.cancelRun,
     openFile: fileChannel.openFile,
     employeeActions,

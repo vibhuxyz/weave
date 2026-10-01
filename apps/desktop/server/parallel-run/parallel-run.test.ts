@@ -8,7 +8,7 @@ import { createApprovalGate } from "./approval-gate.ts";
 import { createRunController } from "./run-controller.ts";
 import type { RunDependencies } from "./run-preflight.ts";
 
-const READY: RunDependencies = { prepareRepo: async () => ({ ok: true }), readBudgets: async () => ({ ok: true, budgets: {} }) };
+const READY: RunDependencies = { prepareRepo: async () => ({ ok: true, setupSummary: null }), readBudgets: async () => ({ ok: true, budgets: {} }) };
 
 const BASE = { runId: "r1", seq: 1, at: "2026-09-24T00:00:00.000Z" } as const;
 const eventOf = (fields: object): WeaveEvent => ({ ...BASE, ...fields }) as WeaveEvent;
@@ -84,6 +84,17 @@ test("a run streams its updates between run-started and run-finished", async () 
   ]);
 });
 
+test("a handed-off run says why, and its planner gets the agent's notes after the request", async () => {
+  const sent: ServerMessage[] = [];
+  const requests: string[] = [];
+  const planAndRun: typeof import("@weave/core").planAndRun = async (options) => (requests.push(options.request), { status: "no-change-needed", reason: "done" });
+  const runs = createRunController(planAndRun, READY);
+  const notes = "<chat-agent-notes>\n- only .gitignore\n</chat-agent-notes>";
+  await runs.start({ request: "build full stack todo app", projectDir: "/repo", engineId: "claude", runKey: "k1", routeReason: "It needs a UI, an API and a database.", plannerNotes: notes, send: (message) => sent.push(message) });
+  assert.deepEqual(sent[0], { type: "run-started", runKey: "k1", request: "build full stack todo app", routeReason: "It needs a UI, an API and a database." });
+  assert.deepEqual(requests, [`build full stack todo app\n\n${notes}`]);
+});
+
 test("a second run while one is active is refused, and an empty request never starts", async () => {
   const sent: ServerMessage[] = [];
   const send = (message: ServerMessage) => sent.push(message);
@@ -112,21 +123,25 @@ test("a planner that throws still ends the run with its reason", async () => {
   assert.deepEqual(sent.at(-1), { type: "run-finished", runKey: "k1", outcome: { status: "error", reason: "Parallel run failed: engine missing" } });
 });
 
-test("a folder without a usable git repository ends the run asking to set one up, and the flag is passed through", async () => {
+test("a folder without git is set up without asking, and the run says what Weave did", async () => {
   const sent: ServerMessage[] = [];
-  const asked: boolean[] = [];
-  const runs = createRunController(async () => ({ status: "no-change-needed", reason: "unused" }), {
+  const runs = createRunController(async () => ({ status: "no-change-needed", reason: "done" }), {
     ...READY,
-    prepareRepo: async (_projectDir, options) => {
-      asked.push(options.shouldSetUp);
-      return options.shouldSetUp ? { ok: true } : { ok: false, needsSetup: true, reason: "no repo" };
-    },
+    prepareRepo: async () => ({ ok: true, setupSummary: "Weave set up git here before the run: it created a git repository." }),
   });
   await runs.start({ request: "go", projectDir: "/repo", engineId: "claude", runKey: "k1", send: (message) => sent.push(message) });
-  await runs.start({ request: "go", projectDir: "/repo", engineId: "claude", runKey: "k2", setUpGit: true, send: (message) => sent.push(message) });
-  assert.deepEqual(asked, [false, true]);
-  assert.deepEqual(sent[1], { type: "run-finished", runKey: "k1", outcome: { status: "needs-git", reason: "no repo" } });
-  assert.deepEqual(sent.at(-1), { type: "run-finished", runKey: "k2", outcome: { status: "no-change-needed", reason: "unused" } });
+  assert.deepEqual(sent[1], { type: "run-update", runKey: "k1", update: { kind: "repo-setup", summary: "Weave set up git here before the run: it created a git repository." } });
+  assert.deepEqual(sent.at(-1), { type: "run-finished", runKey: "k1", outcome: { status: "no-change-needed", reason: "done" } });
+});
+
+test("a folder Weave will not set up ends the run with the reason", async () => {
+  const sent: ServerMessage[] = [];
+  const runs = createRunController(async () => ({ status: "no-change-needed", reason: "unused" }), {
+    ...READY,
+    prepareRepo: async () => ({ ok: false, reason: "Weave will not turn /Users/x into a git repository; open a project folder instead." }),
+  });
+  await runs.start({ request: "go", projectDir: "/Users/x", engineId: "claude", runKey: "k1", send: (message) => sent.push(message) });
+  assert.deepEqual(sent.at(-1), { type: "run-finished", runKey: "k1", outcome: { status: "error", reason: "Weave will not turn /Users/x into a git repository; open a project folder instead." } });
 });
 
 const askingPlanAndRun: typeof planAndRun = async (options) => {
@@ -198,4 +213,21 @@ test("a run uses the engine and the model the user picked in the chat, not an en
 
   await runs.start({ request: "again", projectDir: "/repo", engineId: "claude-code", runKey: "k2", send: () => undefined });
   assert.deepEqual(seen[1]?.config, { engine: "claude-code", fallbackEngines: [] });
+});
+
+test("a run that merged work offers it for review, and only that run's result can be decided", async () => {
+  const merged: typeof planAndRun = async () => ({
+    status: "ran", kind: "existing", decision: { mode: "parallel", reason: "disjoint-paths" }, tasks: [], orchestration: null, assignments: [],
+    report: {
+      runId: "r1", ledgerFile: "", baseCommit: "b1", status: "ok", pool: { tasks: [], coordination: { addedDependencies: [], escalations: [] } },
+      integration: { status: "ok", brokenBy: null, detail: "all merged", branch: "weave/r1/integration", head: "h1", baseline: null, merges: [] },
+    },
+  });
+  const sent: ServerMessage[] = [];
+  const runs = createRunController(merged, READY);
+  await runs.start({ request: "go", projectDir: "/p", engineId: "claude", runKey: "k1", send: (message) => sent.push(message) });
+  const finished = sent.at(-1);
+  assert.deepEqual(finished?.type === "run-finished" && finished.outcome.status === "ran" ? [finished.outcome.review?.status, finished.outcome.review?.canAccept] : null, ["ok", true]);
+  await runs.decideResult("k0", "accept", (message) => sent.push(message));
+  assert.deepEqual(sent.at(-1), { type: "error", message: "This run's result was already accepted or discarded." });
 });

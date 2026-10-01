@@ -10,6 +10,7 @@ export interface ComposeSystemOptions {
   readonly decisionsBlock?: string | null;
   readonly builtinSkillCatalog?: string;
   readonly skillCatalog?: string;
+  readonly teamHandoff?: string;
 }
 
 export function composeSystemPrompt(
@@ -25,6 +26,7 @@ export function composeSystemPrompt(
     ASK_USER_SECTION,
     options.builtinSkillCatalog,
     options.skillCatalog,
+    options.teamHandoff,
   ].filter((b): b is string => !!b);
 
   return `<system>\n${blocks.join("\n\n")}\n</system>\n\n${userText}`;

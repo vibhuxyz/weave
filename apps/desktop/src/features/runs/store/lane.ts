@@ -77,7 +77,7 @@ export function applyLaneUpdate(lane: Lane, update: LaneUpdate): Lane {
     case "task-settled":
       return { ...lane, status: update.status, reason: update.reason, blockedReason: null, verifyingRung: null, activity: null, wallMs: update.wallMs, installMs: update.installMs };
     case "merge":
-      return { ...lane, merge: { status: update.status, detail: update.detail } };
+      return { ...lane, merge: { status: update.status, checks: update.checks, detail: update.detail } };
     case "employee-assigned":
     case "employee-verified":
     case "claimed":

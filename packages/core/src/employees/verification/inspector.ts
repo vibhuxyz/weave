@@ -21,6 +21,7 @@ export function employeeInspector(input: InspectorInput): InspectHarvest {
       taskId: task.id,
       employeeId: employee.id,
       ok: verified.ok,
+      verdict: verified.verdict,
       rungs: verified.checks.map(({ rung, ok, wallMs }) => ({ rung, ok, wallMs })),
       detail: verified.detail,
     });

@@ -209,6 +209,7 @@ export type WeaveEvent =
       warnings: string[];
     })
   | (BaseEvent & { type: "plan.triaged"; route: "fast" | "plan"; reason: string; plannerEngineId: string | null; reviewerEngineId: string | null })
+  | (BaseEvent & { type: "handoff.decided"; outcome: "invalid" | "team" | "kept-in-chat" | "commit-failed"; detail: string | null; promptVersion: number })
   | (BaseEvent & { type: "plan.reviewed"; attempts: number; classification: PlanClassificationFact | null; warnings: string[]; critique: PlanCritiqueFact | null })
   | (BaseEvent & {
       type: "plan.created";
@@ -239,6 +240,7 @@ export type WeaveEvent =
       installMs: number;
       agentMs: number;
       wallMs: number;
+      rejected?: true;
     })
   | (BaseEvent & {
       type: "merge.finished";
@@ -281,7 +283,7 @@ export type WeaveEvent =
       action: "stop-task" | "stop-run" | "skip-task";
     })
   | (BaseEvent & { type: "employee.assigned"; taskId: string; employeeId: string | null; score: number; reasons: string[] })
-  | (BaseEvent & { type: "employee.verified"; taskId: string; employeeId: string; ok: boolean; rungs: { rung: VerificationRung; ok: boolean; wallMs: number }[]; detail: string })
+  | (BaseEvent & { type: "employee.verified"; taskId: string; employeeId: string; ok: boolean; verdict?: "passed" | "failed" | "unverified"; rungs: { rung: VerificationRung; ok: boolean; wallMs: number }[]; detail: string })
   | (BaseEvent & { type: "employee.memory.recorded"; taskId: string; employeeId: string; entries: number })
   | LifecycleEvent;
 

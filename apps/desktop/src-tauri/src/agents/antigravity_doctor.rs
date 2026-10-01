@@ -57,10 +57,17 @@ fn probe_authenticate(
     stdin: &mut ChildStdin,
     reader: &mut BufReader<ChildStdout>,
     result: &mut AgentDoctorResult,
+    preferred_method_id: Option<&str>,
 ) -> Result<(), String> {
-    let Some(method) = result.auth_methods.first() else {
-        result.authenticated = true;
-        result.usable = true;
+    let method = match preferred_method_id {
+        Some(id) => result.auth_methods.iter().find(|method| method.id == id),
+        None => result.auth_methods.first(),
+    };
+    let Some(method) = method else {
+        if preferred_method_id.is_none() {
+            result.authenticated = true;
+            result.usable = true;
+        }
         return Ok(());
     };
     send_jsonrpc_request(stdin, 2, "authenticate", json!({ "methodId": method.id }))?;
@@ -84,7 +91,7 @@ pub fn check_antigravity_doctor(
     };
 
     result.installed = true;
-    let mut child = match spawn_agent_process(&bin_path, &[], true, true) {
+    let mut child = match spawn_agent_process(&bin_path, provider.spawn_args, true, true) {
         Ok(c) => c,
         Err(e) => {
             result.error = Some(e);
@@ -99,7 +106,7 @@ pub fn check_antigravity_doctor(
     let mut reader = BufReader::new(stdout);
 
     if probe_initialize(&mut stdin, &mut reader, &mut result).is_ok() {
-        let _ = probe_authenticate(&mut stdin, &mut reader, &mut result);
+        let _ = probe_authenticate(&mut stdin, &mut reader, &mut result, provider.probe_method_id);
     }
 
     let _ = child.kill();

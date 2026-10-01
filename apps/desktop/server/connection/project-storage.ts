@@ -17,7 +17,7 @@ import {
 import type { ConnectionStorage } from "./types.ts";
 
 export interface OpenedProjectStorage {
-  readonly storage: ConnectionStorage;
+  readonly storage: Omit<ConnectionStorage, "teamTools">;
   readonly projectId: string;
   readonly logsDir: string;
   readonly close: () => void;

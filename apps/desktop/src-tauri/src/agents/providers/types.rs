@@ -15,5 +15,7 @@ pub struct ProviderConfig {
     pub id: &'static str,
     pub aliases: &'static [&'static str],
     pub binary_candidates: &'static [&'static str],
+    pub spawn_args: &'static [&'static str],
+    pub probe_method_id: Option<&'static str>,
     pub auth: AuthStrategy,
 }

@@ -19,7 +19,7 @@ import type { QuestionField, QuestionNotice } from "./question-types.ts";
 import type { BudgetClientMessage, BudgetServerMessage } from "./budget-types.ts";
 import type { ProjectClientMessage, ProjectServerMessage } from "./project-types.ts";
 import type { SkillClientMessage, SkillServerMessage } from "./skill-types.ts";
-import type { RunOutcome, RunUpdate } from "./run-types.ts";
+import type { ResultDecision, RunOutcome, RunUpdate } from "./run-types.ts";
 
 export type { ConversationMeta, GitStatus, GitChange };
 
@@ -62,6 +62,7 @@ export type ClientMessage =
       readonly personaIds?: readonly string[];
       readonly plugins?: readonly ActivePluginRef[];
       readonly images?: readonly PromptImageData[];
+      readonly allowHandoff?: boolean;
     }
   | { readonly type: "cancel" }
   | { readonly type: "set-config"; readonly configId: string; readonly value: string }
@@ -104,10 +105,11 @@ export type ClientMessage =
   | { readonly type: "restore-chat"; readonly sessionId: string; readonly projectDir: string }
   | { readonly type: "delete-project"; readonly projectDir: string }
   | { readonly type: "set-auto-archive"; readonly afterDays: number | null }
-  | { readonly type: "start-run"; readonly request: string; readonly setUpGit?: boolean }
+  | { readonly type: "start-run"; readonly request: string }
   | { readonly type: "read-file"; readonly path: string }
   | { readonly type: "cancel-run" }
   | { readonly type: "decide-run-plan"; readonly runKey: string; readonly approved: boolean }
+  | { readonly type: "decide-run-result"; readonly runKey: string; readonly decision: ResultDecision }
   | {
       readonly type: "save-history";
       readonly sessionId: string;
@@ -170,7 +172,7 @@ export type ServerMessage =
   | SkillServerMessage
   | ProjectServerMessage
   | BudgetServerMessage
-  | { readonly type: "run-started"; readonly runKey: string; readonly request: string }
+  | { readonly type: "run-started"; readonly runKey: string; readonly request: string; readonly routeReason?: string }
   | { readonly type: "file-content"; readonly path: string; readonly content: string; readonly truncated: boolean }
   | { readonly type: "file-error"; readonly path: string; readonly message: string }
   | { readonly type: "run-update"; readonly runKey: string; readonly update: RunUpdate }

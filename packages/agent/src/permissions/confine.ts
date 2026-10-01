@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import type {
   RequestPermissionRequest,
   TaskContract,
@@ -28,8 +29,14 @@ const READ_ONLY_KINDS = new Set<ToolKind>([
   "switch_mode",
 ]);
 
+const UNIX_TEMP_DIRS = ["/tmp", "/private/tmp"] as const;
+
 function mutates(kind: ToolKind | null | undefined): boolean {
   return kind == null || !READ_ONLY_KINDS.has(kind);
+}
+
+function isScratchPath(path: string): boolean {
+  return [tmpdir(), ...UNIX_TEMP_DIRS].some((root) => isInside(root, path));
 }
 
 function checkPathBoundaries(
@@ -37,7 +44,7 @@ function checkPathBoundaries(
   locations: readonly { path: string }[],
   reject?: string,
 ): PermissionDecision | null {
-  const outside = locations.find((loc) => !isInside(task.cwd, loc.path));
+  const outside = locations.find((loc) => !isInside(task.cwd, loc.path) && !isScratchPath(loc.path));
   if (outside) {
     return {
       decision: "reject",

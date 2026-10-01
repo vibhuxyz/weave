@@ -81,9 +81,13 @@ test("verification policy runs required rungs in the worktree and fails on missi
   await writeFile(join(repo, "package-lock.json"), "{}");
   await writeFile(join(repo, "package.json"), JSON.stringify({ scripts: { typecheck: "node -e 0", test: "node -e \"process.exit(3)\"" } }));
   const passing = await verifyEmployeeWork(repo, { required: ["typecheck"], preferred: ["lint"] });
-  assert.deepEqual([passing.ok, passing.checks.map((check) => check.rung)], [true, ["typecheck"]]);
+  assert.deepEqual([passing.ok, passing.verdict, passing.checks.map((check) => check.rung)], [true, "passed", ["typecheck"]]);
+  const unchecked = await verifyEmployeeWork(repo, { required: [], preferred: ["lint"] });
+  assert.deepEqual([unchecked.ok, unchecked.verdict, unchecked.checks], [true, "unverified", []]);
+  assert.match(unchecked.detail, /unverified/);
   const failing = await verifyEmployeeWork(repo, { required: ["typecheck", "tests", "lint"], preferred: [] });
   assert.equal(failing.ok, false);
+  assert.equal(failing.verdict, "failed");
   assert.deepEqual(failing.checks.map((check) => [check.rung, check.ok]), [["typecheck", true], ["tests", false], ["lint", false]]);
   assert.match(failing.detail, /required rung lint is not available in this project/);
 });

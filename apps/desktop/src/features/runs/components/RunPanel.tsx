@@ -20,13 +20,12 @@ import { PlanSummary } from "./PlanSummary";
 import { ReplanNotes } from "./ReplanNotes";
 
 interface RunPanelProps {
-  readonly onSetUpGitAndRun: (request: string) => void;
   readonly onDecidePlan: (runKey: string, approved: boolean) => void;
   readonly permissionRequest?: PermissionRequest | null;
   readonly onAnswerPermission?: (requestId: string, optionId: string | null) => void;
 }
 
-export function RunPanel({ onSetUpGitAndRun, onDecidePlan, permissionRequest, onAnswerPermission }: RunPanelProps) {
+export function RunPanel({ onDecidePlan, permissionRequest, onAnswerPermission }: RunPanelProps) {
   const { runKey, approval, request, outcome, laneOrder } = useRunStore(useShallow(selectRunHeader));
   const plan = useRunStore((state) => state.run?.plan ?? null);
   const dismiss = useRunStore((state) => state.dismiss);
@@ -76,20 +75,6 @@ export function RunPanel({ onSetUpGitAndRun, onDecidePlan, permissionRequest, on
           <EventsPanel />
           <ReplanNotes />
           {outcome && <p className="text-agent-text-muted text-xs">{outcomeText(outcome)}</p>}
-          {outcome?.status === "needs-git" && (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onSetUpGitAndRun(request)}
-                className="rounded-full bg-agent-surface-hover px-3 py-1 text-agent-text-bright text-xs hover:bg-agent-border"
-              >
-                Set up git and run
-              </button>
-              <span className="text-[11px] text-agent-text-faint">
-                Creates the repository if needed, adds a .gitignore if there is none, and commits the current files.
-              </span>
-            </div>
-          )}
         </PromptCardBody>
       )}
     </PromptCard>

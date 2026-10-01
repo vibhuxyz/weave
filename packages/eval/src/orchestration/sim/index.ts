@@ -1,4 +1,5 @@
 export { generateScenarios } from "./scenarios.ts";
+export { integerBetween, uniform } from "./rng.ts";
 export { plannedTasks } from "./plan-tasks.ts";
 export { simWorker } from "./sim-worker.ts";
 export { SIM_ENGINES, simWorld } from "./world.ts";

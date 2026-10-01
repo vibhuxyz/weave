@@ -9,7 +9,7 @@ const RUN_STOP_KEY = "";
 const NEVER_REACHED_REASON = "never became ready: a dependency cycle or an unknown dependency";
 
 function notRunReport(taskId: string, status: "skipped" | "cancelled", reason: string): PoolTaskReport {
-  return { taskId, status, reason, branch: null, harvest: null, finalMessage: null, installMs: 0, agentMs: 0, wallMs: 0 };
+  return { taskId, status, reason, branch: null, harvest: null, finalMessage: null, installMs: 0, agentMs: 0, wallMs: 0, ranIn: null, isRejected: false };
 }
 
 interface PoolState {
@@ -78,7 +78,7 @@ function launchReady(pool: PoolState, ctx: PoolContext, ready: readonly string[]
     if (pool.running.size >= capacity) return;
     const task = tasksById.get(taskId);
     if (task && admitted(pool, ctx, taskId)) {
-      const canShare = ctx.canShareRoot && ctx.coordinator.tryClaim(task);
+      const canShare = ctx.sharedBase !== null && isScoped(task) && ctx.coordinator.tryClaim(task);
       launch(pool, ctx, task, !canShare);
     }
   }
@@ -137,13 +137,18 @@ function bindBudget(pool: PoolState, options: PoolOptions, run: AbortController)
   };
 }
 
-async function isCheckedOutAtBase(repoRoot: string, baseCommit: string | undefined): Promise<boolean> {
-  if (baseCommit === undefined) return true;
-  return (await readHeadCommit(repoRoot)) === baseCommit;
+function isScoped(task: TaskContract): boolean {
+  return (task.allowedPaths?.length ?? 0) > 0;
+}
+
+async function sharedBaseOf(repoRoot: string, baseCommit: string | undefined): Promise<string | null> {
+  const head = await readHeadCommit(repoRoot);
+  if (head === null) return null;
+  return baseCommit === undefined || baseCommit === head ? head : null;
 }
 
 export async function runPool(options: PoolOptions): Promise<PoolReport> {
-  const canShareRoot = await isCheckedOutAtBase(options.repoRoot, options.baseCommit);
+  const sharedBase = await sharedBaseOf(options.repoRoot, options.baseCommit);
   const controller = linkedController(options.signal);
   const coordinator = options.coordinator ?? new Coordinator({ tasks: options.tasks, ledger: options.ledger });
   const ctx: PoolContext = {
@@ -154,7 +159,7 @@ export async function runPool(options: PoolOptions): Promise<PoolReport> {
     signal: controller.signal,
     shouldInstall: options.shouldInstall ?? true,
     baseCommit: options.baseCommit,
-    canShareRoot,
+    sharedBase,
     inspectHarvest: options.inspectHarvest,
     attempt: options.attempt ?? 0,
     coordinator,

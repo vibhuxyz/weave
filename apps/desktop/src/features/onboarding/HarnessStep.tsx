@@ -13,6 +13,7 @@ import { OnboardingShell } from "./OnboardingShell";
 const ENGINE_ICON_SIZES: Record<string, string> = {
   "claude-code": "size-[92px]",
   codex: "size-[94px]",
+  grok: "size-[92px]",
   gemini: "size-[92px]",
   amp: "size-[92px]",
   antigravity: "size-[90px]",

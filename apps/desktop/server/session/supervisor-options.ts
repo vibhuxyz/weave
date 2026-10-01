@@ -42,6 +42,7 @@ export function createSupervisorOptions({
     ),
     askUser: createUserAsker({ pending: pendingQuestions, send }),
     resumeSessionId: resumeId,
+    mcpServers: ctx.mcpServers,
     sink: {
       onSpawned: (pid: number, entry: string) =>
         ledger.append("agent.spawned", { taskId: task.id, pid, entry }),

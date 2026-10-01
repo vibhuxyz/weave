@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import {
   DEFAULT_ENGINE_ID,
   getEngine,
+  requireGrokCliEntry,
   resolveCodexCliEntry,
   resolveEngineArgs,
   resolveEngineEntry,
@@ -20,6 +21,7 @@ const MAX_STDERR_TAIL_CHARS = 4_000;
 export function augmentPathWithUserDirs(basePath?: string): string {
   const home = process.env.HOME ?? "";
   const extraPaths = [
+    home ? `${home}/.grok/bin` : null,
     home ? `${home}/.local/bin` : null,
     home ? `${home}/.cargo/bin` : null,
     home ? `${home}/bin` : null,
@@ -31,6 +33,19 @@ export function augmentPathWithUserDirs(basePath?: string): string {
   const segments = currentPath.split(":");
   const toPrepend = extraPaths.filter((p) => !segments.includes(p));
   return [...toPrepend, currentPath].filter(Boolean).join(":");
+}
+
+function resolveSpawnEntry(engine: EngineDescriptor): string {
+  if (engine.id !== "grok") return resolveEngineEntry(engine);
+  let packageEntry: string | null = null;
+  try {
+    packageEntry = resolveEngineEntry(engine);
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    packageEntry = null;
+  }
+  const hint = engine.install ? `\n  ${engine.install}` : "";
+  return requireGrokCliEntry(packageEntry, hint);
 }
 
 function resolveExtraEnv(engine: EngineDescriptor): Record<string, string> {
@@ -111,7 +126,7 @@ export function spawnAgent(
       : options ?? {};
 
   const engine = getEngine(resolvedEngineId);
-  const entry = resolveEngineEntry(engine);
+  const entry = resolveSpawnEntry(engine);
   const engineArgs = resolveEngineArgs(engine, resolvedOptions);
   const extraEnv = resolveExtraEnv(engine);
   const { spawnBin, spawnArgs } = resolveSpawnCommand(cwd, entry, engineArgs, { sandboxed: resolvedOptions.sandboxed, runtime: engine.runtime });

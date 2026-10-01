@@ -11,6 +11,8 @@ import { runPool } from "./pool.ts";
 import type { RunWorker } from "./types.ts";
 
 const GATE_TIMEOUT_MS = 5_000;
+const MAX_OVERLAP_WAIT_MS = 5_000;
+const POLL_MS = 10;
 
 async function setup() {
   const repo = await mkdtemp(join(tmpdir(), "weave-live-"));
@@ -117,7 +119,8 @@ test("a task whose claim overlaps a running owner runs concurrently in an isolat
   const worker: RunWorker = async ({ task }) => {
     active += 1;
     peak = Math.max(peak, active);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    const deadline = Date.now() + MAX_OVERLAP_WAIT_MS;
+    while (active < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, POLL_MS));
     await writeOwnFile(task, `src/${task.id}.ts`);
     active -= 1;
     return { status: "ok" };
@@ -131,10 +134,9 @@ test("a task whose claim overlaps a running owner runs concurrently in an isolat
   assert.equal(peak, 2);
   const blocked = (await readLedger(weaveDir, ledger.runId)).filter((event) => event.type === "ownership.blocked");
   assert.equal(blocked.length, 0);
-  
-  // B ran isolated, so it produced a harvest event. A ran in shared workspace.
   const harvested = (await readLedger(weaveDir, ledger.runId)).filter((event) => event.type === "worktree.harvested");
   assert.deepEqual(harvested.map((event) => event.type === "worktree.harvested" && [event.taskId, event.files]).sort(), [
+    ["A", ["src/A.ts"]],
     ["B", ["src/B.ts"]],
   ]);
 });

@@ -112,8 +112,8 @@ function lastIndexWhere(blocks: readonly StreamBlock[], matches: (block: StreamB
 }
 
 function openBlockIndex(blocks: readonly StreamBlock[], taskId: string): number {
-  const last = blocks.length - 1;
-  return last >= 0 && blocks[last]?.taskId === taskId && blocks[last]?.status === "running" ? last : -1;
+  const index = lastIndexWhere(blocks, (block) => block.taskId === taskId);
+  return index !== -1 && blocks[index]?.status === "running" ? index : -1;
 }
 
 function lastAttemptOf(blocks: readonly StreamBlock[], taskId: string): number {
@@ -124,9 +124,6 @@ function nextAttemptOf(blocks: readonly StreamBlock[], taskId: string): number {
   return lastAttemptOf(blocks, taskId) + 1;
 }
 
-// Work from two workers interleaves, so one attempt is written as several
-// blocks. Only a restart is a new attempt; a later block of the same attempt
-// keeps its number.
 function sameAttemptOf(blocks: readonly StreamBlock[], taskId: string): number {
   return Math.max(1, lastAttemptOf(blocks, taskId));
 }

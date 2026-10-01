@@ -91,6 +91,26 @@ test("a verifying worker is shown as verifying until it settles", () => {
   assert.equal(lanePhase(settled.lanes["T1"]!, settled.lanes), "completed");
 });
 
+test("a finished worker is verified only by real checks, and rejected when its work is refused", () => {
+  const tasks = [task("T1"), task("T2"), task("T3"), task("T4")];
+  const settle = (taskId: string, status: "ok" | "rejected") => ({ kind: "task-settled", taskId, status, reason: status === "ok" ? null : "wrote stray.ts", wallMs: 1, installMs: 0 }) as const;
+  const run = runWith([
+    plan(tasks),
+    ...tasks.map((entry) => ({ kind: "task-started", taskId: entry.id }) as const),
+    settle("T1", "ok"), settle("T2", "ok"), settle("T3", "ok"), settle("T4", "rejected"),
+    { kind: "merge", taskId: "T1", status: "merged", checks: ["build", "tests"], detail: "merged and verified" },
+    { kind: "merge", taskId: "T2", status: "merged", checks: [], detail: "merged; not verified" },
+    { kind: "merge", taskId: "T3", status: "conflict", checks: [], detail: "conflict in api.ts" },
+  ]);
+  const phaseOf = (taskId: string) => {
+    const lane = run.lanes[taskId];
+    return lane ? lanePhase(lane, run.lanes) : null;
+  };
+  assert.deepEqual(tasks.map((entry) => phaseOf(entry.id)), ["verified", "completed", "rejected", "rejected"]);
+  assert.equal(runSummaryOf(run, 0).completed, 2);
+  assert.equal(runProgress(run.lanes, run.laneOrder), 100);
+});
+
 test("worker progress comes from finished subtasks, and the run rolls them up", () => {
   const tasks = [task("T1", { subtasks: ["design", "build", "test", "document"] }), task("T2")];
   const run = runWith([

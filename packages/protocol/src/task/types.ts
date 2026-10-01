@@ -11,6 +11,11 @@ export interface TaskDependency {
   requiredOutputs: string[];
 }
 
+export interface SharedWorker {
+  id: string;
+  allowedPaths: string[];
+}
+
 export interface TaskContract {
   id: string;
   prompt: string;
@@ -30,6 +35,7 @@ export interface TaskContract {
   verify?: string;
   sandboxed?: boolean;
   verifyRung?: VerificationRung;
+  sharedWith?: SharedWorker[];
 }
 
 export type TaskStatus = "pending" | "running" | "ok" | "failed" | "cancelled";

@@ -67,3 +67,13 @@ test("a worker sees the milestones Weave tracks for it, and which ones it alread
   const resumed = await buildWorkerContext({ root, task: { ...task, subtasksDone: [subtasks[0] ?? ""] }, model });
   assert.match(resumed.prompt, /1\. Add currency to the contract — already reported as done\n2\. Validate currency on the route/);
 });
+
+test("a worker in a shared folder is told who else works there, instead of 'their own copies'", async () => {
+  const root = await repoWithRule();
+  const { model } = await buildProjectModel({ root });
+  const shared = await buildWorkerContext({ root, task: { ...TASK, sharedWith: [{ id: "T2", allowedPaths: ["server/**", "README.md"] }] }, model });
+  assert.match(shared.prompt, /you share this folder with the other workers running at the same time: T2 \(server\/\*\*, README\.md\)\. Their edits appear on disk and in git status while you work; that is expected\. Leave their files alone/);
+  assert.doesNotMatch(shared.prompt, /their own copies/);
+  const alone = await buildWorkerContext({ root, task: TASK, model });
+  assert.match(alone.prompt, /Other workers may be changing their own copies of this repository/);
+});

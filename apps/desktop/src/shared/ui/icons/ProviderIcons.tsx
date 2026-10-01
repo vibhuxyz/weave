@@ -472,6 +472,9 @@ const PROVIDER_ICON_MAP: Record<string, (className: string) => ReactNode> = {
   openrouter: (className) => <OpenRouterIcon className={className} />,
   snowflake: (className) => <SnowflakeIcon className={className} />,
   xai: (className) => <XAIIcon className={className} />,
+  grok: (className) => <XAIIcon className={className} />,
+  "grok-acp": (className) => <XAIIcon className={className} />,
+  "grok-build": (className) => <XAIIcon className={className} />,
   lmstudio: (className) => <OllamaIcon className={className} />,
 };
 
