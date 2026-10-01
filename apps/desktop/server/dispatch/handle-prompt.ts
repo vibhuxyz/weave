@@ -10,7 +10,7 @@ import type { Ledger, TasksStore, NormalizedPlugin } from "@weave/core";
 import type { ProjectChats, SkillSelector } from "../chat/index.ts";
 import type { DecisionLog } from "../decisions/index.ts";
 import { errorMessage } from "../shared/index.ts";
-import { CHAT_TASK_ID, settleHandoff, TEAM_RUN_COMMIT_MESSAGE, watchTurn, type TeamRunStart } from "../team-handoff/index.ts";
+import { CHAT_TASK_ID, promptMayHandOff, settleHandoff, TEAM_RUN_COMMIT_MESSAGE, watchTurn, type TeamRunStart } from "../team-handoff/index.ts";
 import type { TurnEstimates } from "../team-tools/index.ts";
 
 export interface PromptOptions {
@@ -100,7 +100,7 @@ export async function handlePrompt({
   }
 
   const text = msg.text;
-  const canHandOff = msg.allowHandoff === true && (msg.images?.length ?? 0) === 0;
+  const canHandOff = promptMayHandOff(msg);
   const isFirstPrompt = !sessionMgr.taskCreated;
   if (isFirstPrompt) {
     sessionMgr.taskCreated = true;
@@ -182,7 +182,7 @@ export async function handlePrompt({
       const commitWork = () => commitAll(projectDir, TEAM_RUN_COMMIT_MESSAGE);
       const estimate = teamEstimates.latest();
       const estimateNotes = estimate ? renderEstimateNotes(estimate) : "";
-      settleHandoff({ verdict, request: text, estimateNotes, ledger, send, startTeamRun, confirmCommit: confirmTeamCommit, commitWork })
+      settleHandoff({ verdict, request: text, estimateNotes, images: msg.images, ledger, send, startTeamRun, confirmCommit: confirmTeamCommit, commitWork })
         .catch((error: unknown) => send({ type: "error", message: `Cannot hand this to a team: ${errorMessage(error)}` }));
     }
   } catch (err: unknown) {

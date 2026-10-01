@@ -32,7 +32,7 @@ export function teamStartMessage(request: string, images: readonly RunImageInput
 }
 
 function needsChat(context: DraftContext): boolean {
-  return context.imageCount > 0 || context.mentionCount > 0 || context.isRunActive;
+  return context.mentionCount > 0 || context.isRunActive;
 }
 
 export function routeDraft(draft: string, context: DraftContext): DraftRoute {

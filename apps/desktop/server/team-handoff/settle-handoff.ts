@@ -1,5 +1,5 @@
 import { renderHandoffNotes, TEAM_HANDOFF_PROMPT_VERSION, type HandoffVerdict, type Ledger, type WorktreeResult } from "@weave/core";
-import type { ServerMessage } from "../shared/index.ts";
+import type { PromptImageData, ServerMessage } from "../shared/index.ts";
 import { commitQuestion } from "./commit-question.ts";
 import { KEPT_IN_CHAT_MESSAGE } from "./constants.ts";
 import type { TeamRunStart } from "./types.ts";
@@ -11,6 +11,7 @@ export interface SettleHandoffInput {
   readonly verdict: HandoffVerdict;
   readonly request: string;
   readonly estimateNotes: string;
+  readonly images?: readonly PromptImageData[];
   readonly ledger: Ledger;
   readonly send: (message: ServerMessage) => void;
   readonly startTeamRun: (start: TeamRunStart) => void;
@@ -47,5 +48,14 @@ export async function settleHandoff(input: SettleHandoffInput): Promise<void> {
   if (!(await isReadyToStart(input, verdict))) return;
   logDecision(input.ledger, "team", verdict.handoff.reason);
   const plannerNotes = [renderHandoffNotes(verdict.handoff), input.estimateNotes].filter((notes) => notes !== "").join("\n\n");
-  input.startTeamRun({ request: input.request, routeReason: verdict.handoff.reason, plannerNotes });
+  input.startTeamRun({
+    request: input.request,
+    routeReason: verdict.handoff.reason,
+    plannerNotes,
+    ...(input.images && input.images.length > 0 ? { images: input.images } : {}),
+  });
+}
+
+export function promptMayHandOff(message: { readonly allowHandoff?: boolean; readonly images?: readonly unknown[] }): boolean {
+  return message.allowHandoff === true;
 }

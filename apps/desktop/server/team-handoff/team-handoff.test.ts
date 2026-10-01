@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { judgeHandoff, Ledger, readLedger, type WorktreeResult } from "@weave/core";
 import type { ServerMessage } from "../shared/index.ts";
-import { askToCommit, settleHandoff, watchTurn, type TeamRunStart } from "./index.ts";
+import { askToCommit, promptMayHandOff, settleHandoff, watchTurn, type TeamRunStart } from "./index.ts";
 
 const ESCALATION = "Fixed the webhook.\n```weave-handoff\n" + JSON.stringify({ reason: "The refund bug spans three services.", done: ["webhook check"], remaining: ["order totals", "seller-ui state"] }) + "\n```";
 
@@ -31,6 +31,7 @@ interface Script {
   readonly commit?: WorktreeResult<string>;
   readonly text?: string;
   readonly estimateNotes?: string;
+  readonly images?: TeamRunStart["images"];
 }
 
 async function settle(script: Script) {
@@ -43,6 +44,7 @@ async function settle(script: Script) {
     verdict: judgeHandoff({ text: script.text ?? ESCALATION, uncommitted: script.uncommitted }),
     request: "fix the refund bug in the payment service",
     estimateNotes: script.estimateNotes ?? "",
+    images: script.images,
     ledger,
     send: (message) => sent.push(message),
     startTeamRun: (start) => started.push(start),
@@ -60,6 +62,15 @@ test("an escalation with nothing uncommitted starts the team at once, with the a
   assert.deepEqual([asked, commits, logged], [[], [], ["team"]]);
   assert.equal(started[0]?.routeReason, "The refund bug spans three services.");
   assert.match(started[0]?.plannerNotes ?? "", /Done so far:\n- webhook check\nStill to do:\n- order totals\n- seller-ui state/);
+});
+
+test("an image does not block a handoff, and the team run keeps it", async () => {
+  const image = { data: "Y2FydA==", mimeType: "image/png", prompt: "cart page" };
+  assert.equal(promptMayHandOff({ allowHandoff: true, images: [image] }), true);
+  assert.equal(promptMayHandOff({ allowHandoff: true }), true);
+  assert.equal(promptMayHandOff({ images: [image] }), false);
+  const { started } = await settle({ uncommitted: [], images: [image] });
+  assert.deepEqual(started[0]?.images, [image]);
 });
 
 test("Weave's own estimate reaches the coordinator after the agent's notes", async () => {

@@ -22,8 +22,13 @@ test("explicit commands decide for themselves", () => {
   assert.deepEqual(routeDraft("/plan build a todo app", PLAIN), { kind: "chat", text: "/plan build a todo app", canHandOff: false });
 });
 
-test("images, @-mentions or a run already going never hand off", () => {
-  for (const context of [{ ...PLAIN, imageCount: 1 }, { ...PLAIN, mentionCount: 2 }, { ...PLAIN, isRunActive: true }]) {
+test("an image can still hand off, and @-mentions or a run already going cannot", () => {
+  assert.deepEqual(routeDraft("build full stack todo app", { ...PLAIN, imageCount: 1 }), {
+    kind: "chat",
+    text: "build full stack todo app",
+    canHandOff: true,
+  });
+  for (const context of [{ ...PLAIN, mentionCount: 2 }, { ...PLAIN, isRunActive: true }]) {
     const route = routeDraft("build full stack todo app", context);
     assert.deepEqual(route, { kind: "chat", text: "build full stack todo app", canHandOff: false });
   }
