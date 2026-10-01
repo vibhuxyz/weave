@@ -4,7 +4,7 @@ import { createPlan } from "../planner.ts";
 import type { PlanRequest } from "../types.ts";
 import { parseReview } from "./parse-review.ts";
 import { MAX_ISSUE_REASON_CHARS, MAX_RAW_ISSUE_REASON_CHARS, MAX_REVIEW_TASK_PROMPT_BYTES } from "./constants.ts";
-import { buildReviewPrompt, renderPlanForReview } from "./prompt.ts";
+import { buildReviewPrompt, buildRevisionPrompt, renderPlanForReview } from "./prompt.ts";
 import { runReview } from "./run-review.ts";
 import { shouldReview } from "./should-review.ts";
 import type { ReviewableTask } from "./types.ts";
@@ -119,6 +119,12 @@ test("createPlan revises a plan the reviewer sends back", async () => {
   assert.equal(outcome.critique?.outcome, "revised");
   assert.equal(outcome.attempts, 2);
   assert.deepEqual(outcome.plan.tasks[1]?.dependencies, [{ task: "T1", requiredOutputs: [] }]);
+});
+
+test("a revision asks for JSON only and does not send the planner back to the files", () => {
+  const prompt = buildRevisionPrompt("brief", TASKS, [{ type: "missing_dependency", taskIds: ["T2"], reason: "the UI calls the API" }]);
+  assert.match(prompt, /corrected JSON only/);
+  assert.match(prompt, /Do not read files/);
 });
 
 test("createPlan skips the review without a reviewer or for a small, low-risk plan", async () => {

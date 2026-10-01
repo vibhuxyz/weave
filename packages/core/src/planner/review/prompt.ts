@@ -71,6 +71,6 @@ export function buildRevisionPrompt(plannerPrompt: string, tasks: readonly Revie
     "",
     "A reviewer asked for these changes. They are the reviewer's claims, not checked facts:",
     tagged("review-issues", issues.map(issueLine).join("\n")),
-    "Revise the plan to fix each issue you agree with and keep the rest as it is. Reply with the complete corrected JSON only.",
+    "Revise the plan to fix each issue you agree with and keep the rest as it is. Reply with the complete corrected JSON only. Do not read files.",
   ].join("\n");
 }

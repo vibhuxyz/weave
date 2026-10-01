@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createPlan } from "./planner.ts";
 import { parsePlan } from "./parse-plan.ts";
-import { buildPlannerPrompt } from "./prompt.ts";
+import { MAX_NOTE_CHARS, MAX_TASK_PROMPT_CHARS } from "./constants.ts";
+import { buildPlannerPrompt, buildRepairPrompt } from "./prompt.ts";
 
 const CWD = "/proj";
 
@@ -204,4 +205,25 @@ test("the planner prompt never asks the engine to expose its reasoning", () => {
   const prompt = buildPlannerPrompt({ request: "add payouts", kind: "existing", rungs: [], blueprint: null, contract: null });
   assert.doesNotMatch(prompt, /thinking|think out loud|your reasoning/i);
   assert.match(prompt, /reply with one JSON object in a ```json fence/);
+});
+
+test("the planner prompt carries the output limits and stops a repository tour", () => {
+  const prompt = buildPlannerPrompt({
+    request: "add payouts",
+    kind: "existing",
+    rungs: ["typecheck"],
+    blueprint: null,
+    contract: null,
+    projectContext: "<project-context>\nfiles\n</project-context>",
+  });
+  assert.match(prompt, /Do not read implementation files/);
+  assert.match(prompt, /Do not read the repository again to plan/);
+  assert.match(prompt, /Do not retry this path/);
+  assert.match(prompt, /Do not search the filesystem for a schema/);
+  assert.match(prompt, new RegExp(`Each prompt at most ${MAX_TASK_PROMPT_CHARS} characters`));
+  assert.match(prompt, new RegExp(`each at most ${MAX_NOTE_CHARS} characters`));
+  assert.match(prompt, /\{"task":"T1","requiredOutputs":\["Name"\]\}/);
+  const repair = buildRepairPrompt(prompt, ["dependencies must be an object"]);
+  assert.match(repair, /corrected JSON only/);
+  assert.match(repair, /Do not read files/);
 });

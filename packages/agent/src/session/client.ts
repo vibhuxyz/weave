@@ -86,7 +86,7 @@ export class SessionClient implements acp.Client {
       : resolve(this.task.cwd, requestedPath);
     if (mode === "read" && isUserSkillPath(absolute)) return absolute;
     if (!isInside(this.task.cwd, absolute)) {
-      throw new Error(`Refused path outside the task dir: ${requestedPath}`);
+      throw new Error(`Refused path outside the task dir: ${requestedPath}. Do not retry this path.`);
     }
 
     if (mode === "write" && this.task.readOnlyPaths?.length) {
