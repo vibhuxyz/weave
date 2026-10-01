@@ -1,7 +1,16 @@
-import type { ChatTurn } from "./types";
+import type { ChatImageAttachment, ChatTurn } from "./types";
 
-export function userTurn(text: string, id: string, now: number): ChatTurn | null {
+export function userTurn(text: string, id: string, now: number, images?: readonly ChatImageAttachment[]): ChatTurn | null {
   const trimmed = text.trim();
-  if (trimmed === "") return null;
-  return { id, role: "user", text: trimmed, createdAt: now, thought: "", tools: [] };
+  const attached = (images ?? []).filter((image) => image.previewUrl !== "" || image.prompt.trim() !== "");
+  if (trimmed === "" && attached.length === 0) return null;
+  return {
+    id,
+    role: "user",
+    text: trimmed,
+    createdAt: now,
+    thought: "",
+    tools: [],
+    ...(attached.length > 0 ? { images: [...attached] } : {}),
+  };
 }

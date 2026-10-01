@@ -11,7 +11,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     id: "parallel",
     trigger: "/parallel",
     title: "Run it with a team",
-    hint: "Plans the work, then runs the workers at the same time, each in its own copy of the project",
+    hint: "Plans the work, then runs the workers at the same time. Attached images go with the request",
     takesPrompt: true,
   },
   {

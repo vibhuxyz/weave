@@ -1,9 +1,11 @@
-import { applyConfigOptions, createGuardedPermissionPolicy, openSession, PLAN_MODE_ID } from "@weave/agent";
+import { applyConfigOptions, blocksForSessionPrompt, createGuardedPermissionPolicy, openSession, PLAN_MODE_ID, type PromptImage } from "@weave/agent";
 import { agentConfigFrom, type RunConfig } from "@weave/protocol";
 import { PLANNER_WORKTREE_ID } from "../run-plan/index.ts";
 import type { Ledger } from "../shared/index.ts";
 import { createWorktree, removeWorktree } from "../worktree/index.ts";
 import type { TurnRunner } from "./types.ts";
+
+type EngineChain = readonly (string | undefined)[];
 
 export interface PlannerWorkspaceInput {
   readonly repoRoot: string;
@@ -15,9 +17,16 @@ export interface PlannerWorkspaceInput {
   /** The engines the coordinator may fall back to, in order, when one refuses. */
   readonly engineIds?: readonly string[];
   readonly config?: RunConfig;
+  readonly images?: readonly PromptImage[];
 }
 
-type EngineChain = readonly (string | undefined)[];
+interface EngineTurnInput {
+  readonly cwd: string;
+  readonly ledger: Ledger;
+  readonly chain: EngineChain;
+  readonly config: RunConfig | undefined;
+  readonly images?: readonly PromptImage[];
+}
 
 function chainFor(first: string | undefined, all: readonly string[] | undefined): EngineChain {
   const rest = (all ?? []).filter((id) => id !== first);
@@ -33,10 +42,12 @@ async function applyChosenOptions(session: Awaited<ReturnType<typeof openSession
   }
 }
 
-function engineTurn(cwd: string, ledger: Ledger, chain: EngineChain, config: RunConfig | undefined): { run: TurnRunner; close: () => void } {
+function engineTurn(input: EngineTurnInput): { run: TurnRunner; close: () => void } {
+  const { cwd, ledger, chain, config, images } = input;
   const parts: string[] = [];
   const thoughtParts: string[] = [];
   let sessionPromise: Promise<Awaited<ReturnType<typeof openSession>>> | null = null;
+  let imagesSent = false;
   let cursor = 0;
 
   const openPlannerSession = async (engineId: string | undefined) => {
@@ -77,7 +88,9 @@ function engineTurn(cwd: string, ledger: Ledger, chain: EngineChain, config: Run
     };
     signal?.addEventListener("abort", cancel, { once: true });
     try {
-      await session.prompt([{ type: "text", text: prompt }]);
+      const next = blocksForSessionPrompt(prompt, images, imagesSent);
+      imagesSent = next.imagesSent;
+      await session.prompt([...next.blocks]);
       if (signal?.aborted) return "";
       const text = parts.join("");
       return text.trim() ? text : thoughtParts.join("");
@@ -87,6 +100,7 @@ function engineTurn(cwd: string, ledger: Ledger, chain: EngineChain, config: Run
   };
 
   const dropSession = async (): Promise<void> => {
+    imagesSent = false;
     const open = sessionPromise;
     sessionPromise = null;
     if (open) await open.then((session) => session.close()).catch(() => undefined);
@@ -130,7 +144,13 @@ export async function openCoordinatorTurn(input: PlannerWorkspaceInput): Promise
     runId: input.ledger.runId,
     baseRef: input.baseRef,
   });
-  const coordinator = engineTurn(worktree.path, input.ledger, chainFor(input.engineId, input.engineIds), input.config);
+  const coordinator = engineTurn({
+    cwd: worktree.path,
+    ledger: input.ledger,
+    chain: chainFor(input.engineId, input.engineIds),
+    config: input.config,
+    images: input.images,
+  });
   const close = async (): Promise<void> => {
     coordinator.close();
     await removeWorktree(input.repoRoot, worktree, { deleteBranch: true });
@@ -151,8 +171,20 @@ export async function withPlannerWorkspace<T>(
   });
   
   const reviewerEngineId = input.reviewerEngineId ?? input.engineId;
-  const planner = engineTurn(worktree.path, input.ledger, chainFor(input.engineId, input.engineIds), input.config);
-  const reviewer = engineTurn(worktree.path, input.ledger, chainFor(reviewerEngineId, input.engineIds), input.config);
+  const planner = engineTurn({
+    cwd: worktree.path,
+    ledger: input.ledger,
+    chain: chainFor(input.engineId, input.engineIds),
+    config: input.config,
+    images: input.images,
+  });
+  const reviewer = engineTurn({
+    cwd: worktree.path,
+    ledger: input.ledger,
+    chain: chainFor(reviewerEngineId, input.engineIds),
+    config: input.config,
+    images: input.images,
+  });
   
   try {
     return await work(planner.run, reviewer.run);

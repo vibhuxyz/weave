@@ -91,7 +91,7 @@ interface PlanSources {
 
 async function plan(options: PlanAndRunOptions, context: PlanContext, sources: PlanSources): Promise<PlanningOutcome> {
   const engines = choosePlanningEngines(sources.engineCandidates);
-  const fast = fastPlan({ request: options.request, kind: context.kind, model: sources.model, repoRoot: context.repoRoot, ledger: context.ledger, engines, preflightWarnings: context.preflightWarnings });
+  const fast = options.images?.length ? null : fastPlan({ request: options.request, kind: context.kind, model: sources.model, repoRoot: context.repoRoot, ledger: context.ledger, engines, preflightWarnings: context.preflightWarnings });
   if (fast) return fast;
   const projectContext = sources.model ? renderProjectContext(queryProject(sources.model, options.request)) : null;
   const withTurn = (runTurn: TurnRunner, reviewTurn: TurnRunner | undefined) =>
@@ -103,6 +103,7 @@ async function plan(options: PlanAndRunOptions, context: PlanContext, sources: P
     reviewerEngineId: engines.reviewerId,
     engineIds: enginesFor(options.config),
     ...(options.config ? { config: options.config } : {}),
+    ...(options.images?.length ? { images: options.images } : {}),
   }, withTurn);
 }
 
@@ -194,6 +195,7 @@ function reviserFor(options: PlanAndRunOptions, context: ExecuteContext, runWork
           engineId: choosePlanningEngines(context.engineCandidates).plannerId,
           engineIds: enginesFor(options.config),
           ...(options.config ? { config: options.config } : {}),
+          ...(options.images?.length ? { images: options.images } : {}),
         }),
     ...(options.signal ? { signal: options.signal } : {}),
     ...(next ? { next } : {}),
@@ -203,7 +205,13 @@ function reviserFor(options: PlanAndRunOptions, context: ExecuteContext, runWork
 function execute(options: PlanAndRunOptions, context: ExecuteContext): Promise<RunPlanResult> {
   const { repoRoot, weaveDir, ledger, planned, staffing } = context;
   const { adaptive, employees, tasks } = staffing;
-  const runWorker = options.runWorker ?? engineWorker(options.config, options.policy, { weaveDir, model: context.model, routes: staffing.routes, briefings: employees?.briefings });
+  const runWorker = options.runWorker ?? engineWorker(options.config, options.policy, {
+    weaveDir,
+    model: context.model,
+    routes: staffing.routes,
+    briefings: employees?.briefings,
+    ...(options.images?.length ? { images: options.images } : {}),
+  });
   const drift = planned.contract ? contractDriftInspector(planned.contract, ledger) : undefined;
   return runPlan({
     tasks,

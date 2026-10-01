@@ -7,6 +7,7 @@ export const MAX_LISTED_PLAN_NOTES = 5;
 export const MAX_LANE_NOTES = 4;
 export const MAX_RUN_ALERTS = 10;
 export const RUN_COMMAND = "/parallel";
+export const IMAGE_ONLY_RUN_REQUEST = "Use the attached images.";
 export const CHAT_COMMAND = "/chat";
 export const OTHER_SLASH_COMMAND = /^\/\S/;
 export const HANDOFF_BLOCK_IN_TEXT = /```weave-handoff[^\n]*(?:\n[\s\S]*?)?(?:```|$)/g;

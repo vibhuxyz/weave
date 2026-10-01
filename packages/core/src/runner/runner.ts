@@ -123,7 +123,7 @@ export async function runTask(options: RunTaskOptions): Promise<RunTaskOutcome> 
   try {
     session = await openTaskSession(ctx, options, maxTurns, tracker);
     await applyWantedConfigOptions(ctx, session, options.config);
-    const prompting = promptWithDeadline(session, ctx.task.prompt, timeoutMs, tracker);
+    const prompting = promptWithDeadline(session, ctx.task.prompt, timeoutMs, tracker, options.images);
     if (options.signal?.aborted) stopOnAbort();
     const { stopReason, usage } = await prompting;
     const wallMs = Date.now() - started;

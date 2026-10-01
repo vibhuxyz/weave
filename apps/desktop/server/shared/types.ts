@@ -105,7 +105,7 @@ export type ClientMessage =
   | { readonly type: "restore-chat"; readonly sessionId: string; readonly projectDir: string }
   | { readonly type: "delete-project"; readonly projectDir: string }
   | { readonly type: "set-auto-archive"; readonly afterDays: number | null }
-  | { readonly type: "start-run"; readonly request: string }
+  | { readonly type: "start-run"; readonly request: string; readonly images?: readonly PromptImageData[] }
   | { readonly type: "read-file"; readonly path: string }
   | { readonly type: "cancel-run" }
   | { readonly type: "decide-run-plan"; readonly runKey: string; readonly approved: boolean }

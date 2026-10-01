@@ -269,7 +269,7 @@ export function handleClientMessage(
     }
 
     case "start-run":
-      void runs.start({ ...runStartBase(), request: msg.request });
+      void runs.start({ ...runStartBase(), request: msg.request, images: msg.images });
       return;
 
     case "decide-run-result":

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
-import type { ServerMessage } from "../../../../server/index.ts";
+import type { ResultDecision, ServerMessage } from "../../../../server/index.ts";
+import { teamStartMessage, type RunImageInput } from "../route-draft";
 import { useRunStore } from "../store";
-import type { ResultDecision } from "../../../../server/index.ts";
 import type { RunMessage } from "../types";
 
 function isRunMessage(message: ServerMessage): message is RunMessage {
@@ -37,7 +37,7 @@ export function useRunChannel(socketRef: RefObject<WebSocket | null>) {
   );
 
   const sendMessage = useCallback(
-    (payload: Readonly<Record<string, unknown>>) => {
+    (payload: object) => {
       const socket = socketRef.current;
       if (socket?.readyState !== WebSocket.OPEN) return;
       socket.send(JSON.stringify(payload));
@@ -46,7 +46,7 @@ export function useRunChannel(socketRef: RefObject<WebSocket | null>) {
   );
 
   const startRun = useCallback(
-    (request: string) => sendMessage({ type: "start-run", request }),
+    (request: string, images?: readonly RunImageInput[]) => sendMessage(teamStartMessage(request, images)),
     [sendMessage],
   );
   const cancelRun = useCallback(() => sendMessage({ type: "cancel-run" }), [sendMessage]);

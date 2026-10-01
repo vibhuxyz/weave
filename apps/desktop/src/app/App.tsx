@@ -945,8 +945,17 @@ export function App() {
     dismissFinishedRun();
     const route = routeDraft(draft, { imageCount: imageAttachments.length, mentionCount: mentioned.length, isRunActive });
     if (route.kind === "team") {
-      showUserMessage(draft);
-      startRun(route.request);
+      showUserMessage(draft, imageAttachments.map((image) => ({
+        previewUrl: image.previewUrl,
+        mimeType: image.mimeType,
+        prompt: image.prompt,
+      })));
+      startRun(route.request, imageAttachments.map((image) => ({
+        data: image.base64,
+        mimeType: image.mimeType,
+        prompt: image.prompt,
+      })));
+      setImageAttachments([]);
       setDraft("");
       resetComposerHeight();
       return;

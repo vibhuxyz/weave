@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { RunUpdate } from "../../../server/index.ts";
 import { readableAgentText } from "./lib";
-import { routeDraft } from "./route-draft";
+import { routeDraft, teamStartMessage } from "./route-draft";
 import { chatCommandFor, parseChatCommand } from "./run-command";
 import { applyRunMessages } from "./store/apply-run-message";
 import { selectRouteNote } from "./store/select-header";
@@ -17,6 +17,7 @@ test("a plain prompt goes to the chat agent, which may hand it to a team", () =>
 
 test("explicit commands decide for themselves", () => {
   assert.deepEqual(routeDraft("/parallel fix the bug", PLAIN), { kind: "team", request: "fix the bug" });
+  assert.deepEqual(routeDraft("/parallel fix the bug", { ...PLAIN, imageCount: 1 }), { kind: "team", request: "fix the bug" });
   assert.deepEqual(routeDraft("/chat build full stack todo app", PLAIN), { kind: "chat", text: "build full stack todo app", canHandOff: false });
   assert.deepEqual(routeDraft("/plan build a todo app", PLAIN), { kind: "chat", text: "/plan build a todo app", canHandOff: false });
 });
@@ -26,6 +27,17 @@ test("images, @-mentions or a run already going never hand off", () => {
     const route = routeDraft("build full stack todo app", context);
     assert.deepEqual(route, { kind: "chat", text: "build full stack todo app", canHandOff: false });
   }
+});
+
+test("a /parallel start keeps the attached images with the request", () => {
+  const image = { data: "Y2FydA==", mimeType: "image/png", prompt: "cart\npage" };
+  assert.deepEqual(teamStartMessage("fix the coupons", [image]), {
+    type: "start-run",
+    request: "fix the coupons",
+    images: [{ data: "Y2FydA==", mimeType: "image/png", prompt: "cart page" }],
+  });
+  assert.deepEqual(teamStartMessage("", [image]).request, "Use the attached images.");
+  assert.deepEqual(teamStartMessage("fix the coupons"), { type: "start-run", request: "fix the coupons" });
 });
 
 test("keeping a handed-off run in the chat puts the request back behind /chat", () => {

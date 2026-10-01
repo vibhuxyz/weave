@@ -17,3 +17,10 @@ test("nothing is added for an empty message", () => {
   assert.equal(userTurn("", "t1", 1700), null);
   assert.equal(userTurn("   \n ", "t1", 1700), null);
 });
+
+test("a parallel request keeps the screenshot on the user turn", () => {
+  const image = { previewUrl: "blob:cart", mimeType: "image/png", prompt: "cart page" };
+  const turn = userTurn("  /parallel fix the coupons  ", "t1", 1700, [image]);
+  assert.equal(turn?.text, "/parallel fix the coupons");
+  assert.deepEqual(turn?.images, [image]);
+});

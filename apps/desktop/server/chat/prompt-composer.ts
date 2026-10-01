@@ -1,4 +1,4 @@
-import type { PromptBlock } from "@weave/agent";
+import { promptBlocks, type PromptBlock } from "@weave/agent";
 import { ASK_USER_SECTION } from "@weave/core";
 import type { PromptImageData } from "../shared/index.ts";
 
@@ -36,14 +36,5 @@ export function buildPromptBlocks(
   text: string,
   images?: readonly PromptImageData[],
 ): readonly PromptBlock[] {
-  const blocks: PromptBlock[] = [{ type: "text", text }];
-
-  (images ?? []).forEach((image, i) => {
-    const note = image.prompt?.trim();
-    const label = note ? `Image ${i + 1}: ${note}` : `Image ${i + 1}:`;
-    blocks.push({ type: "text", text: label });
-    blocks.push({ type: "image", data: image.data, mimeType: image.mimeType });
-  });
-
-  return blocks;
+  return promptBlocks(text, images);
 }

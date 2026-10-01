@@ -2,7 +2,8 @@ import { deliveryPlanOf, type DeliveryPlan, type planAndRun } from "@weave/core"
 import type { WeaveEvent } from "@weave/protocol";
 import type { ResultDecision, RunOutcome, ServerMessage } from "../shared/index.ts";
 import { errorMessage } from "../shared/index.ts";
-import { MAX_REQUEST_CHARS } from "./constants.ts";
+import { IMAGE_ONLY_RUN_REQUEST, MAX_REQUEST_CHARS } from "./constants.ts";
+import { parseRunImages } from "./images/index.ts";
 import { projectRunEvent } from "./project-event.ts";
 import { createPendingResult, reviewOf } from "./result-review/index.ts";
 import { createApprovalGate, type ApprovalGate } from "./approval-gate.ts";
@@ -20,6 +21,7 @@ export interface StartRunInput {
   readonly configOptions?: Readonly<Record<string, string>>;
   readonly routeReason?: string;
   readonly plannerNotes?: string;
+  readonly images?: unknown;
   readonly send: (message: ServerMessage) => void;
 }
 
@@ -55,7 +57,9 @@ export function createRunController(runPlanAndRun: PlanAndRun, dependencies: Run
   const pending = createPendingResult();
 
   const start = async (input: StartRunInput): Promise<void> => {
-    const request = input.request.trim();
+    const images = parseRunImages(input.images);
+    if (!images.ok) return input.send({ type: "error", message: images.message });
+    const request = input.request.trim() || (images.images.length > 0 ? IMAGE_ONLY_RUN_REQUEST : "");
     const problem = requestProblem(request);
     if (problem) return input.send({ type: "error", message: problem });
     if (active.abort) return input.send({ type: "error", message: "A parallel run is already in progress in this project." });
@@ -80,8 +84,15 @@ export function createRunController(runPlanAndRun: PlanAndRun, dependencies: Run
     };
     try {
       const result = await runPlanAndRun({
-        request: input.plannerNotes ? `${request}\n\n${input.plannerNotes}` : request, repoRoot: input.projectDir, config: engineConfig(input), signal: abort.signal, onEvent,
-        employees: {}, adaptive: { budgets: ready.budgets }, approvePlan: gate.wait,
+        request: input.plannerNotes ? `${request}\n\n${input.plannerNotes}` : request,
+        repoRoot: input.projectDir,
+        config: engineConfig(input),
+        signal: abort.signal,
+        onEvent,
+        employees: {},
+        adaptive: { budgets: ready.budgets },
+        approvePlan: gate.wait,
+        ...(images.images.length > 0 ? { images: images.images } : {}),
       });
       const plan = result.status === "ran" ? deliveryPlanOf(result.report) : null;
       pending.offer(plan ? { runKey, projectDir: input.projectDir, plan } : null);

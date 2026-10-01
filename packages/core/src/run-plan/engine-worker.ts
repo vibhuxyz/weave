@@ -1,4 +1,4 @@
-import type { PermissionPolicy } from "@weave/agent";
+import type { PermissionPolicy, PromptImage } from "@weave/agent";
 import { DEFAULT_ENGINE_ID } from "@weave/agent";
 import type { RunConfig } from "@weave/protocol";
 import { moveToFront } from "../adaptive/index.ts";
@@ -14,6 +14,7 @@ export interface EngineWorkerContext {
   readonly runAttempt?: AttemptRunner;
   readonly routes?: ReadonlyMap<string, readonly string[]>;
   readonly briefings?: ReadonlyMap<string, string>;
+  readonly images?: readonly PromptImage[];
 }
 
 interface RelayDeps {
@@ -71,7 +72,7 @@ async function askToPublish(deps: RelayDeps, input: WorkerInput, done: RelayResu
 }
 
 export function engineWorker(config: RunConfig | undefined, policy: PermissionPolicy | undefined, context: EngineWorkerContext): RunWorker {
-  const deps: RelayDeps = { engines: enginesFor(config), context, runAttempt: context.runAttempt ?? engineAttemptRunner(config, policy) };
+  const deps: RelayDeps = { engines: enginesFor(config), context, runAttempt: context.runAttempt ?? engineAttemptRunner(config, policy, context.images) };
   return async (input) => {
     const employeeBrief = context.briefings?.get(input.task.id);
     const briefing = [...(employeeBrief ? [employeeBrief] : []), renderBriefing(input.coordination.drain(), input.coordination.awaited())].join("\n\n");

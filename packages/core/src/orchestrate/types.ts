@@ -1,4 +1,4 @@
-import type { PermissionPolicy } from "@weave/agent";
+import type { PermissionPolicy, PromptImage } from "@weave/agent";
 import type { RunConfig, WeaveEvent } from "@weave/protocol";
 import type { Budgets, EngineCandidate, HistoryStats, OrchestrationDecision } from "../adaptive/index.ts";
 import type { Assignment, EmployeeRegistry } from "../employees/index.ts";
@@ -40,6 +40,7 @@ export interface PlanAndRunOptions {
   readonly adaptive?: AdaptiveOptions;
   readonly employees?: EmployeesOptions;
   readonly approvePlan?: () => Promise<boolean>;
+  readonly images?: readonly PromptImage[];
 }
 
 export type PlanAndRunResult =

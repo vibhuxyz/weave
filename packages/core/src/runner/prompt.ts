@@ -1,4 +1,4 @@
-import { applyConfigOptions } from "@weave/agent";
+import { applyConfigOptions, promptBlocks, type PromptBlock, type PromptImage } from "@weave/agent";
 import type { RunConfig, Usage } from "@weave/protocol";
 import { agentConfigFrom } from "@weave/protocol";
 import type { RunTaskTracker } from "./sink.ts";
@@ -22,11 +22,17 @@ export async function applyWantedConfigOptions(
   }
 }
 
+interface DeadlineSession {
+  prompt(blocks: PromptBlock[]): Promise<{ stopReason: string; usage?: Usage | null }>;
+  cancel(): Promise<void>;
+}
+
 export async function promptWithDeadline(
-  session: Session,
+  session: DeadlineSession,
   prompt: string,
   timeoutMs: number,
   tracker: RunTaskTracker,
+  images?: readonly PromptImage[],
 ): Promise<{ stopReason: string; usage?: Usage | null }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<{ stopReason: string; usage?: Usage | null }>((done) => {
@@ -37,7 +43,7 @@ export async function promptWithDeadline(
     }, timeoutMs);
   });
 
-  return Promise.race([session.prompt([{ type: "text", text: prompt }]), deadline]).finally(() =>
+  return Promise.race([session.prompt([...promptBlocks(prompt, images)]), deadline]).finally(() =>
     clearTimeout(timer),
   );
 }

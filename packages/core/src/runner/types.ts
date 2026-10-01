@@ -1,4 +1,4 @@
-import type { openSession, PermissionPolicy } from "@weave/agent";
+import type { openSession, PermissionPolicy, PromptImage } from "@weave/agent";
 import type { RunConfig, TaskContract, TaskResult, Usage, WeaveEvent } from "@weave/protocol";
 import type { Ledger } from "../shared/index.ts";
 import type { Worktree } from "../worktree/index.ts";
@@ -15,6 +15,7 @@ export interface RunTaskOptions {
   onEvent?: (event: WeaveEvent) => void;
   isolate?: boolean;
   signal?: AbortSignal;
+  images?: readonly PromptImage[];
 }
 
 export interface RunTaskOutcome {

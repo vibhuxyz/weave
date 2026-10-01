@@ -59,6 +59,7 @@ import {
   writePreferredModel,
 } from "./acpChat/session-preferences";
 import type {
+  ChatImageAttachment,
   ChatTurn,
   ConnectionState,
   ConversationMeta,
@@ -1095,8 +1096,8 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
    * engine. `/parallel` runs through the run channel, not a prompt, and the
    * request still belongs in the chat where they typed it.
    */
-  const showUserMessage = useCallback((text: string) => {
-    const turn = userTurn(text, crypto.randomUUID(), Date.now());
+  const showUserMessage = useCallback((text: string, images?: readonly ChatImageAttachment[]) => {
+    const turn = userTurn(text, crypto.randomUUID(), Date.now(), images);
     if (turn) setTurns((current) => [...current, turn]);
   }, []);
 
