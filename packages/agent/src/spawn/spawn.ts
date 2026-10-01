@@ -10,10 +10,9 @@ import {
 } from "../engines/index.ts";
 import { buildMacOsSandboxProfile } from "./sandbox-profile.ts";
 import { resolveNodeBinary } from "./node-binary.ts";
+import { isEngineStderrNoise, traceExportEnv } from "./engine-telemetry.ts";
 import { killGroup } from "./process-group.ts";
 import type { EngineExit, SpawnAgentOptions, SpawnedAgent } from "./types.ts";
-
-const STDERR_NOISE = [/^\[agy-acp\] WARN: failed to decode gen_metadata /];
 
 /** Enough of a crash to name the cause, small enough to put in an error. */
 const MAX_STDERR_TAIL_CHARS = 4_000;
@@ -85,14 +84,14 @@ function attachStderrDrain(child: ChildProcess): () => string {
     const lines = (stderrTail + chunk).split("\n");
     stderrTail = lines.pop() ?? "";
     for (const line of lines) {
-      if (!STDERR_NOISE.some((re) => re.test(line))) {
+      if (!isEngineStderrNoise(line)) {
         retain(line);
         process.stderr.write(line + "\n");
       }
     }
   });
   child.stderr?.on("end", () => {
-    if (stderrTail && !STDERR_NOISE.some((re) => re.test(stderrTail))) {
+    if (stderrTail && !isEngineStderrNoise(stderrTail)) {
       retain(stderrTail);
       process.stderr.write(stderrTail + "\n");
     }
@@ -139,6 +138,7 @@ export function spawnAgent(
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
       PATH: augmentPathWithUserDirs(process.env.PATH),
+      ...traceExportEnv(process.env),
       ...extraEnv,
     },
   });
