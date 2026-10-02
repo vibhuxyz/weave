@@ -1,5 +1,6 @@
 import { memo, useState, useMemo } from "react";
-import { DisclosureHeader, TurnSegments, FilesChanged } from "@/agent/components/stream";
+import { DisclosureHeader, TurnSegments } from "@/agent/components/stream";
+import { FilesChanged } from "@/agent/components/stream/FilesChanged";
 import { turnDiff } from "@/agent/diff";
 import { useEmployeeListing } from "@/features/employees";
 import { Shimmer } from "@/shared/ui/ai-elements";
