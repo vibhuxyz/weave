@@ -1,5 +1,6 @@
-import { memo } from "react";
-import { TurnSegments } from "@/agent/components/stream";
+import { memo, useState, useMemo } from "react";
+import { DisclosureHeader, TurnSegments, FilesChanged } from "@/agent/components/stream";
+import { turnDiff } from "@/agent/diff";
 import { useEmployeeListing } from "@/features/employees";
 import { Shimmer } from "@/shared/ui/ai-elements";
 import { cn } from "@/shared/lib";
@@ -36,20 +37,31 @@ function PlannerHeader({ label, isPlanning }: { readonly label: string | null; r
   );
 }
 
-function BlockView({ block, plannerLabel, isPlanning }: { readonly block: StreamBlock; readonly plannerLabel: string | null; readonly isPlanning: boolean }) {
+function BlockView({
+  block,
+  plannerLabel,
+  isPlanning,
+  projectDir,
+  onOpenDiff,
+}: {
+  readonly block: StreamBlock;
+  readonly plannerLabel: string | null;
+  readonly isPlanning: boolean;
+  readonly projectDir: string | null;
+  readonly onOpenDiff?: (turnId: string, path?: string) => void;
+}) {
   const isPlanner = block.taskId === PLANNER_TASK_ID;
+  const diff = useMemo(() => turnDiff(block.turn), [block.turn]);
+  
   return (
     <section className="flex flex-col gap-2" aria-label={isPlanner ? "Planning" : `Task ${block.taskId}`}>
       <header className="flex items-center gap-2 text-xs">
         {isPlanner ? <PlannerHeader label={plannerLabel} isPlanning={isPlanning} /> : <TaskHeader block={block} />}
       </header>
-      <TurnSegments turn={block.turn} />
+      <TurnSegments turn={block.turn} onOpenDiff={(path) => onOpenDiff?.(block.turn.id, path)} />
       {block.hiddenToolCount > 0 && <span className="text-[11px] text-agent-text-faint">(+{block.hiddenToolCount} more steps)</span>}
-      {block.files.length > 0 && (
-        <span className="truncate text-[11px] text-agent-text-faint" title={block.files.join(", ")}>
-          {block.files.length + block.hiddenFileCount} files: {block.files.join(", ")}
-          {block.hiddenFileCount > 0 && ` (+${block.hiddenFileCount} more)`}
-        </span>
+      {diff.files.length > 0 && (
+        <FilesChanged diff={diff} projectDir={projectDir} onOpenDiff={(path) => onOpenDiff?.(block.turn.id, path)} />
       )}
     </section>
   );

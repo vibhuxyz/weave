@@ -12,9 +12,11 @@ import { WorkerColumns } from "./WorkerColumns";
 interface RunStreamProps {
   readonly onKeepInChat: (request: string) => void;
   readonly onDecideResult: (runKey: string, decision: ResultDecision) => void;
+  readonly projectDir: string | null;
+  readonly onOpenDiff?: (turnId: string, path?: string) => void;
 }
 
-export function RunStream({ onKeepInChat, onDecideResult }: RunStreamProps) {
+export function RunStream({ onKeepInChat, onDecideResult, projectDir, onOpenDiff }: RunStreamProps) {
   const { blocks, hiddenBlockCount, outcome, plannerLabel, isPlanning } = useRunStore(useShallow(selectRunStream));
   const notes = (
     <>
@@ -30,13 +32,12 @@ export function RunStream({ onKeepInChat, onDecideResult }: RunStreamProps) {
       {notes}
       {hiddenBlockCount > 0 && <span className="text-[11px] text-agent-text-faint">({hiddenBlockCount} earlier steps hidden)</span>}
       {planner.map((block) => (
-        <StreamBlockView key={block.id} block={block} plannerLabel={plannerLabel} isPlanning={isPlanning} />
+        <StreamBlockView key={block.id} block={block} plannerLabel={plannerLabel} isPlanning={isPlanning} projectDir={projectDir} onOpenDiff={onOpenDiff} />
       ))}
-      {outcome === null ? (
-        <WorkerColumns />
-      ) : (
-        worked.map((block) => <StreamBlockView key={block.id} block={block} plannerLabel={plannerLabel} isPlanning={false} />)
-      )}
+      {worked.map((block) => (
+        <StreamBlockView key={block.id} block={block} plannerLabel={null} isPlanning={false} projectDir={projectDir} onOpenDiff={onOpenDiff} />
+      ))}
+      <WorkerColumns />
       {outcome && <p className="text-agent-text-muted text-xs">{outcomeText(outcome)}</p>}
       <ResultReview onDecideResult={onDecideResult} />
     </div>

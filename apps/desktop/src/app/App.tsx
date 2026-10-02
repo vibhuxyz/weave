@@ -1016,6 +1016,10 @@ export function App() {
     setMentionQuery(null);
     setImgQuery(null);
     resetComposerHeight();
+    setTimeout(() => {
+      const el = scrollRef.current;
+      el?.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }, 50);
   };
 
   // Home doesn't need a project — ported from Berd, which never gates on
@@ -1359,7 +1363,7 @@ export function App() {
           onScroll={onTranscriptScroll}
           className={cn(
             CHAT_COLUMN_WIDTH,
-            "flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] pt-6 pb-6",
+            "chat-transcript flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-[var(--spacing-app-panel-gutter-inline)] pt-6 pb-6",
           )}
         >
           {isOpeningChat && <ChatSkeleton />}
@@ -1412,7 +1416,15 @@ export function App() {
             ),
           )}
 
-          <RunStream onKeepInChat={keepInChat} onDecideResult={decideResult} />
+          <RunStream 
+            onKeepInChat={keepInChat} 
+            onDecideResult={decideResult} 
+            projectDir={activeProject?.path ?? null}
+            onOpenDiff={(turnId, path) => {
+              setDiffFocusPath(path);
+              setDiffTurnId((cur) => (cur === turnId && !path ? null : turnId));
+            }}
+          />
 
           {tasks && <TasksPanel tasks={tasks} onClose={() => setIsTasksOpen(false)} />}
 
@@ -1436,12 +1448,13 @@ export function App() {
           {view === "chat" && !atBottom && turns.length > 0 && (
             <div className="pointer-events-none absolute inset-x-0 -top-12 z-20 flex justify-center">
               <JumpToLatestButton
-                size="sm"
+                size="icon-sm"
+                aria-label="Jump to latest"
+                title="Jump to latest"
                 onClick={jumpToLatest}
-                className="pointer-events-auto gap-1 shadow-lg"
+                className="pointer-events-auto size-8 rounded-full p-0 shadow-lg"
               >
                 <ChevronDownIcon className="size-4" />
-                Jump to latest
               </JumpToLatestButton>
             </div>
           )}
@@ -1500,9 +1513,7 @@ export function App() {
               if (e.dataTransfer.files.length) void addImageFiles(e.dataTransfer.files);
             }}
             className={cn(
-              // 18px radius and a ~104px resting height: a floating input
-              // surface, not a pill.
-              "relative flex min-h-[104px] flex-col gap-2.5 rounded-[18px] bg-surface-chat-composer p-3 [-webkit-backdrop-filter:var(--backdrop-composer-glass)] [backdrop-filter:var(--backdrop-composer-glass)]",
+              "relative flex flex-col gap-2 rounded-3xl bg-surface-chat-composer px-3 py-2.5 [-webkit-backdrop-filter:var(--backdrop-composer-glass)] [backdrop-filter:var(--backdrop-composer-glass)]",
               isDraggingImage && "outline outline-2 outline-offset-[-2px] outline-primary",
             )}
           >
@@ -1793,6 +1804,7 @@ export function App() {
                 e.target.value = "";
               }}
             />
+            <div className="flex items-end gap-1.5">
             <textarea
               ref={textareaRef}
               value={draft}
@@ -1884,8 +1896,21 @@ export function App() {
               }
               rows={1}
               disabled={!ready}
-              className="min-h-[44px] max-h-[200px] w-full resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none placeholder:text-placeholder-composer focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50"
+              className="min-h-9 max-h-[200px] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none placeholder:text-placeholder-composer focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50"
             />
+            <div className="flex shrink-0 items-center pb-0.5">
+              {busy || isCompacting || isRunActive ? (
+                <ComposerSendButton state="stop" onClick={isRunActive ? cancelRun : cancel} />
+              ) : (
+                <ComposerSendButton
+                  state="send"
+                  onClick={submit}
+                  showLabel={false}
+                  disabled={!ready || (!draft.trim() && imageAttachments.length === 0)}
+                />
+              )}
+            </div>
+            </div>
             <div className="flex items-center justify-between gap-2 px-1">
               <div className="flex flex-wrap items-center gap-2">
                 <EnginePicker
@@ -2028,8 +2053,6 @@ export function App() {
                   />
                 )}
               </div>
-              {/* One action cluster: attach sits immediately left of send, and
-                  keeps its place when send becomes stop. */}
               <div className="flex shrink-0 items-center gap-2">
                 {ready && engineId && (
                   <ContextUsageButton
@@ -2052,16 +2075,6 @@ export function App() {
                 >
                   <ImagePlusIcon />
                 </ComposerActionButton>
-                {busy || isCompacting || isRunActive ? (
-                  <ComposerSendButton state="stop" onClick={isRunActive ? cancelRun : cancel} />
-                ) : (
-                  <ComposerSendButton
-                    state="send"
-                    onClick={submit}
-                    showLabel={Boolean(draft.trim() || imageAttachments.length > 0)}
-                    disabled={!ready || (!draft.trim() && imageAttachments.length === 0)}
-                  />
-                )}
               </div>
             </div>
           </div>
