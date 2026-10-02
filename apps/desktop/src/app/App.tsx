@@ -1419,7 +1419,7 @@ export function App() {
           <RunStream 
             onKeepInChat={keepInChat} 
             onDecideResult={decideResult} 
-            projectDir={activeProject?.path ?? null}
+            projectDir={activeDir ?? null}
             onOpenDiff={(turnId, path) => {
               setDiffFocusPath(path);
               setDiffTurnId((cur) => (cur === turnId && !path ? null : turnId));
