@@ -17,39 +17,17 @@ export class AuthRequiredError extends Error {
  * turn was in flight, so its process group was killed. Distinct from a crash:
  * nothing failed, the engine simply stopped answering.
  */
-export interface EngineStalledErrorOptions {
-  readonly engineId: string;
-  readonly engineLabel: string;
-  readonly timeoutMs: number;
-  readonly runningTools: readonly string[];
-}
-
-const MAX_STALL_TOOL_TITLE_CHARS = 80;
-const MAX_STALL_TOOL_NAMES = 3;
-
-function describeRunningTools(titles: readonly string[]): string {
-  if (titles.length === 0) return "";
-  const shown = titles
-    .slice(0, MAX_STALL_TOOL_NAMES)
-    .map((title) => `"${title.replace(/\s+/g, " ").trim().slice(0, MAX_STALL_TOOL_TITLE_CHARS)}"`);
-  const hiddenCount = titles.length - shown.length;
-  const listed = hiddenCount > 0 ? [...shown, `(+${hiddenCount} more)`] : shown;
-  return ` while running ${listed.join(", ")}`;
-}
-
 export class EngineStalledError extends Error {
   readonly engineId: string;
   readonly timeoutMs: number;
-  readonly runningTools: readonly string[];
 
-  constructor({ engineId, engineLabel, timeoutMs, runningTools }: EngineStalledErrorOptions) {
+  constructor(engineId: string, engineLabel: string, timeoutMs: number) {
     super(
-      `${engineLabel} stopped responding for ${Math.round(timeoutMs / 1000)}s${describeRunningTools(runningTools)} and was stopped. Send your message again.`,
+      `${engineLabel} stopped responding for ${Math.round(timeoutMs / 1000)}s and was stopped. Send your message again.`,
     );
     this.name = "EngineStalledError";
     this.engineId = engineId;
     this.timeoutMs = timeoutMs;
-    this.runningTools = runningTools;
   }
 }
 

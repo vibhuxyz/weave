@@ -9,7 +9,7 @@ import { SessionClient } from "./client.ts";
 import { AuthRequiredError, EngineStalledError } from "./errors.ts";
 import { authenticateGrok, resolveFallbackAuthMethods } from "./fallback-auth.ts";
 import { asEngineFailure } from "./engine-failure.ts";
-import { createStallWatchdog, type StallWatchdog } from "./stall-watchdog.ts";
+import { createStallWatchdog } from "./stall-watchdog.ts";
 import { toSessionModes, withCurrentMode, type SessionModes } from "./modes.ts";
 import type {
   AgentSession,
@@ -20,18 +20,17 @@ import type {
   QuestionAsker,
 } from "./types.ts";
 
+/**
+ * How long a turn may produce no protocol traffic at all before the engine is
+ * treated as wedged. Long commands keep the countdown alive through their tool
+ * output, so this only fires on true silence.
+ */
 export const DEFAULT_STALL_TIMEOUT_MS = 180_000;
-const DEFAULT_RUNNING_TOOL_STALL_TIMEOUT_MS = 15 * 60 * 1000;
 
 /** Every sink callback is engine activity, so route them all through `touch`. */
-function watchedSink(sink: SessionSink, watchdog: Pick<StallWatchdog, "touch" | "observe">): SessionSink {
-  const { touch } = watchdog;
+function watchedSink(sink: SessionSink, touch: () => void): SessionSink {
   return {
-    onUpdate: (update, replay, sessionId) => {
-      if (!replay) watchdog.observe(update);
-      touch();
-      sink.onUpdate(update, replay, sessionId);
-    },
+    onUpdate: (update, replay, sessionId) => { touch(); sink.onUpdate(update, replay, sessionId); },
     onPermission: (toolCall, options, decision) => { touch(); sink.onPermission(toolCall, options, decision); },
     onFileRead: (path) => { touch(); sink.onFileRead(path); },
     onFileWritten: (path, bytes) => { touch(); sink.onFileWritten(path, bytes); },
@@ -146,16 +145,10 @@ export async function openSession(
   const stallTimeoutMs = options.stallTimeoutMs ?? DEFAULT_STALL_TIMEOUT_MS;
   const watchdog = createStallWatchdog({
     timeoutMs: stallTimeoutMs,
-    runningToolTimeoutMs: DEFAULT_RUNNING_TOOL_STALL_TIMEOUT_MS,
-    onStall: ({ timeoutMs, runningTools }) => {
+    onStall: (timedOutAfterMs) => {
       alive = false;
       spawned.stop(0);
-      return new EngineStalledError({
-        engineId: spawned.engine.id,
-        engineLabel: spawned.engine.label,
-        timeoutMs,
-        runningTools,
-      });
+      return new EngineStalledError(spawned.engine.id, spawned.engine.label, timedOutAfterMs);
     },
   });
 
@@ -182,7 +175,7 @@ export async function openSession(
 
   const client = new SessionClient({
     task,
-    sink: watchedSink(sink, watchdog),
+    sink: watchedSink(sink, watchdog.touch),
     policy: watchedPolicy,
     askUser: watchedAskUser,
   });
@@ -271,14 +264,7 @@ export async function openSession(
       await connection.authenticate({ methodId });
     },
     async prompt(blocks: PromptBlock[], promptOptions?: PromptOptions) {
-      if (!alive) {
-        throw new EngineStalledError({
-          engineId: spawned.engine.id,
-          engineLabel: spawned.engine.label,
-          timeoutMs: stallTimeoutMs,
-          runningTools: [],
-        });
-      }
+      if (!alive) throw new EngineStalledError(spawned.engine.id, spawned.engine.label, stallTimeoutMs);
       if (stallTimeoutMs <= 0) {
         const result = await connection.prompt({ sessionId, prompt: blocks });
         return { stopReason: result.stopReason, usage: result.usage };
