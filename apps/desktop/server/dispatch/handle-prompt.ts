@@ -12,6 +12,7 @@ import type { DecisionLog } from "../decisions/index.ts";
 import { errorMessage } from "../shared/index.ts";
 import { continuationPrompt, promptUntilAnswer, watchUnfinished } from "./continue-unfinished.ts";
 import { createRecoveryContext, persistRecoveryDecision } from "./recovery-helper.ts";
+import { STALL_RESUME_PROMPT, withStallRecovery } from "./stall-recovery/index.ts";
 import { CHAT_TASK_ID, handoffWhenClosed, promptMayHandOff, watchTurn, type TeamRunStart } from "../team-handoff/index.ts";
 import { startTurnLog } from "../thread/index.ts";
 import type { TurnEstimates, TurnHandoff } from "../team-tools/index.ts";
@@ -168,10 +169,16 @@ export async function handlePrompt({
       });
     }
 
-    const session = sessionMgr.supervisor.current;
-    const recCtx = createRecoveryContext(sessionMgr, projectDir, continuationTaskId, ledger, tasksStore, session.sessionId);
+    const { supervisor } = sessionMgr;
+    const recCtx = createRecoveryContext(sessionMgr, projectDir, continuationTaskId, ledger, tasksStore, supervisor.current.sessionId);
     const finished = await promptUntilAnswer({
-      run: (promptBlocks) => session.prompt([...promptBlocks]),
+      run: withStallRecovery({
+        run: (promptBlocks) => supervisor.current.prompt([...promptBlocks]),
+        revive: () => supervisor.reviveCurrent(),
+        resumeBlocks: () => buildPromptBlocks(STALL_RESUME_PROMPT),
+        onRecovering: (reason) => ledger.append("error", { taskId: "desktop", where: "engine.stalled", message: reason }),
+        isCancelled: () => sessionMgr.cancelRequested,
+      }),
       first: blocks,
       followUp: (attempt) => buildPromptBlocks(continuationPrompt(attempt)),
       activity: unfinished,
@@ -208,9 +215,9 @@ export async function handlePrompt({
     }
 
     send({ type: "turn-end", stopReason, usage });
-    compaction.recordTurnCompleted(session.sessionId);
+    compaction.recordTurnCompleted(supervisor.current.sessionId);
 
-    const threadId = (sessionMgr.threadId ??= session.sessionId);
+    const threadId = (sessionMgr.threadId ??= supervisor.current.sessionId);
     const recorded = chats.record(threadId, {
       title: titleFromPrompt(text),
       engineId: sessionMgr.currentEngineId,
