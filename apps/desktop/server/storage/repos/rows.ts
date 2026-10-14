@@ -17,6 +17,12 @@ export function optionalStringField(row: Row, key: string): string | null {
   return value;
 }
 
+export function integerField(row: Row, key: string): number {
+  const value = row[key];
+  if (typeof value !== "number" || !Number.isInteger(value)) throw new Error(`Database row field ${key} is not an integer`);
+  return value;
+}
+
 export function isoFromMs(nowMs: number): string {
   return new Date(nowMs).toISOString();
 }

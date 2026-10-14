@@ -19,6 +19,7 @@ export type {
   PermissionRequest,
   ChatImageAttachment,
   ChatTurn,
+  EngineHandoffNotice,
   ConnectionState,
   ConversationMeta,
   ArchivedChatMeta,

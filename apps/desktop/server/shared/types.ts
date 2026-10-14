@@ -188,8 +188,19 @@ export type ServerMessage =
   | { readonly type: "compaction-summary"; readonly sessionId: string; readonly summary: string }
   | { readonly type: "session-capabilities"; readonly sessionId: string; readonly supportsCompaction: boolean }
   | {
+      readonly type: "engine-handoff";
+      readonly threadId: string;
+      readonly fromEngineId: string;
+      readonly toEngineId: string;
+      readonly toEngineLabel: string;
+      readonly isResumed: boolean;
+      readonly turnsHandedOff: number;
+      readonly bytes: number;
+    }
+  | {
       readonly type: "ready";
       readonly sessionId: string;
+      readonly threadId: string | null;
       readonly cwd: string;
       readonly engineId: string;
       readonly engineLabel: string;

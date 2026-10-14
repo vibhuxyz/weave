@@ -13,6 +13,7 @@ import { errorMessage } from "../shared/index.ts";
 import { continuationPrompt, promptUntilAnswer, watchUnfinished } from "./continue-unfinished.ts";
 import { createRecoveryContext, persistRecoveryDecision } from "./recovery-helper.ts";
 import { CHAT_TASK_ID, handoffWhenClosed, promptMayHandOff, watchTurn, type TeamRunStart } from "../team-handoff/index.ts";
+import { startTurnLog } from "../thread/index.ts";
 import type { TurnEstimates, TurnHandoff } from "../team-tools/index.ts";
 
 export interface PromptOptions {
@@ -144,6 +145,9 @@ export async function handlePrompt({
     send({ type: "error", message: "The agent opened a weave-handoff block and never closed it, so no workers were added. This chat keeps the work." });
   };
   const unfinished = watchUnfinished(ledger, CHAT_TASK_ID);
+  const turnLog = startTurnLog({ ledger, taskId: CHAT_TASK_ID, projectDir, userText: text, chats,
+    engineId: sessionMgr.currentEngineId, engineSessionId: sessionMgr.supervisor.current.sessionId,
+    threadId: () => sessionMgr.threadId, onError: (message) => send({ type: "error", message }) });
 
   try {
     if (isFirstPrompt) {
@@ -206,8 +210,8 @@ export async function handlePrompt({
     send({ type: "turn-end", stopReason, usage });
     compaction.recordTurnCompleted(session.sessionId);
 
-    const sessionId = sessionMgr.supervisor.current.sessionId;
-    const recorded = chats.record(sessionId, {
+    const threadId = (sessionMgr.threadId ??= session.sessionId);
+    const recorded = chats.record(threadId, {
       title: titleFromPrompt(text),
       engineId: sessionMgr.currentEngineId,
       personaIds: parsePersonaIds(msg.personaIds),
@@ -215,8 +219,9 @@ export async function handlePrompt({
     if (!recorded.ok) send({ type: "error", message: `Cannot save this chat: ${recorded.reason}` });
     if (recorded.ok && !sessionMgr.persisted) {
       sessionMgr.persisted = true;
-      chats.rememberLastSession(sessionId);
+      chats.rememberLastSession(threadId);
     }
+    turnLog.finish(finished.stillUnfinished ? "unfinished" : stopReason === "cancelled" ? "cancelled" : "completed");
     await sendChats();
     await finishHandoff?.().catch((error: unknown) => send({ type: "error", message: `Cannot hand this to a team: ${errorMessage(error)}` }));
     warnUnclosed();
@@ -235,8 +240,10 @@ export async function handlePrompt({
     });
     send({ type: "turn-end", stopReason: "stalled" });
     send({ type: "error", message: errMsg });
+    turnLog.finish("error");
   } finally {
     unfinished.close();
+    turnLog.close();
     stopHandoffListen?.();
     if (canHandOff) teamEstimates.allowHandoff(false);
   }

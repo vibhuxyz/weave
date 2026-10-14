@@ -6,19 +6,21 @@ import {
   type EngineSupervisor,
   type CreateSupervisorOptions,
 } from "@weave/agent";
-import { readLatest, buildBrief } from "@weave/core";
 import {
   isAuthRequiredError,
   toEngineAuthMethod,
   type AuthMethod,
 } from "@weave/protocol";
 import { resolveEngineFallbackMethods } from "../auth/index.ts";
+import { resumeTarget } from "../thread/index.ts";
 import { createSupervisorOptions } from "./supervisor-options.ts";
+import { handOffThread, openThreadSession, prepareThreadReplay, switchEngineSession } from "./thread-binding.ts";
 import type { SessionContext } from "./types.ts";
 
 export class DesktopSessionManager {
   currentEngineId: string;
   supervisor: EngineSupervisor | null = null;
+  threadId: string | null = null;
   persisted = false;
   announced = false;
   pendingPreamble: string | null = null;
@@ -80,6 +82,7 @@ export class DesktopSessionManager {
         this.ctx.send({
           type: "ready",
           sessionId,
+          threadId: this.threadId,
           cwd: this.ctx.projectDir,
           engineId: this.currentEngineId,
           engineLabel: getEngine(this.currentEngineId).label,
@@ -94,14 +97,26 @@ export class DesktopSessionManager {
     return { ...opts, engineId };
   }
 
+  async openThread(threadId: string): Promise<boolean> {
+    if (!this.supervisor) return false;
+    this.threadId = threadId;
+    const opened = await openThreadSession(this.supervisor, this.ctx, { threadId, engineId: this.currentEngineId });
+    this.pendingPreamble = opened.preamble;
+    return opened.isOpen;
+  }
+
+  private resumeIdFor(engineId: string): string | null {
+    return this.threadId === null ? null : resumeTarget(this.ctx.chats, this.threadId, engineId);
+  }
+
   async bindEngine(engineId: string): Promise<boolean> {
-    const resumeId = this.ctx.chats.lastSessionId();
-    const options = this.buildSupervisorOptions(resumeId, engineId);
+    const fromEngineId = this.currentEngineId;
+    const resumeId = this.resumeIdFor(engineId);
     try {
       if (!this.supervisor) {
-        this.supervisor = await createEngineSupervisor(options);
+        this.supervisor = await createEngineSupervisor(this.buildSupervisorOptions(resumeId, engineId));
       } else {
-        await this.supervisor.switchTo(engineId);
+        await switchEngineSession(this.supervisor, this.ctx, { engineId, resumeId });
       }
     } catch (error) {
       if (this.handleAuthError(error, engineId)) return false;
@@ -109,17 +124,16 @@ export class DesktopSessionManager {
     }
 
     this.currentEngineId = engineId;
-    this.persisted = false;
+    this.persisted = this.threadId !== null;
     this.ctx.engineAuthStates.set(engineId, "authenticated");
-
-    if (this.taskCreated) {
-      const checkpoint = await readLatest(
-        this.ctx.dataDir,
-        this.ctx.continuationTaskId,
-      );
-      this.pendingPreamble = checkpoint
-        ? buildBrief(checkpoint, getEngine(engineId))
-        : null;
+    if (this.threadId !== null) {
+      this.pendingPreamble = await handOffThread({
+        ctx: this.ctx,
+        threadId: this.threadId,
+        fromEngineId,
+        engineId,
+        engineSessionId: this.supervisor.current.sessionId,
+      });
     }
 
     this.ctx.ledger.append("agent.session", {
@@ -145,10 +159,10 @@ export class DesktopSessionManager {
       });
     }
 
-    this.ctx.send({ type: "reset" });
     this.ctx.send({
       type: "ready",
       sessionId: this.supervisor.current.sessionId,
+      threadId: this.threadId,
       cwd: this.ctx.projectDir,
       engineId: this.currentEngineId,
       engineLabel: getEngine(this.currentEngineId).label,
@@ -160,26 +174,29 @@ export class DesktopSessionManager {
     return true;
   }
 
-  prepareReplay(sessionId: string): void {
-    const loaded = this.ctx.history.load(sessionId);
-    if (!loaded.ok) this.ctx.send({ type: "error", message: loaded.reason });
-    this.ctx.replayGate.arm(sessionId, loaded.ok ? loaded.value : null);
-  }
-
-  finishReplay(): void {
+  private finishReplay(): void {
     this.ctx.replayGate.disarm();
+    this.ctx.replayGate.unmute();
   }
 
-  async openFirstUsableEngine(wanted: string, resumeId: string | null): Promise<void> {
-    if (resumeId) this.prepareReplay(resumeId);
+  async openFirstUsableEngine(wanted: string, threadId: string | null): Promise<void> {
+    this.threadId = threadId;
     try {
-      await this.openEngineInOrder(wanted, resumeId);
+      await this.openEngineInOrder(wanted);
     } finally {
       this.finishReplay();
     }
+    if (this.threadId === null || !this.supervisor) return;
+    this.pendingPreamble = await handOffThread({
+      ctx: this.ctx,
+      threadId: this.threadId,
+      fromEngineId: this.currentEngineId,
+      engineId: this.currentEngineId,
+      engineSessionId: this.supervisor.current.sessionId,
+    });
   }
 
-  private async openEngineInOrder(wanted: string, resumeId: string | null): Promise<void> {
+  private async openEngineInOrder(wanted: string): Promise<void> {
     const order = [
       wanted,
       ...installedEngines()
@@ -192,8 +209,9 @@ export class DesktopSessionManager {
     for (const engineId of order) {
       try {
         this.currentEngineId = engineId;
-        const options = this.buildSupervisorOptions(resumeId, engineId);
-        this.supervisor = await createEngineSupervisor(options);
+        const resumeId = this.resumeIdFor(engineId);
+        if (resumeId !== null && this.threadId !== null) prepareThreadReplay(this.ctx, this.threadId, resumeId);
+        this.supervisor = await createEngineSupervisor(this.buildSupervisorOptions(resumeId, engineId));
         return;
       } catch (error) {
         if (error instanceof AuthRequiredError) {

@@ -10,7 +10,7 @@ export interface EngineSupervisor {
    * stopped (stall watchdog, crash). Call before every turn.
    */
   reviveCurrent(): Promise<AgentSession>;
-  switchTo(engineId: string): Promise<AgentSession>;
+  switchTo(engineId: string, resumeSessionId?: string | null): Promise<AgentSession>;
   killAll(): void;
 }
 

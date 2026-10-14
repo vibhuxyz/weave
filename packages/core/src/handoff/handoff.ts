@@ -1,10 +1,7 @@
 import type { Decision, Failure, RecentMessage, TaskState, VerificationResult } from "@weave/protocol";
 import { rungStrength } from "@weave/protocol";
-import type { EngineDescriptor } from "@weave/agent";
-import type { Checkpoint } from "../checkpoint/index.ts";
 import { capBytes } from "../shared/index.ts";
 
-const MAX_BRIEF_BYTES = 4096;
 const MAX_GOAL_BYTES = 800;
 const MAX_LISTED = 8;
 const MAX_LINE_CHARS = 300;
@@ -77,10 +74,6 @@ function renderBrief(state: TaskState, shown: ShownParts): string {
     ...(state.nextStep ? [section("NEXT STEP", state.nextStep)] : []),
     section("FIRST INSTRUCTION", "Read the changed files before editing them. The filesystem is authoritative; everything under CLAIMED is a hint from a worker that was interrupted."),
   ].join("\n\n");
-}
-
-export function buildBrief(checkpoint: Checkpoint, next: EngineDescriptor): string {
-  return briefOf(checkpoint.state, MAX_BRIEF_BYTES, next.id);
 }
 
 function shrunk(shown: ShownParts): ShownParts | null {

@@ -56,4 +56,27 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX idx_user_decisions__project_id_created_at ON user_decisions (project_id, created_at);
   `,
+  `
+  CREATE TABLE thread_engine_sessions (
+    thread_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    engine_id TEXT NOT NULL,
+    engine_session_id TEXT NOT NULL,
+    synced_turn_seq INTEGER NOT NULL CHECK (synced_turn_seq >= 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (thread_id, engine_id)
+  );
+
+  CREATE TABLE thread_turns (
+    thread_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL CHECK (seq > 0),
+    engine_id TEXT NOT NULL,
+    user_text TEXT NOT NULL,
+    answer_text TEXT NOT NULL,
+    facts_json TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('completed', 'unfinished', 'cancelled', 'error')),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (thread_id, seq)
+  );
+  `,
 ];

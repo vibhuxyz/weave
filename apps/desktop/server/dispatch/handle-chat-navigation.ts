@@ -23,12 +23,14 @@ export async function handleNewChat({
 
   try {
     const sessionId = await sessionMgr.supervisor.current.newSession();
+    sessionMgr.threadId = null;
     sessionMgr.persisted = false;
     sessionMgr.pendingPreamble = instructions?.trim() || null;
     send({ type: "reset" });
     send({
       type: "ready",
       sessionId,
+      threadId: null,
       cwd: projectDir,
       engineId: sessionMgr.currentEngineId,
       engineLabel: getEngine(sessionMgr.currentEngineId).label,
@@ -63,28 +65,25 @@ export async function handleOpenChat({
   sendChats,
 }: OpenChatOptions): Promise<void> {
   if (!sessionMgr.supervisor) return;
-  const isOpenSession = target === sessionMgr.supervisor.current.sessionId;
-  if (!isOpenSession && !chats.has(target)) {
+  if (target !== sessionMgr.threadId && !chats.has(target)) {
     send({ type: "error", message: `Cannot open chat ${target}: it does not belong to this project.` });
     return;
   }
 
   try {
     send({ type: "reset" });
-    sessionMgr.prepareReplay(target);
-    const ok = await sessionMgr.supervisor.current
-      .resumeSession(target)
-      .finally(() => sessionMgr.finishReplay());
-    if (!ok) {
+    const isOpen = await sessionMgr.openThread(target);
+    if (!isOpen) {
       send({ type: "error", message: "Could not open that chat." });
       await sendChats();
       return;
     }
     sessionMgr.persisted = true;
-    chats.rememberLastSession(sessionMgr.supervisor.current.sessionId);
+    chats.rememberLastSession(target);
     send({
       type: "ready",
       sessionId: sessionMgr.supervisor.current.sessionId,
+      threadId: target,
       cwd: projectDir,
       engineId: sessionMgr.currentEngineId,
       engineLabel: getEngine(sessionMgr.currentEngineId).label,

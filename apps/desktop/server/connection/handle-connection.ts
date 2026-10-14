@@ -160,7 +160,7 @@ export async function handleConnection(
     send({
       type: "chats",
       chats: chats.list(),
-      activeSessionId: sessionMgr.supervisor?.current?.sessionId ?? "",
+      activeSessionId: sessionMgr.threadId ?? sessionMgr.supervisor?.current?.sessionId ?? "",
     });
   };
 
@@ -207,9 +207,9 @@ export async function handleConnection(
     discoverSkills(storage.skillDirs).then(formatSkillCatalog),
   ]);
 
-  const resumeId = chats.lastSessionId();
+  const lastThreadId = chats.lastSessionId();
   try {
-    await sessionMgr.openFirstUsableEngine(initialEngineId, resumeId);
+    await sessionMgr.openFirstUsableEngine(initialEngineId, lastThreadId);
   } catch (err) {
     if (!sessionMgr.handleAuthError(err, initialEngineId)) throw err;
   }
@@ -219,7 +219,7 @@ export async function handleConnection(
   }
   sendEngineList();
   announceSetupRequired(initialEngineId, send);
-  const archived = storage.autoArchive.run(sessionMgr.supervisor?.current.sessionId ?? null);
+  const archived = storage.autoArchive.run(sessionMgr.threadId ?? sessionMgr.supervisor?.current.sessionId ?? null);
   if (!archived.ok) send({ type: "error", message: `Automatic archiving skipped: ${archived.reason}` });
   send({ type: "archive-settings", autoArchiveAfterDays: storage.autoArchive.afterDays() });
   sendChats().catch((error: unknown) => {

@@ -1,10 +1,21 @@
-import type { ChatSummary, ProjectRecord, ProjectsRepo, SessionsRepo, StorageResult } from "../storage/index.ts";
+import type {
+  ChatSummary,
+  ProjectRecord,
+  ProjectsRepo,
+  SessionsRepo,
+  StorageResult,
+  ThreadSeatRecord,
+  ThreadsRepo,
+  ThreadTurnInput,
+  ThreadTurnPage,
+} from "../storage/index.ts";
 
 export interface ProjectChatsOptions {
   readonly project: ProjectRecord;
   readonly workingDir: string;
   readonly sessions: SessionsRepo;
   readonly projects: ProjectsRepo;
+  readonly threads: ThreadsRepo;
   readonly now: () => number;
 }
 
@@ -51,5 +62,29 @@ export class ProjectChats {
 
   rememberLastSession(sessionId: string): boolean {
     return this.options.projects.setLastSessionId(this.projectId, sessionId, this.options.now());
+  }
+
+  seat(threadId: string, engineId: string): ThreadSeatRecord | null {
+    return this.options.threads.seat(threadId, engineId);
+  }
+
+  seatCount(threadId: string): number {
+    return this.options.threads.seatCount(threadId);
+  }
+
+  saveSeat(threadId: string, seat: ThreadSeatRecord): StorageResult<null> {
+    return this.options.threads.upsertSeat(threadId, this.projectId, seat, this.options.now());
+  }
+
+  appendTurn(threadId: string, turn: ThreadTurnInput): StorageResult<number> {
+    return this.options.threads.appendTurn(threadId, this.projectId, turn, this.options.now());
+  }
+
+  turnsSince(threadId: string, afterSeq: number, limit: number): ThreadTurnPage {
+    return this.options.threads.turnsSince(threadId, afterSeq, limit);
+  }
+
+  engineOf(threadId: string): string | null {
+    return this.options.threads.engineOf(threadId);
   }
 }

@@ -32,6 +32,7 @@ export function handleSwitchEngine({
       send({
         type: "ready",
         sessionId: sessionMgr.supervisor.current.sessionId,
+        threadId: sessionMgr.threadId,
         cwd: projectDir,
         engineId: sessionMgr.currentEngineId,
         engineLabel: getEngine(sessionMgr.currentEngineId).label,

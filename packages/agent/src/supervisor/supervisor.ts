@@ -1,4 +1,5 @@
 import { openSession } from "../session/index.ts";
+import type { AgentSession } from "../session/index.ts";
 import { DEFAULT_ENGINE_ID } from "../engines/index.ts";
 import type {
   CreateSupervisorOptions,
@@ -27,6 +28,16 @@ function scheduleIdleRelease(
     }
     target.session.close();
   }, graceMs);
+}
+
+async function moveToSession(session: AgentSession, resumeSessionId: string | null): Promise<void> {
+  if (resumeSessionId === null) {
+    await session.newSession();
+    return;
+  }
+  if (session.sessionId === resumeSessionId) return;
+  const isResumed = await session.resumeSession(resumeSessionId);
+  if (!isResumed) await session.newSession();
 }
 
 export async function createEngineSupervisor(
@@ -82,7 +93,7 @@ export async function createEngineSupervisor(
       return fresh.session;
     },
 
-    async switchTo(engineId: string) {
+    async switchTo(engineId: string, resumeSessionId: string | null = null) {
       const existing = warm.get(engineId);
       if (engineId === currentEngineId && existing) {
         return existing.session;
@@ -91,10 +102,10 @@ export async function createEngineSupervisor(
       let next: WarmEngine;
       if (existing) {
         cancelIdleTimer(existing);
-        await existing.session.newSession();
+        await moveToSession(existing.session, resumeSessionId);
         next = existing;
       } else {
-        next = { session: await open(engineId) };
+        next = { session: await open(engineId, resumeSessionId) };
         warm.set(engineId, next);
       }
 

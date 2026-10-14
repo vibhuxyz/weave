@@ -35,6 +35,7 @@ import { buildHistoryArchive, restoreArchivedTurns } from "./acpChat/history-arc
 import { appendAnswersSegment, appendTextSegment, appendThoughtSegment, appendToolSegment } from "./acpChat/turn-segments";
 import { latestPlanEntries, planChangeEntries, planChanges } from "./acpChat/plan-changes";
 import { useArchiveChannel } from "./acpChat/use-archive-channel";
+import { handoffTurn, useThreadArchive } from "./engine-handoff";
 import { userTurn } from "./acpChat/user-turn";
 import type { ArchiveChannelOptions } from "./acpChat/use-archive-channel";
 import { useQuestionChannel, type AnsweredQuestion } from "./question";
@@ -72,6 +73,7 @@ export type {
   ArchivedChatMeta,
   ChatImageAttachment,
   ChatTurn,
+  EngineHandoffNotice,
   ConnectionState,
   ConversationMeta,
   PlanItem,
@@ -209,6 +211,8 @@ const [configOptions, setConfigOptions] = useState<readonly SessionConfigOption[
   const [resumed, setResumed] = useState(false);
   const [chats, setChats] = useState<ConversationMeta[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [engineSessionId, setEngineSessionId] = useState<string | null>(null);
+  const engineSessionIdRef = useRef<string | null>(null);
   const [openingSessionId, setOpeningSessionId] = useState<string | null>(null);
   const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null);
   const [modes, setModes] = useState<SessionModes | null>(null);
@@ -608,6 +612,8 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     setCompactionCapabilities(new Map());
     activeSessionIdRef.current = null;
     setActiveSessionId(null);
+    engineSessionIdRef.current = null;
+    setEngineSessionId(null);
     pendingOpenRef.current = null;
     setOpeningSessionId(null);
 
@@ -667,8 +673,10 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
             setEngineId(message.engineId);
             setEngineLabel(message.engineLabel);
             setResumed(message.resumed);
-            activeSessionIdRef.current = message.sessionId;
-            setActiveSessionId(message.sessionId);
+            activeSessionIdRef.current = message.threadId ?? message.sessionId;
+            setActiveSessionId(message.threadId ?? message.sessionId);
+            engineSessionIdRef.current = message.sessionId;
+            setEngineSessionId(message.sessionId);
             pendingOpenRef.current = null;
             setOpeningSessionId(null);
             if (!message.resumed) {
@@ -886,8 +894,11 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           case "reset":
             setTurns((current) => (busyRef.current ? current : []));
             return;
+          case "engine-handoff":
+            setTurns((current) => [...current, handoffTurn(message, crypto.randomUUID(), Date.now())]);
+            return;
           case "compaction": {
-            if (message.sessionId !== activeSessionIdRef.current) return;
+            if (message.sessionId !== engineSessionIdRef.current) return;
             if (message.status === "started") {
               compactingOperationRef.current = message.operationId;
               compactingPromptRef.current = message.promptId;
@@ -1138,7 +1149,8 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     [contextUsed, contextSize],
   );
   const isCompactSupported =
-    activeSessionId !== null && compactionCapabilities.get(activeSessionId) === true;
+    engineSessionId !== null && compactionCapabilities.get(engineSessionId) === true;
+  useThreadArchive({ socketRef, turns, isBusy: busy, threadId: activeSessionId });
 
   const archivedNoticeIdsRef = useRef(new Set<string>());
   const unarchivedNoticeId = latestUnarchivedNoticeId(turns, archivedNoticeIdsRef.current);

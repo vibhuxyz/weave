@@ -122,6 +122,13 @@ export type TurnSegment =
   | { readonly id: string; readonly kind: "tools"; readonly toolIds: readonly string[] }
   | { readonly id: string; readonly kind: "answers"; readonly answers: readonly AnsweredQuestion[] };
 
+export interface EngineHandoffNotice {
+  readonly toEngineLabel: string;
+  readonly isResumed: boolean;
+  readonly turnsHandedOff: number;
+  readonly bytes: number;
+}
+
 export interface ChatTurn {
   id: string;
   role: "user" | "assistant" | "notice";
@@ -129,6 +136,7 @@ export interface ChatTurn {
   createdAt?: number;
   compaction?: CompactionNotice;
   historyGap?: number;
+  handoff?: EngineHandoffNotice;
   checkpoint?: TurnCheckpoint;
   /** Names of agents @-mentioned on this prompt, for the pills on the bubble. */
   mentions?: string[];

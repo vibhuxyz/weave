@@ -69,6 +69,7 @@ import {
   mergeDraftImages,
   mergeDraftText,
 } from '@/features/chat/compaction';
+import { EngineHandoffRow } from '@/features/chat/handoff';
 import { useChatWorkspace, useProject, useProjectHomePins, useProjects, type ProjectEntry } from '@/features/projects/hooks';
 import { useNewChatInProject, useRunInProject } from "./use-new-chat-in-project";
 import { useRunningServers } from '@/features/engines/hooks';
@@ -1380,6 +1381,8 @@ export function App() {
                 <CompactionNoticeRow key={turn.id} notice={turn.compaction} />
               ) : turn.historyGap ? (
                 <HistoryGapRow key={turn.id} count={turn.historyGap} />
+              ) : turn.handoff ? (
+                <EngineHandoffRow key={turn.id} notice={turn.handoff} />
               ) : null
             ) : turn.role === "user" ? (
               <UserMessage

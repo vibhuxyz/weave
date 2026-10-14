@@ -50,4 +50,27 @@ export interface DecisionRecord {
   readonly createdAt: number;
 }
 
+export interface ThreadSeatRecord {
+  readonly engineId: string;
+  readonly engineSessionId: string;
+  readonly syncedTurnSeq: number;
+}
+
+export interface ThreadTurnInput {
+  readonly engineId: string;
+  readonly userText: string;
+  readonly answerText: string;
+  readonly factsJson: string;
+  readonly outcome: string;
+}
+
+export interface ThreadTurnRecord extends ThreadTurnInput {
+  readonly seq: number;
+}
+
+export interface ThreadTurnPage {
+  readonly turns: readonly ThreadTurnRecord[];
+  readonly omittedCount: number;
+}
+
 export type StorageResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: string };

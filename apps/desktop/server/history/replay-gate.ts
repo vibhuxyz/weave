@@ -9,6 +9,7 @@ export interface ReplayDecision {
 }
 
 const PASS_THROUGH: ReplayDecision = { forward: true, messages: [] };
+const DROP: ReplayDecision = { forward: false, messages: [] };
 
 interface ArmedReplay {
   readonly sessionId: string;
@@ -23,6 +24,7 @@ function replayedSummary(update: SessionUpdate): string | null {
 
 export class ReplayGate {
   private armed: ArmedReplay | null = null;
+  private mutedSessionId: string | null = null;
 
   arm(sessionId: string, archive: HistoryArchive | null): void {
     this.armed = { sessionId, archive, hasSeenFirstUpdate: false };
@@ -32,7 +34,16 @@ export class ReplayGate {
     this.armed = null;
   }
 
+  mute(sessionId: string): void {
+    this.mutedSessionId = sessionId;
+  }
+
+  unmute(): void {
+    this.mutedSessionId = null;
+  }
+
   filter(update: SessionUpdate, sessionId: string | undefined): ReplayDecision {
+    if (this.mutedSessionId !== null && sessionId === this.mutedSessionId) return DROP;
     const armed = this.armed;
     if (!armed || sessionId !== armed.sessionId) return PASS_THROUGH;
     const summary = replayedSummary(update);
