@@ -6,19 +6,13 @@ import type {
   TurnStatus,
   WeaveEvent,
 } from "@weave/protocol";
+import { MAX_CONTINUATIONS, MAX_STALLED_CONTINUATIONS } from "./continuation/index.ts";
 
-export const MAX_CONTINUATIONS = 20;
-export const MAX_STALLED_CONTINUATIONS = 3;
 const CONTINUABLE_STOPS = new Set(["end_turn", "max_tokens", "max_turn_requests"]);
+const STARTING_TOOL_STATUSES = new Set(["pending", "in_progress"]);
 
-const CONTINUE_UNFINISHED =
-  "Your last turn stopped before the request was done. Continue the user's original request from where you left off, using tools as needed. When it is fully done, reply with a short summary of what changed and anything still open.";
-
-const WRAP_UP_UNFINISHED =
-  "This is the last automatic continuation. Finish the step you are on, then reply with a summary of what is done and exactly what is still left.";
-
-export function continuationPrompt(attempt: number): string {
-  return attempt >= MAX_CONTINUATIONS ? WRAP_UP_UNFINISHED : CONTINUE_UNFINISHED;
+function isToolCallStarting(status: unknown): boolean {
+  return status === undefined || status === null || (typeof status === "string" && STARTING_TOOL_STATUSES.has(status));
 }
 
 export interface TurnProgress {
@@ -35,6 +29,7 @@ export interface TurnProgress {
 
 interface UpdateFields {
   readonly sessionUpdate?: unknown;
+  readonly status?: unknown;
   readonly content?: { readonly type?: unknown; readonly text?: unknown };
 }
 
@@ -63,6 +58,8 @@ export function watchUnfinished(
 ): {
   readonly snapshot: () => TurnProgress;
   readonly recordTurnEnd: (stopReason: string) => void;
+  readonly beginSubTurn: () => void;
+  readonly hasTextSincePrompt: () => boolean;
   readonly reset: () => void;
   readonly close: () => void;
 } {
@@ -70,6 +67,7 @@ export function watchUnfinished(
   let toolCalls = 0;
   let totalTextChars = 0;
   let textAfterLastToolChars = 0;
+  let textCharsSincePrompt = 0;
   let stopReason: string | undefined;
 
   const deriveProgress = (): TurnProgress => {
@@ -112,7 +110,7 @@ export function watchUnfinished(
     if (update.sessionUpdate === "tool_call") {
       usedTools = true;
       toolCalls += 1;
-      textAfterLastToolChars = 0;
+      if (isToolCallStarting(update.status)) textAfterLastToolChars = 0;
     } else if (update.sessionUpdate === "tool_call_update") {
       usedTools = true;
     }
@@ -120,6 +118,7 @@ export function watchUnfinished(
     const chunk = answerText(update).trim();
     if (chunk.length > 0) {
       totalTextChars += chunk.length;
+      textCharsSincePrompt += chunk.length;
       if (usedTools) {
         textAfterLastToolChars += chunk.length;
       }
@@ -131,11 +130,16 @@ export function watchUnfinished(
     recordTurnEnd: (reason: string) => {
       stopReason = reason;
     },
+    beginSubTurn: () => {
+      textCharsSincePrompt = 0;
+    },
+    hasTextSincePrompt: () => textCharsSincePrompt > 0,
     reset: () => {
       usedTools = false;
       toolCalls = 0;
       totalTextChars = 0;
       textAfterLastToolChars = 0;
+      textCharsSincePrompt = 0;
       stopReason = undefined;
     },
     close: unsubscribe,
@@ -150,6 +154,7 @@ export interface PromptUntilAnswerOptions<T extends { readonly stopReason: strin
     readonly snapshot: () => TurnProgress;
     readonly reset: () => void;
     readonly recordTurnEnd?: (stopReason: string) => void;
+    readonly beginSubTurn?: () => void;
   };
   readonly isCancelled?: () => boolean;
   readonly beforeContinuation?: (attempt: number) => Promise<void>;
@@ -170,6 +175,7 @@ export async function promptUntilAnswer<T extends { readonly stopReason: string 
   input.activity.reset();
   const deadline = input.timeoutMs ? Date.now() + input.timeoutMs : undefined;
 
+  input.activity.beginSubTurn?.();
   let result = await input.run(input.first);
   input.activity.recordTurnEnd?.(result.stopReason);
   let continuations = 0;
@@ -191,6 +197,7 @@ export async function promptUntilAnswer<T extends { readonly stopReason: string 
 
     const toolCallsBefore = input.activity.snapshot().toolCalls;
     const blocks = typeof input.followUp === "function" ? input.followUp(continuations) : input.followUp;
+    input.activity.beginSubTurn?.();
     result = await input.run(blocks);
     input.activity.recordTurnEnd?.(result.stopReason);
     stalledContinuations = input.activity.snapshot().toolCalls > toolCallsBefore ? 0 : stalledContinuations + 1;

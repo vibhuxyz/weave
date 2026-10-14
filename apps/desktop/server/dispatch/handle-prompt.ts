@@ -10,7 +10,8 @@ import type { Ledger, TasksStore, NormalizedPlugin } from "@weave/core";
 import type { ProjectChats, SkillSelector } from "../chat/index.ts";
 import type { DecisionLog } from "../decisions/index.ts";
 import { errorMessage } from "../shared/index.ts";
-import { continuationPrompt, promptUntilAnswer, watchUnfinished } from "./continue-unfinished.ts";
+import { continuationBlocks, continuationNotice } from "./continuation/index.ts";
+import { promptUntilAnswer, watchUnfinished } from "./continue-unfinished.ts";
 import { createRecoveryContext, persistRecoveryDecision } from "./recovery-helper.ts";
 import { STALL_RESUME_PROMPT, withStallRecovery } from "./stall-recovery/index.ts";
 import { CHAT_TASK_ID, handoffWhenClosed, promptMayHandOff, watchTurn, type TeamRunStart } from "../team-handoff/index.ts";
@@ -175,12 +176,13 @@ export async function handlePrompt({
       run: withStallRecovery({
         run: (promptBlocks) => supervisor.current.prompt([...promptBlocks]),
         revive: () => supervisor.reviveCurrent(),
-        resumeBlocks: () => buildPromptBlocks(STALL_RESUME_PROMPT),
+        resumeBlocks: () => buildPromptBlocks(composeSystemPrompt(STALL_RESUME_PROMPT, { pendingPreamble: null, persona: msg.persona })),
         onRecovering: (reason) => ledger.append("error", { taskId: "desktop", where: "engine.stalled", message: reason }),
         isCancelled: () => sessionMgr.cancelRequested,
       }),
       first: blocks,
-      followUp: (attempt) => buildPromptBlocks(continuationPrompt(attempt)),
+      followUp: (attempt) =>
+        continuationBlocks({ attempt, hasTextSincePrompt: unfinished.hasTextSincePrompt(), persona: msg.persona }),
       activity: unfinished,
       isCancelled: () => sessionMgr.cancelRequested,
       beforeContinuation: (attempt) =>
@@ -215,6 +217,8 @@ export async function handlePrompt({
     }
 
     send({ type: "turn-end", stopReason, usage });
+    const nudgeNotice = continuationNotice(finished.continuations, sessionMgr.currentEngineId);
+    if (nudgeNotice !== null) send({ type: "error", message: nudgeNotice });
     compaction.recordTurnCompleted(supervisor.current.sessionId);
 
     const threadId = (sessionMgr.threadId ??= supervisor.current.sessionId);

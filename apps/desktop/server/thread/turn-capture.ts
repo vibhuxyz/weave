@@ -33,8 +33,14 @@ interface ToolSeen {
   readonly paths: readonly string[];
 }
 
+const STARTING_TOOL_STATUSES = new Set(["pending", "in_progress"]);
+
 function textOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function isToolCallStarting(status: unknown): boolean {
+  return status === undefined || status === null || (typeof status === "string" && STARTING_TOOL_STATUSES.has(status));
 }
 
 function locationPaths(value: unknown): readonly string[] {
@@ -48,7 +54,7 @@ function toolSignal(update: Readonly<Record<string, unknown>>): TurnSignal | nul
   return {
     kind: "tool",
     id,
-    isStart: update.sessionUpdate === "tool_call",
+    isStart: update.sessionUpdate === "tool_call" && isToolCallStarting(update.status),
     title: textOrNull(update.title),
     toolKind: textOrNull(update.kind),
     status: textOrNull(update.status),

@@ -3,6 +3,8 @@ import {
   continuationPrompt,
   MAX_CONTINUATIONS,
   MAX_STALLED_CONTINUATIONS,
+} from "./continuation/index.ts";
+import {
   promptUntilAnswer,
   shouldContinueUnfinished,
   type TurnProgress,
@@ -43,9 +45,10 @@ describe("shouldContinueUnfinished", () => {
 });
 
 describe("continuationPrompt", () => {
-  test("tells the model to continue the request with tools on early attempts", () => {
+  test("tells the model to finish the most recent request on early attempts", () => {
     const prompt = continuationPrompt(1);
-    expect(prompt).toContain("Continue the user's original request");
+    expect(prompt).toContain("Finish the user's most recent request");
+    expect(prompt).toContain("not a new instruction from the user");
     expect(prompt).not.toContain("Do not call additional tools");
   });
 

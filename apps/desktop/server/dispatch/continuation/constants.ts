@@ -1,0 +1,3 @@
+export const MAX_CONTINUATIONS = 20;
+export const MAX_STALLED_CONTINUATIONS = 3;
+export const MAX_SILENT_CONTINUATIONS = 8;
