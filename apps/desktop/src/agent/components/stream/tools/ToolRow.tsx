@@ -9,7 +9,8 @@ import { DiffPreview } from "./DiffPreview";
 import { DiffStat } from "./DiffStat";
 import { DisclosureHeader } from "../DisclosureHeader";
 import { diffTotalsOf } from "./tool-diff";
-import { actionOf, commandOf, rowSubject, rowVerb, runningLabel, actionColor } from "./tool-label";
+import { isForeignAgent } from "./foreign-agent";
+import { actionOf, commandOf, rowSubject, rowVerb, runningLabel } from "./tool-label";
 
 function outputOf(tool: ToolEntry): string {
   const cleaned = tool.output ? cleanOutput(tool.output) : "";
@@ -32,9 +33,10 @@ function ToolRowView({ tool, turn, onOpenDiff }: { readonly tool: ToolEntry; rea
     </>
   );
   return (
-    <li className="flex flex-col gap-2 px-3 py-2">
-      <DisclosureHeader open={open} onToggle={() => setOpen((value) => !value)} className={actionColor(actionOf(tool))}>
+    <li className="flex flex-col gap-2 py-1.5">
+      <DisclosureHeader open={open} onToggle={() => setOpen((value) => !value)}>
         {isRunning ? <Shimmer>{runningLabel(tool)}</Shimmer> : label}
+        {isForeignAgent(tool) && <span className="text-agent-warn"> not managed by Weave</span>}
       </DisclosureHeader>
       {open && isShell && (
         <CommandLine command={commandOf(tool)} className="max-h-80" />

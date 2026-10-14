@@ -1,13 +1,13 @@
-import { LIST_HINT } from "./constants";
-import { FlagField, TextField } from "./FormFields";
+import { MultiSelect, PATH_CHOICES } from "../employee-choices";
+import { FlagField } from "./FormFields";
 import type { FieldGroupProps } from "./types";
 
-export function PermissionFields({ register, control }: FieldGroupProps) {
+export function PermissionFields({ control }: FieldGroupProps) {
   return (
     <fieldset className="space-y-5">
       <legend className="mb-3 text-sm text-foreground">Permissions</legend>
-      <TextField register={register} name="writePaths" label="Can write" rows={3} hint={`${LIST_HINT} Globs inside the project. Tasks outside them are never assigned.`} />
-      <TextField register={register} name="readPaths" label="Can read" rows={2} hint={`${LIST_HINT} Shown to the employee; not enforced yet.`} />
+      <MultiSelect control={control} name="writePaths" label="Can write" hint="Globs inside the project. Tasks outside them are never assigned." options={PATH_CHOICES} placeholder="Choose what this employee can write" variant="menu" />
+      <MultiSelect control={control} name="readPaths" label="Can read" hint="Shown to the employee, not enforced yet." options={PATH_CHOICES} placeholder="Choose what this employee can read" variant="menu" />
       <div className="space-y-1">
         <FlagField control={control} name="canDeploy" label="Allow deployment commands" />
         <FlagField control={control} name="canUseNetwork" label="Allow network access" />

@@ -1,18 +1,14 @@
 import type { TaskDependency } from "@weave/protocol";
-import type { ScheduledState } from "../scheduler/index.ts";
+import { publishedOutputKey, type ScheduledState } from "../scheduler/index.ts";
 import { ENDED_STATES } from "./constants.ts";
 import type { DagTask, PhaseInput, TaskPhase, TaskPhaseView } from "./types.ts";
 
 export function outputKey(producer: string, output: string): string {
-  return `${producer}#${output}`;
+  return publishedOutputKey(producer, output);
 }
 
 function stateOf(states: ReadonlyMap<string, ScheduledState>, taskId: string): ScheduledState {
   return states.get(taskId) ?? "pending";
-}
-
-function gatesStart(dependency: TaskDependency): boolean {
-  return dependency.requiredOutputs.length === 0;
 }
 
 function dependenciesOf(task: DagTask): readonly TaskDependency[] {
@@ -26,9 +22,9 @@ function endedDependencies(task: DagTask, states: ReadonlyMap<string, ScheduledS
     .sort();
 }
 
-function unfinishedGates(task: DagTask, states: ReadonlyMap<string, ScheduledState>): readonly string[] {
+function unfinishedWholeTasks(task: DagTask, states: ReadonlyMap<string, ScheduledState>): readonly string[] {
   return dependenciesOf(task)
-    .filter((dependency) => gatesStart(dependency) && stateOf(states, dependency.task) !== "ok")
+    .filter((dependency) => dependency.requiredOutputs.length === 0 && stateOf(states, dependency.task) !== "ok")
     .map((dependency) => dependency.task)
     .sort();
 }
@@ -62,9 +58,9 @@ function phaseOf(task: DagTask, input: PhaseInput): TaskPhaseView {
     return { taskId, phase, waitingFor: missing, blockedBy: [] };
   }
 
-  const gates = unfinishedGates(task, states);
-  if (gates.length > 0) return { taskId, phase: "pending", waitingFor: gates, blockedBy: [] };
-  return { taskId, phase: "ready", waitingFor: missing, blockedBy: [] };
+  const waitingFor = [...unfinishedWholeTasks(task, states), ...missing];
+  if (waitingFor.length > 0) return { taskId, phase: "pending", waitingFor, blockedBy: [] };
+  return { taskId, phase: "ready", waitingFor: [], blockedBy: [] };
 }
 
 export function taskPhases(input: PhaseInput): readonly TaskPhaseView[] {

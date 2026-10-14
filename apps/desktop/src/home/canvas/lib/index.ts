@@ -34,6 +34,7 @@ export {
   snapPoint,
   snapTo,
 } from "./snapToGrid";
+export { legacyHomeAgentId } from "./legacy-home-agents";
 export {
   eventClientPoint,
   movedBeyondWidgetDragThreshold,

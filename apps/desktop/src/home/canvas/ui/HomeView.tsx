@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useAgents, type Agent } from '@/features/agents/hooks';
 import { GreeterWidget } from "@/features/onboarding";
+import { legacyHomeAgentId } from "@/home/canvas/lib";
 import { useHomeWidgetStore } from "@/home/canvas/stores";
 import { widgetSizeForInstance, type WidgetMutationHandlers } from "@/home/canvas/widgets";
 import { WidgetCanvas } from "./WidgetCanvas";
@@ -83,6 +84,18 @@ export function HomeView({
       seedLayout(agents, addWidget);
     }
   }, [loadStatus, instances.length, agents, addWidget]);
+
+  useEffect(() => {
+    if (loadStatus !== "ready" || agents.length === 0) return;
+    const knownIds = new Set(agents.map((agent) => agent.id));
+    for (const instance of instances) {
+      if (instance.type !== "agentPin") continue;
+      const agentId = typeof instance.state?.agentId === "string" ? instance.state.agentId : "";
+      const nextId = legacyHomeAgentId(agentId);
+      if (!nextId || nextId === agentId || !knownIds.has(nextId)) continue;
+      updateWidgetState(instance.id, { agentId: nextId });
+    }
+  }, [loadStatus, agents, instances, updateWidgetState]);
 
   const mutations = useMemo<WidgetMutationHandlers>(
     () => ({

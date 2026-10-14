@@ -113,7 +113,7 @@ export function UserMessage({
     // copy and re-send actions sit on one line below it.
     <div
       data-user-message
-      className="flex w-full flex-col items-end gap-1.5"
+      className="group flex w-full flex-col items-end gap-1.5"
     >
       {!editing && images && images.length > 0 && (
         <div className="flex max-w-[80%] flex-wrap justify-end gap-2">
@@ -208,7 +208,7 @@ export function UserMessage({
         <div
           className={cn(
             "flex w-fit min-w-0 max-w-[80%] flex-col gap-1.5",
-            "rounded-2xl px-4 py-2.5",
+            "rounded-2xl px-3.5 py-2",
             "bg-agent-surface-hover text-agent-text-bright",
           )}
         >
@@ -248,7 +248,7 @@ export function UserMessage({
       )}
 
       {!editing && (
-        <div className="flex items-center gap-1 pr-1 text-agent-text-faint text-sm">
+        <div className="flex items-center gap-1 pr-1 text-agent-text-faint text-sm opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
           {createdAt !== undefined && (
             <span className="mr-1">
               <SentAt createdAt={createdAt} />

@@ -1,11 +1,9 @@
-import { renderHandoffNotes, TEAM_HANDOFF_PROMPT_VERSION, type HandoffVerdict, type Ledger, type WorktreeResult } from "@weave/core";
+import { judgeHandoff, renderHandoffNotes, TEAM_HANDOFF_PROMPT_VERSION, type HandoffVerdict, type Ledger, type TeamHandoff, type WorktreeResult } from "@weave/core";
 import type { PromptImageData, ServerMessage } from "../shared/index.ts";
-import { commitQuestion } from "./commit-question.ts";
-import { KEPT_IN_CHAT_MESSAGE } from "./constants.ts";
 import type { TeamRunStart } from "./types.ts";
 
 type TeamVerdict = Extract<HandoffVerdict, { kind: "team" }>;
-type Outcome = "invalid" | "team" | "kept-in-chat" | "commit-failed";
+type Outcome = "invalid" | "team" | "commit-failed";
 
 export interface SettleHandoffInput {
   readonly verdict: HandoffVerdict;
@@ -15,8 +13,14 @@ export interface SettleHandoffInput {
   readonly ledger: Ledger;
   readonly send: (message: ServerMessage) => void;
   readonly startTeamRun: (start: TeamRunStart) => void;
-  readonly confirmCommit: (message: string) => Promise<boolean>;
   readonly commitWork: () => Promise<WorktreeResult<string>>;
+  readonly accepted?: TeamHandoff | null;
+}
+
+function requestForWorkers(original: string, handoff: TeamHandoff): string {
+  if (handoff.remaining.length === 0) return original;
+  const pieces = handoff.remaining.map((item) => `- ${item}`);
+  return ["Do only the remaining work below. The chat agent already started and is still working on its own files. Do not redo what it finished.", ...pieces].join("\n");
 }
 
 function logDecision(ledger: Ledger, outcome: Outcome, detail: string): void {
@@ -25,11 +29,6 @@ function logDecision(ledger: Ledger, outcome: Outcome, detail: string): void {
 
 async function isReadyToStart(input: SettleHandoffInput, verdict: TeamVerdict): Promise<boolean> {
   if (verdict.uncommitted.length === 0) return true;
-  if (!(await input.confirmCommit(commitQuestion(verdict.handoff, verdict.uncommitted)))) {
-    logDecision(input.ledger, "kept-in-chat", verdict.handoff.reason);
-    input.send({ type: "error", message: KEPT_IN_CHAT_MESSAGE });
-    return false;
-  }
   const committed = await input.commitWork();
   if (committed.ok) return true;
   logDecision(input.ledger, "commit-failed", committed.reason);
@@ -37,19 +36,39 @@ async function isReadyToStart(input: SettleHandoffInput, verdict: TeamVerdict): 
   return false;
 }
 
+export async function releaseToTeam(input: Omit<SettleHandoffInput, "verdict"> & {
+  readonly readText: () => string;
+  readonly readUncommitted: () => Promise<readonly string[]>;
+}): Promise<void> {
+  const uncommitted = [...(await input.readUncommitted())].sort();
+  const verdict = input.accepted
+    ? { kind: "team" as const, handoff: input.accepted, uncommitted }
+    : judgeHandoff({ text: input.readText(), uncommitted });
+  await settleHandoff({
+    verdict,
+    request: input.request,
+    estimateNotes: input.estimateNotes,
+    images: input.images,
+    ledger: input.ledger,
+    send: input.send,
+    startTeamRun: input.startTeamRun,
+    commitWork: input.commitWork,
+  });
+}
+
 export async function settleHandoff(input: SettleHandoffInput): Promise<void> {
   const { verdict } = input;
   if (verdict.kind === "none") return;
   if (verdict.kind === "invalid") {
     logDecision(input.ledger, "invalid", verdict.issue);
-    input.send({ type: "error", message: `The agent tried to ask a team to finish this, but ${verdict.issue}. It stays in this chat; send it with /parallel to run it with a team.` });
+    input.send({ type: "error", message: `The agent tried to add workers, but ${verdict.issue}. This chat keeps the work.` });
     return;
   }
   if (!(await isReadyToStart(input, verdict))) return;
   logDecision(input.ledger, "team", verdict.handoff.reason);
   const plannerNotes = [renderHandoffNotes(verdict.handoff), input.estimateNotes].filter((notes) => notes !== "").join("\n\n");
   input.startTeamRun({
-    request: input.request,
+    request: requestForWorkers(input.request, verdict.handoff),
     routeReason: verdict.handoff.reason,
     plannerNotes,
     ...(input.images && input.images.length > 0 ? { images: input.images } : {}),

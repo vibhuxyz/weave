@@ -1,4 +1,4 @@
-import type { TeamEstimate } from "@weave/core";
+import type { TeamEstimate, TeamHandoff } from "@weave/core";
 
 export interface ToolResult {
   readonly text: string;
@@ -22,4 +22,12 @@ export interface TeamToolRegistry {
 export interface TurnEstimates {
   readonly clear: () => void;
   readonly latest: () => TeamEstimate | null;
+}
+
+export interface TurnHandoff {
+  readonly allowHandoff: (open: boolean) => void;
+  readonly clearHandoff: () => void;
+  readonly submitHandoff: (args: unknown) => ToolResult;
+  readonly currentHandoff: () => TeamHandoff | null;
+  readonly whenHandoff: (listener: () => void) => () => void;
 }

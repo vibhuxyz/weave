@@ -5,6 +5,10 @@ export interface TeamHandoff {
   readonly findings: readonly string[];
 }
 
+export type HandoffParse =
+  | { readonly ok: true; readonly handoff: TeamHandoff }
+  | { readonly ok: false; readonly issues: readonly string[] };
+
 export type HandoffReading =
   | { readonly kind: "none" }
   | { readonly kind: "invalid"; readonly issue: string }

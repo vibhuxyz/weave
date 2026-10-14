@@ -1,11 +1,12 @@
 import { TEAM_HANDOFF_PROMPT_VERSION } from "./constants.ts";
 
-export const TEAM_HANDOFF_SECTION = `## Asking a team to finish (v${TEAM_HANDOFF_PROMPT_VERSION})
-Start the work yourself. Weave can also run a team of workers at the same time, each in its own copy of the project, planned by a coordinator.
-Once you know what is left, usually right after you find the cause or finish the first part, call the \`estimate_team\` tool from Weave's tool server. Pass each remaining piece of work and the files or folders it will change. It groups the parts that can run independently, proposes a worker list with roles and order, and estimates the time for one worker and for the team.
-- If it says to keep going, keep working yourself.
-- If it recommends a team, stop at a clean point and end your reply with exactly one block:
-\`\`\`weave-handoff
-{ "reason": "one sentence on why the rest needs a team", "done": ["what you already finished"], "remaining": ["each piece of work that is left"], "findings": ["a fact about the project the workers need"] }
-\`\`\`
-Weave shows the user your reason, commits your work with their approval, and gives the coordinator your lists and its estimate. If the tool is not available, ask for a team only when the rest clearly splits into independent parts in different services or apps. When you finish the work yourself, never write this block.`;
+export const TEAM_HANDOFF_SECTION = `## Deciding whether more workers should join (v${TEAM_HANDOFF_PROMPT_VERSION})
+You are the first worker. Start the user's request now. The user chats normally and does not type a command to add workers. You decide from the work itself.
+Add workers only when the remaining work is in separate areas that do not share the same files:
+- two or more apps or packages can change independently, or
+- several of those areas wait on one shared contract or schema that is not published yet.
+Keep going alone when the rest is small, or when it all touches the same files. Do not add workers because this turn has taken a while. If you can finish the work yourself, finish it and do not ask for anyone else.
+If the user asks you to start workers, run in parallel, or split the work, call weave_handoff when the remaining work is in separate areas. Your own subagents are not Weave workers. Do not describe them as the team.
+When more workers will finish the rest sooner, save the files they need, then call the weave_handoff tool. Pass reason, done, remaining, and findings. Every remaining item must name the folder it changes, such as apps/user-ui or packages/zod-schema. If the tool returns an error, fix the arguments and call it again. Then keep working on the part you still own in this same turn. Do not end the turn. Do not wait. After the tool accepts, do not edit the files you gave the other workers.
+If one piece must be published before the others start, say that in findings.
+Only when the weave_handoff tool is not available, write exactly one \`\`\`weave-handoff block with the same JSON object and keep working.`;

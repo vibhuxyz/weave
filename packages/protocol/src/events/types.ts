@@ -1,5 +1,5 @@
 import type { CoordinationEvent, ResourceRef } from "../coordination/index.ts";
-import type { CheckpointReason } from "../continuation/index.ts";
+import type { CheckpointReason, ExecutionPhase, RecoveryAction, RecoveryReason } from "../continuation/index.ts";
 import type { TaskComplexity } from "../task/index.ts";
 import type { VerificationRung } from "../verification/index.ts";
 import type { BaseEvent } from "./base.ts";
@@ -211,6 +211,8 @@ export type WeaveEvent =
   | (BaseEvent & { type: "plan.triaged"; route: "fast" | "plan"; reason: string; plannerEngineId: string | null; reviewerEngineId: string | null })
   | (BaseEvent & { type: "handoff.decided"; outcome: "invalid" | "team" | "kept-in-chat" | "commit-failed"; detail: string | null; promptVersion: number })
   | (BaseEvent & { type: "plan.reviewed"; attempts: number; classification: PlanClassificationFact | null; warnings: string[]; critique: PlanCritiqueFact | null })
+  | (BaseEvent & { type: "plan.rejected"; reasons: string[]; willRepair: boolean })
+  | (BaseEvent & { type: "task.retrying"; taskId: string; attempt: number; maxAttempts: number; delayMs: number; reason: string })
   | (BaseEvent & {
       type: "plan.created";
       kind: "existing" | "greenfield";
@@ -285,6 +287,15 @@ export type WeaveEvent =
   | (BaseEvent & { type: "employee.assigned"; taskId: string; employeeId: string | null; score: number; reasons: string[] })
   | (BaseEvent & { type: "employee.verified"; taskId: string; employeeId: string; ok: boolean; verdict?: "passed" | "failed" | "unverified"; rungs: { rung: VerificationRung; ok: boolean; wallMs: number }[]; detail: string })
   | (BaseEvent & { type: "employee.memory.recorded"; taskId: string; employeeId: string; entries: number })
+  | (BaseEvent & {
+      type: "recovery.decided";
+      workSessionId: string;
+      attempt: number;
+      reason: RecoveryReason;
+      phase: ExecutionPhase;
+      action: RecoveryAction;
+      checkpointId?: string;
+    })
   | LifecycleEvent;
 
 export type WeaveEventType = WeaveEvent["type"];

@@ -74,7 +74,10 @@ Flat names below (`session.ts`, `permissions.ts`, `spawn.ts`) are the folders `s
   folds `filesystem.write` into `TaskContract.allowedPaths`; `withPolicy` adds
   command-pattern checks for `git.commit` and `deployment.allowed` on top of a base
   policy (`confineToTaskDir` by default). `network.allowed: false` rejects network
-  commands. Reads of home skill files are allowed after the task directory check fails.
+  commands. A read-only shell command may read home skill files and markdown notes
+  under `~/.grok/memory-v2` after the task directory check fails.
+  Accept-edits, auto, dont-ask, and bypass-permissions approve the work that
+  already cleared that check, including edits and new files, without a card.
   Writes stay inside the task directory. See [PRODUCT](PRODUCT.md).
 - `supervisor.ts` — `EngineSupervisor`. Keeps warm engine child processes and manages
   per-session engine switches with prompt supersession.
@@ -475,8 +478,10 @@ Updated since this section was first written:
   `network.allowed: false` rejects commands that match the network pattern in
   that file (curl, wget, ssh, git push/pull/fetch/clone, package installs, and
   the listed deploy commands). That is command matching. It is not a process
-  sandbox. Writes stay inside the task directory. Reads of home skill files
-  are allowed after that check fails. See [PRODUCT](PRODUCT.md).
+  sandbox. Writes stay inside the task directory. A read-only shell command may
+  read home skill files and markdown notes under `~/.grok/memory-v2` after that
+  check fails.
+  See [PRODUCT](PRODUCT.md).
 
 Still open, and not an oversight:
 

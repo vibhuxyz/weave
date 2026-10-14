@@ -7,6 +7,7 @@ export interface WorkerPane {
   readonly status: LaneStatus;
   readonly block: StreamBlock | null;
   readonly waitingFor: string | null;
+  readonly activity: string | null;
 }
 
 export interface WorkerPanes {
@@ -32,7 +33,7 @@ function waitingReason(lane: Lane): string | null {
 }
 
 function paneOf(lane: Lane, block: StreamBlock | null): WorkerPane {
-  return { taskId: lane.taskId, title: lane.title, status: lane.status, block, waitingFor: waitingReason(lane) };
+  return { taskId: lane.taskId, title: lane.title, status: lane.status, block, waitingFor: waitingReason(lane), activity: lane.activity };
 }
 
 /**

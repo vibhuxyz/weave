@@ -5,12 +5,12 @@ import { concurrencyFor, decide, type Decision, type WorkerCount } from "../deci
 import { availableRungs, intake } from "../intake/index.ts";
 import type { PlannedTask, ProjectKind } from "../planner/index.ts";
 import { engineWorker, enginesFor, runPlan, type Reviser, type RunPlanResult } from "../run-plan/index.ts";
-import type { RunWorker } from "../pool/index.ts";
+import type { InspectHarvest, PoolControls, PoolSession, RunWorker } from "../pool/index.ts";
 import { weaveDirFor } from "../runner/index.ts";
 import { choosePlanningEngines, readHistory, type EngineCandidate } from "../adaptive/index.ts";
 import type { EmployeeRegistry, PreparedEmployees } from "../employees/index.ts";
 import { Ledger, newRunId, once } from "../shared/index.ts";
-import { buildProjectModel, queryProject, renderProjectContext, type ProjectModel } from "../context/index.ts";
+import { buildProjectModel, type ProjectModel } from "../context/index.ts";
 import { buildExecutionPlan, executionPlanEvent } from "../execution-plan/index.ts";
 import { checkCleanBase, describeUntrackedFiles } from "../worktree/index.ts";
 import { adaptiveSetup, engineCandidates, type AdaptiveSetup } from "./adaptive-setup.ts";
@@ -22,6 +22,7 @@ import { fastPlan, planTasks } from "./planning.ts";
 import { coordinatorReviser } from "../replan/index.ts";
 import { chosenEngineRoutes, countWorkers } from "./team/index.ts";
 import { detectProjectKind } from "./project-kind.ts";
+import { runExisting } from "./progressive/index.ts";
 import type { PlanAndRunOptions, PlanAndRunResult, PlanningOutcome, TurnRunner } from "./types.ts";
 
 const DEFAULT_MAX_WORKERS = 4;
@@ -89,13 +90,12 @@ interface PlanSources {
   readonly engineCandidates: readonly EngineCandidate[];
 }
 
-async function plan(options: PlanAndRunOptions, context: PlanContext, sources: PlanSources): Promise<PlanningOutcome> {
+async function plan(options: PlanAndRunOptions, context: PlanContext, sources: PlanSources, notes?: string): Promise<PlanningOutcome> {
   const engines = choosePlanningEngines(sources.engineCandidates);
   const fast = options.images?.length ? null : fastPlan({ request: options.request, kind: context.kind, model: sources.model, repoRoot: context.repoRoot, ledger: context.ledger, engines, preflightWarnings: context.preflightWarnings });
   if (fast) return fast;
-  const projectContext = sources.model ? renderProjectContext(queryProject(sources.model, options.request)) : null;
   const withTurn = (runTurn: TurnRunner, reviewTurn: TurnRunner | undefined) =>
-    planTasks({ ...context, request: options.request, projectContext, employeeRoster: sources.roster, employeeIds: sources.employeeIds, engineCandidates: sources.engineCandidates, runTurn, reviewTurn, signal: options.signal });
+    planTasks({ ...context, request: options.request, model: sources.model, planningBudgetMs: options.planningBudgetMs, employeeRoster: sources.roster, employeeIds: sources.employeeIds, engineCandidates: sources.engineCandidates, runTurn, reviewTurn, signal: options.signal, notes });
   if (options.runTurn) return withTurn(options.runTurn, options.reviewTurn);
   return withPlannerWorkspace({
     ...context,
@@ -109,7 +109,7 @@ async function plan(options: PlanAndRunOptions, context: PlanContext, sources: P
 
 type Planned = Extract<PlanningOutcome, { status: "planned" }>;
 
-interface Staffing {
+export interface Staffing {
   readonly tasks: readonly PlannedTask[];
   readonly decision: Decision;
   readonly count: WorkerCount;
@@ -123,7 +123,7 @@ interface StaffContext extends PlanContext {
   readonly engineCandidates: readonly EngineCandidate[];
 }
 
-async function staff(options: PlanAndRunOptions, context: StaffContext, planned: Planned): Promise<Staffing> {
+async function staff(options: PlanAndRunOptions, context: StaffContext, planned: Planned, requestedWorkers?: number): Promise<Staffing> {
   const { weaveDir, ledger, kind, rungs } = context;
   const history = once(() => readHistory(weaveDir, { excludeRunIds: [ledger.runId] }));
   const configuredEngines = enginesFor(options.config);
@@ -136,8 +136,9 @@ async function staff(options: PlanAndRunOptions, context: StaffContext, planned:
   const adaptive = options.adaptive
     ? await adaptiveSetup({ adaptive: options.adaptive, config: options.config, weaveDir, ledger, tasks, baseline, maxWorkers, history })
     : null;
-  const decision = adaptive?.decision ?? baseline;
-  const requested = adaptive?.concurrency ?? concurrencyFor(decision, tasks.length, maxWorkers);
+  const expanded = requestedWorkers !== undefined && requestedWorkers > 1;
+  const decision = adaptive?.decision ?? (expanded ? { mode: "parallel" as const, reason: "disjoint-paths" as const } : baseline);
+  const requested = adaptive?.concurrency ?? (expanded ? requestedWorkers : concurrencyFor(decision, tasks.length, maxWorkers));
   const count = countWorkers({
     ledger,
     requested,
@@ -202,21 +203,32 @@ function reviserFor(options: PlanAndRunOptions, context: ExecuteContext, runWork
   });
 }
 
-function execute(options: PlanAndRunOptions, context: ExecuteContext): Promise<RunPlanResult> {
+interface ExecuteHooks {
+  readonly controls?: PoolControls;
+  readonly attachSession?: (session: PoolSession) => void;
+  readonly inspectHarvest?: InspectHarvest;
+  readonly routes?: ReadonlyMap<string, readonly string[]>;
+  readonly briefings?: ReadonlyMap<string, string>;
+  readonly modelHolder?: { model: ProjectModel | null };
+}
+
+function execute(options: PlanAndRunOptions, context: ExecuteContext, hooks?: ExecuteHooks): Promise<RunPlanResult> {
   const { repoRoot, weaveDir, ledger, planned, staffing } = context;
   const { adaptive, employees, tasks } = staffing;
+  const modelHolder = hooks?.modelHolder ?? { model: context.model };
   const runWorker = options.runWorker ?? engineWorker(options.config, options.policy, {
     weaveDir,
-    model: context.model,
-    routes: staffing.routes,
-    briefings: employees?.briefings,
+    get model() { return modelHolder.model; },
+    routes: hooks?.routes ?? staffing.routes,
+    briefings: hooks?.briefings ?? employees?.briefings,
     ...(options.images?.length ? { images: options.images } : {}),
   });
   const drift = planned.contract ? contractDriftInspector(planned.contract, ledger) : undefined;
+  const inspection = employees ? withEmployeeVerification(employees, ledger, drift) : drift;
   return runPlan({
     tasks,
     repoRoot,
-    concurrency: staffing.count.workers,
+    concurrency: hooks?.controls?.concurrency ?? staffing.count.workers,
     ledger,
     baseRef: planned.baseRef,
     config: options.config,
@@ -225,9 +237,14 @@ function execute(options: PlanAndRunOptions, context: ExecuteContext): Promise<R
     verify: options.verify,
     signal: options.signal,
     shouldInstall: options.shouldInstall,
-    budget: adaptive?.budget,
-    priorityOf: adaptive ? (taskId) => adaptive.priorities.get(taskId) ?? 0 : undefined,
-    inspectHarvest: employees ? withEmployeeVerification(employees, ledger, drift) : drift,
+    budget: hooks?.controls ? undefined : adaptive?.budget,
+    priorityOf: hooks?.controls ? undefined : (adaptive ? (taskId) => adaptive.priorities.get(taskId) ?? 0 : undefined),
+    inspectHarvest: hooks?.inspectHarvest ?? inspection,
+    controls: hooks?.controls,
+    attachSession: (session) => {
+      hooks?.attachSession?.(session);
+      options.onPoolSession?.(session);
+    },
     revise: reviserFor(options, context, runWorker),
   });
 }
@@ -241,11 +258,26 @@ export async function planAndRun(options: PlanAndRunOptions): Promise<PlanAndRun
   const [kind, detected, untracked] = await Promise.all([options.kind ?? detectProjectKind(repoRoot), intake(repoRoot), describeUntrackedFiles(repoRoot, weaveDir)]);
   const context: PlanContext = { repoRoot, weaveDir, ledger, kind, rungs: availableRungs(detected), preflightWarnings: untracked ? [untracked] : [] };
 
+  const candidates = engineCandidates(options.config);
+  if (kind !== "greenfield") {
+    return runExisting({
+      options,
+      context,
+      candidates,
+      plan: (sources, notes) => plan(options, context, sources, notes),
+      staff: (planned, workers, registry) => staff(options, { ...context, registry, engineCandidates: candidates }, planned, workers),
+      execute: (planned, staffing, hooks) => execute(options, { repoRoot, weaveDir, ledger, model: hooks.modelHolder.model, planned, staffing, engineCandidates: candidates }, hooks),
+      log: (staffing, planned) => {
+        const engines = enginesFor(options.config);
+        logPlan(ledger, kind, staffing, planned, engines);
+        logExecutionPlan(ledger, staffing, engines);
+      },
+    });
+  }
   const [model, roster] = await Promise.all([
     projectModelFor(repoRoot, weaveDir, kind),
     options.employees ? loadRoster(options.employees, context) : null,
   ]);
-  const candidates = engineCandidates(options.config);
   const planned = await plan(options, context, { model, roster: roster?.roster ?? null, employeeIds: roster?.registry.employees.map((employee) => employee.id) ?? null, engineCandidates: candidates });
   if (options.signal?.aborted) return { status: "refused", reason: RUN_STOPPED };
   if (planned.status !== "planned") return planned;

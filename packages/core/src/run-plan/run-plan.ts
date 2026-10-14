@@ -84,15 +84,17 @@ export async function runPlan(options: RunPlanOptions): Promise<RunPlanResult> {
       tasks: roundTasks, repoRoot, weaveDir, ledger, shouldInstall, runWorker, attempt,
       baseCommit: roundBase,
       inspectHarvest: options.inspectHarvest,
-      concurrency: options.concurrency,
+      concurrency: options.controls?.concurrency ?? options.concurrency,
       signal: options.signal,
       budget: options.budget,
       priorityOf: options.priorityOf,
+      controls: options.controls,
+      attachSession: options.attachSession,
     }),
   });
 
   const isCancelled = options.signal?.aborted ?? false;
-  const candidates = mergeCandidates(tasks, pool);
+  const candidates = mergeCandidates(pool.contracts ?? tasks, pool);
   const integration = isCancelled || candidates.length === 0
     ? null
     : await integrate({ repoRoot, weaveDir, ledger, baseCommit, candidates, shouldInstall, verify: options.verify ?? verifyWithLadder });

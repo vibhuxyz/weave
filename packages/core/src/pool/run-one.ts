@@ -26,13 +26,14 @@ interface HarvestOutcome {
   readonly problem: string | null;
 }
 
-function attemptIdOf(task: TaskContract, ctx: PoolContext): string {
-  return ctx.attempt === 0 ? task.id : `${task.id}.r${ctx.attempt}`;
+function attemptIdOf(task: TaskContract, ctx: PoolContext, retryIndex: number): string {
+  const base = ctx.attempt === 0 ? task.id : `${task.id}.r${ctx.attempt}`;
+  return retryIndex === 0 ? base : `${base}.retry${retryIndex}`;
 }
 
 async function openWorktree(task: TaskContract, ctx: PoolContext): Promise<Worktree | string> {
   try {
-    const worktreeId = attemptIdOf(task, ctx);
+    const worktreeId = attemptIdOf(task, ctx, ctx.retryIndex ?? 0);
     const worktree = await createWorktree({ repoRoot: ctx.repoRoot, weaveDir: ctx.weaveDir, taskId: worktreeId, runId: ctx.ledger.runId, baseRef: ctx.baseCommit });
     ctx.ledger.append("worktree.created", { taskId: task.id, path: worktree.path, branch: worktree.branch, baseCommit: worktree.baseCommit });
     return worktree;
@@ -84,7 +85,7 @@ async function harvestShared(task: TaskContract, ctx: PoolContext, before: Set<s
   const otherTasks = ctx.coordinator.tasks().filter((other) => other.id !== task.id);
   const unclaimed = dirty.filter((path) => !before.has(path) && !isInScope(task, path) && !otherTasks.some((other) => isInScope(other, path)));
   if (ctx.sharedBase === null) return { harvest: null, branch: null, problem: `${ctx.repoRoot} has no base commit to record ${task.id}'s work on` };
-  const branch = taskBranchName(ctx.ledger.runId, attemptIdOf(task, ctx));
+  const branch = taskBranchName(ctx.ledger.runId, attemptIdOf(task, ctx, ctx.retryIndex ?? 0));
   const mine = dirty.filter((path) => isInScope(task, path));
   const snapshot = await snapshotFiles({ repoRoot: ctx.repoRoot, baseCommit: ctx.sharedBase, branch, files: [...mine, ...unclaimed], message: `weave: ${task.id}` });
   if (!snapshot.ok) return { harvest: null, branch: null, problem: snapshot.reason };
@@ -118,14 +119,23 @@ async function teardown(task: TaskContract, worktree: Worktree | null, ctx: Pool
 
 type RanTaskReport = PoolTaskReport & { readonly status: WorkerOutcome["status"] };
 
-function settle(ctx: PoolContext, report: RanTaskReport): PoolTaskReport {
+function settle(ctx: PoolContext, report: RanTaskReport, quiet: boolean): PoolTaskReport {
+  if (quiet) return report;
   const { taskId, status, reason, installMs, agentMs, wallMs } = report;
   ctx.ledger.append("pool.task.settled", { taskId, status, reason, installMs, agentMs, wallMs, ...(report.isRejected ? { rejected: true } : {}) });
   return report;
 }
 
-export async function runOneTask(task: TaskContract, ctx: PoolContext, isolate: boolean): Promise<PoolTaskReport> {
+export interface AttemptOptions {
+  readonly isolate: boolean;
+  readonly quiet: boolean;
+  readonly retryIndex: number;
+}
+
+export async function attemptTask(task: TaskContract, parent: PoolContext, options: AttemptOptions): Promise<PoolTaskReport> {
+  const ctx: PoolContext = { ...parent, retryIndex: options.retryIndex };
   const started = Date.now();
+  const isolate = options.isolate;
   const base = { taskId: task.id, branch: null, harvest: null, finalMessage: null, installMs: 0, agentMs: 0, ranIn: isolate ? ("worktree" as const) : ("shared" as const), isRejected: false };
 
   let worktree: Worktree | null = null;
@@ -134,7 +144,7 @@ export async function runOneTask(task: TaskContract, ctx: PoolContext, isolate: 
 
   if (isolate) {
     const wt = await openWorktree(task, ctx);
-    if (typeof wt === "string") return settle(ctx, { ...base, status: "failed", reason: wt, wallMs: Date.now() - started });
+    if (typeof wt === "string") return settle(ctx, { ...base, status: "failed", reason: wt, wallMs: Date.now() - started }, options.quiet);
     worktree = wt;
     cwd = worktree.path;
   }
@@ -142,7 +152,7 @@ export async function runOneTask(task: TaskContract, ctx: PoolContext, isolate: 
   try {
     const installed = worktree ? await install(task, worktree, ctx) : { ms: 0, problem: null };
     const withInstall = { ...base, branch: worktree?.branch ?? null, installMs: installed.ms };
-    if (installed.problem) return settle(ctx, { ...withInstall, status: "failed", reason: installed.problem, wallMs: Date.now() - started });
+    if (installed.problem) return settle(ctx, { ...withInstall, status: "failed", reason: installed.problem, wallMs: Date.now() - started }, options.quiet);
 
     const worked = await work(task, cwd, ctx);
     const harvested = worktree ? await harvestIsolated(task, worktree, ctx) : await harvestShared(task, ctx, before);
@@ -150,7 +160,7 @@ export async function runOneTask(task: TaskContract, ctx: PoolContext, isolate: 
     const isRejected = worked.outcome.status === "ok" && harvested.problem !== null;
     const status = isRejected ? "failed" : worked.outcome.status;
     const finalMessage = worked.outcome.finalMessage ?? null;
-    return settle(ctx, { ...withInstall, branch: harvested.branch, agentMs: worked.ms, harvest: harvested.harvest, finalMessage, status, isRejected, reason: reason ?? null, wallMs: Date.now() - started });
+    return settle(ctx, { ...withInstall, branch: harvested.branch, agentMs: worked.ms, harvest: harvested.harvest, finalMessage, status, isRejected, reason: reason ?? null, wallMs: Date.now() - started }, options.quiet);
   } finally {
     await teardown(task, worktree, ctx);
   }

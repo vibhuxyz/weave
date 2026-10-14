@@ -25,10 +25,17 @@ export interface VerificationStep {
   readonly cwd: string;
 }
 
+export interface ProjectAnchor {
+  readonly file: string;
+  readonly symbol: string;
+}
+
 export interface ProjectAnswer {
   readonly request: string;
   readonly terms: readonly string[];
+  readonly packageManager: string | null;
   readonly application: { readonly name: string; readonly dir: string; readonly kind: string } | null;
+  readonly anchors: readonly ProjectAnchor[];
   readonly files: readonly RankedFile[];
   readonly symbols: readonly RankedSymbol[];
   readonly dependencies: {

@@ -1,4 +1,4 @@
-import { commitAll, judgeHandoff, renderEstimateNotes, titleFromPrompt, readGitStatus, TEAM_HANDOFF_SECTION } from "@weave/core";
+import { titleFromPrompt, readGitStatus, TEAM_HANDOFF_SECTION, unclosedHandoff } from "@weave/core";
 import { EngineStalledError } from "@weave/agent";
 import { resolveSessionPlugins, composeSystemPrompt, buildPromptBlocks, parsePersonaIds } from "../chat/index.ts";
 import { compactBeforePrompt } from "../compaction/index.ts";
@@ -10,8 +10,10 @@ import type { Ledger, TasksStore, NormalizedPlugin } from "@weave/core";
 import type { ProjectChats, SkillSelector } from "../chat/index.ts";
 import type { DecisionLog } from "../decisions/index.ts";
 import { errorMessage } from "../shared/index.ts";
-import { CHAT_TASK_ID, promptMayHandOff, settleHandoff, TEAM_RUN_COMMIT_MESSAGE, watchTurn, type TeamRunStart } from "../team-handoff/index.ts";
-import type { TurnEstimates } from "../team-tools/index.ts";
+import { continuationPrompt, promptUntilAnswer, watchUnfinished } from "./continue-unfinished.ts";
+import { createRecoveryContext, persistRecoveryDecision } from "./recovery-helper.ts";
+import { CHAT_TASK_ID, handoffWhenClosed, promptMayHandOff, watchTurn, type TeamRunStart } from "../team-handoff/index.ts";
+import type { TurnEstimates, TurnHandoff } from "../team-tools/index.ts";
 
 export interface PromptOptions {
   readonly msg: Extract<ClientMessage, { readonly type: "prompt" }>;
@@ -30,8 +32,7 @@ export interface PromptOptions {
   readonly send: (msg: ServerMessage) => void;
   readonly sendChats: () => Promise<void>;
   readonly startTeamRun: (start: TeamRunStart) => void;
-  readonly confirmTeamCommit: (message: string) => Promise<boolean>;
-  readonly teamEstimates: TurnEstimates;
+  readonly teamEstimates: TurnEstimates & TurnHandoff;
 }
 
 export async function handlePrompt({
@@ -51,9 +52,9 @@ export async function handlePrompt({
   send,
   sendChats,
   startTeamRun,
-  confirmTeamCommit,
   teamEstimates,
 }: Readonly<PromptOptions>): Promise<void> {
+  sessionMgr.cancelRequested = false;
   if (!sessionMgr.supervisor) {
     send({
       type: "error",
@@ -128,8 +129,21 @@ export async function handlePrompt({
   sessionMgr.pendingPreamble = null;
 
   const blocks = buildPromptBlocks(outgoing, msg.images);
-  if (canHandOff) teamEstimates.clear();
+  if (canHandOff) {
+    teamEstimates.clear();
+    teamEstimates.clearHandoff();
+    teamEstimates.allowHandoff(true);
+  }
   const watch = canHandOff ? watchTurn(ledger, CHAT_TASK_ID) : null;
+  const finishHandoff = watch === null ? null : handoffWhenClosed({
+    watch, projectDir, request: text, images: msg.images, ledger, send, startTeamRun, teamEstimates,
+  });
+  const stopHandoffListen = watch === null ? null : teamEstimates.whenHandoff(() => { void finishHandoff?.(); });
+  const warnUnclosed = (): void => {
+    if (watch === null || teamEstimates.currentHandoff() !== null || !unclosedHandoff(watch.read())) return;
+    send({ type: "error", message: "The agent opened a weave-handoff block and never closed it, so no workers were added. This chat keeps the work." });
+  };
+  const unfinished = watchUnfinished(ledger, CHAT_TASK_ID);
 
   try {
     if (isFirstPrompt) {
@@ -150,18 +164,47 @@ export async function handlePrompt({
       });
     }
 
-    const { stopReason, usage } = await sessionMgr.supervisor.current.prompt([...blocks]);
-    const turnText = watch?.read() ?? null;
+    const session = sessionMgr.supervisor.current;
+    const recCtx = createRecoveryContext(sessionMgr, projectDir, continuationTaskId, ledger, tasksStore, session.sessionId);
+    const finished = await promptUntilAnswer({
+      run: (promptBlocks) => session.prompt([...promptBlocks]),
+      first: blocks,
+      followUp: (attempt) => buildPromptBlocks(continuationPrompt(attempt)),
+      activity: unfinished,
+      isCancelled: () => sessionMgr.cancelRequested,
+      beforeContinuation: (attempt) =>
+        persistRecoveryDecision(recCtx, {
+          checkpointReason: "provider_limit",
+          attempt,
+          reason: "turn_ended_without_final",
+          phase: "executing",
+          action: "resume",
+        }).then(() => {}),
+    });
+    const { stopReason, usage } = finished.result;
     watch?.close();
+    if (finished.stillUnfinished) {
+      await persistRecoveryDecision(recCtx, {
+        checkpointReason: "max_turns",
+        attempt: finished.continuations,
+        reason: finished.timedOut ? "turn_budget_exhausted" : "finalization_failed",
+        phase: "blocked",
+        action: "escalate",
+      });
+      await tasksStore.endAttempt(continuationTaskId, ledger.seq, "max_turns").catch(() => {});
+      send({ type: "error", message: "The engine stopped before it finished the answer. Progress has been preserved. Send another message and it will continue from here." });
+    } else {
+      await tasksStore.complete(continuationTaskId, ledger.seq).catch(() => {});
+      ledger.append("task.finished", {
+        taskId: "desktop",
+        status: "ok",
+        stopReason,
+        wallMs: 0,
+      });
+    }
 
     send({ type: "turn-end", stopReason, usage });
-    compaction.recordTurnCompleted(sessionMgr.supervisor.current.sessionId);
-    ledger.append("task.finished", {
-      taskId: "desktop",
-      status: "ok",
-      stopReason,
-      wallMs: 0,
-    });
+    compaction.recordTurnCompleted(session.sessionId);
 
     const sessionId = sessionMgr.supervisor.current.sessionId;
     const recorded = chats.record(sessionId, {
@@ -175,18 +218,14 @@ export async function handlePrompt({
       chats.rememberLastSession(sessionId);
     }
     await sendChats();
+    await finishHandoff?.().catch((error: unknown) => send({ type: "error", message: `Cannot hand this to a team: ${errorMessage(error)}` }));
+    warnUnclosed();
     const git = await readGitStatus(projectDir);
     send({ type: "git-status", git });
-    if (turnText !== null) {
-      const verdict = judgeHandoff({ text: turnText, uncommitted: git.changes.map((change) => change.path) });
-      const commitWork = () => commitAll(projectDir, TEAM_RUN_COMMIT_MESSAGE);
-      const estimate = teamEstimates.latest();
-      const estimateNotes = estimate ? renderEstimateNotes(estimate) : "";
-      settleHandoff({ verdict, request: text, estimateNotes, images: msg.images, ledger, send, startTeamRun, confirmCommit: confirmTeamCommit, commitWork })
-        .catch((error: unknown) => send({ type: "error", message: `Cannot hand this to a team: ${errorMessage(error)}` }));
-    }
   } catch (err: unknown) {
     watch?.close();
+    await finishHandoff?.().catch((error: unknown) => send({ type: "error", message: `Cannot hand this to a team: ${errorMessage(error)}` }));
+    warnUnclosed();
     if (sessionMgr.handleAuthError(err, sessionMgr.currentEngineId)) return;
     const errMsg = err instanceof Error ? err.message : String(err);
     ledger.append("error", {
@@ -196,5 +235,9 @@ export async function handlePrompt({
     });
     send({ type: "turn-end", stopReason: "stalled" });
     send({ type: "error", message: errMsg });
+  } finally {
+    unfinished.close();
+    stopHandoffListen?.();
+    if (canHandOff) teamEstimates.allowHandoff(false);
   }
 }

@@ -7,6 +7,19 @@ import type { PermissionDecision } from "./types.ts";
 
 export const PLAN_MODE_ID = "plan";
 
+const ALWAYS_APPROVE_MODE_IDS = new Set([
+  "acceptedits",
+  "auto",
+  "dontask",
+  "bypasspermissions",
+  "alwaysapprove",
+]);
+
+export function isAlwaysApproveMode(modeId: string | null | undefined): boolean {
+  if (!modeId) return false;
+  return ALWAYS_APPROVE_MODE_IDS.has(modeId.toLowerCase().replace(/[^a-z]/g, ""));
+}
+
 /** Tool kinds that only gather information, so they belong in planning. */
 const PLANNING_KINDS: ReadonlySet<ToolKind> = new Set([
   "read",

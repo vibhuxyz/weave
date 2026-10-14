@@ -1,4 +1,4 @@
-import { applyConfigOptions, blocksForSessionPrompt, createGuardedPermissionPolicy, openSession, PLAN_MODE_ID, type PromptImage } from "@weave/agent";
+import { applyConfigOptions, blocksForSessionPrompt, openSession, replyWithoutTools, type PromptImage } from "@weave/agent";
 import { agentConfigFrom, type RunConfig } from "@weave/protocol";
 import { PLANNER_WORKTREE_ID } from "../run-plan/index.ts";
 import type { Ledger } from "../shared/index.ts";
@@ -34,8 +34,7 @@ function chainFor(first: string | undefined, all: readonly string[] | undefined)
 }
 
 async function applyChosenOptions(session: Awaited<ReturnType<typeof openSession>>, config: RunConfig | undefined, ledger: Ledger): Promise<void> {
-  const wanted = config ? agentConfigFrom(config) : {};
-  if (Object.keys(wanted).length === 0) return;
+  const wanted = { ...(config ? agentConfigFrom(config) : {}), effort: "low" };
   const { refused } = await applyConfigOptions((configId, value) => session.setConfigOption(configId, value), wanted);
   for (const [configId, message] of Object.entries(refused)) {
     ledger.append("error", { taskId: PLANNER_WORKTREE_ID, where: `setConfigOption(${configId})`, message });
@@ -53,7 +52,7 @@ function engineTurn(input: EngineTurnInput): { run: TurnRunner; close: () => voi
   const openPlannerSession = async (engineId: string | undefined) => {
     const session = await openSession({
       engineId,
-      policy: createGuardedPermissionPolicy(undefined, { currentModeId: () => PLAN_MODE_ID }),
+      policy: replyWithoutTools,
       task: { id: PLANNER_WORKTREE_ID, prompt: "", cwd },
       sink: {
         onUpdate: (update) => {

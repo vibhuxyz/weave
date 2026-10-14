@@ -73,6 +73,7 @@ async function tryResume(
   client: SessionClient,
   sessionId: string,
   scope: SessionScope,
+  engineId: string,
 ): Promise<{ sessionId: string; configOptions: SessionConfigOption[]; modes: SessionModes | null } | null> {
   try {
     client.replaying = true;
@@ -84,7 +85,7 @@ async function tryResume(
     return {
       sessionId,
       configOptions: loaded.configOptions ?? [],
-      modes: toSessionModes(loaded.modes),
+      modes: toSessionModes(loaded.modes, engineId),
     };
   } catch {
     return null;
@@ -107,7 +108,7 @@ async function tryCreateSession(
     return {
       sessionId: created.sessionId,
       configOptions: created.configOptions ?? [],
-      modes: toSessionModes(created.modes),
+      modes: toSessionModes(created.modes, spawned.engine.id),
     };
   } catch (error) {
     if (isAuthRequiredError(error)) {
@@ -209,7 +210,7 @@ export async function openSession(
   let resumed = false;
 
   if (canLoadSession && options.resumeSessionId) {
-    const loaded = await tryResume(connection, client, options.resumeSessionId, scope);
+    const loaded = await tryResume(connection, client, options.resumeSessionId, scope, spawned.engine.id);
     if (loaded) {
       sessionId = loaded.sessionId;
       configOptions = loaded.configOptions;
@@ -249,7 +250,11 @@ export async function openSession(
       return modes;
     },
     async setMode(modeId: string) {
-      await connection.setSessionMode({ sessionId, modeId });
+      let targetModeId = modeId;
+      if (modeId === "auto" && (spawned.engine.id === "antigravity" || spawned.engine.id === "agy" || spawned.engine.id === "antigravity-acp")) {
+        targetModeId = "default";
+      }
+      await connection.setSessionMode({ sessionId, modeId: targetModeId });
       modes = withCurrentMode(modes, modeId);
     },
     get authMethods() {
@@ -293,7 +298,7 @@ export async function openSession(
     },
     async resumeSession(id: string) {
       if (!canLoadSession) return false;
-      const loaded = await tryResume(connection, client, id, scope);
+      const loaded = await tryResume(connection, client, id, scope, spawned.engine.id);
       if (!loaded) return false;
       sessionId = loaded.sessionId;
       configOptions = loaded.configOptions;

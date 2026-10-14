@@ -2,7 +2,9 @@ import type { TaskContract } from "@weave/protocol";
 import { Coordinator } from "../coordination/index.ts";
 import { nextStep, type ScheduledState, type SkippedTask } from "../scheduler/index.ts";
 import { readHeadCommit } from "../shared/index.ts";
-import { runOneTask } from "./run-one.ts";
+import { createResumeSlot, sessionFor, type ResumeSlot } from "./resume.ts";
+import { runOneTask } from "./run-with-retry.ts";
+import type { BudgetManager } from "../adaptive/index.ts";
 import type { PoolContext, PoolOptions, PoolReport, PoolTaskReport } from "./types.ts";
 
 const RUN_STOP_KEY = "";
@@ -18,6 +20,7 @@ interface PoolState {
   readonly running: Map<string, Promise<PoolTaskReport>>;
   readonly controllers: Map<string, AbortController>;
   readonly stopReasons: Map<string, string>;
+  readonly resumeSlot: ResumeSlot;
 }
 
 function record(pool: PoolState, report: PoolTaskReport): void {
@@ -46,12 +49,16 @@ function launch(pool: PoolState, ctx: PoolContext, task: TaskContract, isolate: 
   pool.states.set(task.id, "running");
   pool.controllers.set(task.id, controller);
   ctx.coordinator.taskStarted(task.id);
-  ctx.budget?.taskStarted(task.id);
+  budgetOf(ctx)?.taskStarted(task.id);
   pool.running.set(task.id, runOneTask(task, { ...ctx, signal: controller.signal }, isolate));
 }
 
+function budgetOf(ctx: PoolContext): BudgetManager | undefined {
+  return ctx.controls?.budget ?? ctx.budget;
+}
+
 function admitted(pool: PoolState, ctx: PoolContext, taskId: string): boolean {
-  const admission = ctx.budget?.admits(taskId) ?? { ok: true };
+  const admission = budgetOf(ctx)?.admits(taskId) ?? { ok: true };
   if (!admission.ok) skip(pool, ctx, [{ taskId, reason: admission.reason }]);
   return admission.ok;
 }
@@ -61,7 +68,7 @@ function settle(pool: PoolState, ctx: PoolContext, report: PoolTaskReport): void
   pool.controllers.delete(report.taskId);
   const stopReason = pool.stopReasons.get(report.taskId) ?? pool.stopReasons.get(RUN_STOP_KEY);
   record(pool, report.status === "cancelled" && stopReason ? { ...report, reason: stopReason } : report);
-  ctx.budget?.taskSettled(report.taskId);
+  budgetOf(ctx)?.taskSettled(report.taskId);
   ctx.coordinator.taskSettled(report.taskId, report.status);
 }
 
@@ -74,13 +81,17 @@ function byPriority(ready: readonly string[], priorityOf: ((taskId: string) => n
 
 function launchReady(pool: PoolState, ctx: PoolContext, ready: readonly string[], capacity: number): void {
   const tasksById = new Map(ctx.coordinator.tasks().map((task) => [task.id, task]));
-  for (const taskId of byPriority(ready, ctx.priorityOf)) {
+  const priority = ctx.controls?.priorityOf ?? ctx.priorityOf;
+  for (const taskId of byPriority(ready, priority)) {
     if (pool.running.size >= capacity) return;
     const task = tasksById.get(taskId);
-    if (task && admitted(pool, ctx, taskId)) {
-      const canShare = ctx.sharedBase !== null && isScoped(task) && ctx.coordinator.tryClaim(task);
-      launch(pool, ctx, task, !canShare);
+    if (!task || !admitted(pool, ctx, taskId)) continue;
+    if (ctx.controls?.waitForOwnership && isScoped(task)) {
+      if (ctx.coordinator.tryClaim(task)) launch(pool, ctx, task, ctx.sharedBase === null);
+      continue;
     }
+    const canShare = ctx.sharedBase !== null && isScoped(task) && ctx.coordinator.tryClaim(task);
+    launch(pool, ctx, task, !canShare);
   }
 }
 
@@ -91,19 +102,48 @@ function linkedController(signal: AbortSignal | undefined): AbortController {
   return controller;
 }
 
-async function drive(pool: PoolState, ctx: PoolContext, capacity: number): Promise<void> {
-  for (;;) {
-    const step = nextStep(ctx.coordinator.tasks(), pool.states);
-    skip(pool, ctx, step.skipped);
-    if (step.skipped.length > 0) continue;
-    if (ctx.signal.aborted && step.ready.length > 0) {
-      cancelPending(pool, ctx, step.ready);
-      continue;
+function bindLate(pool: PoolState, ctx: PoolContext, run: AbortController, bound: { current: BudgetManager | undefined; stop: () => void }): void {
+  const budget = ctx.controls?.budget;
+  if (!budget || budget === bound.current) return;
+  bound.stop();
+  budget.bind({
+    stopTask: (taskId, reason) => {
+      pool.stopReasons.set(taskId, reason);
+      pool.controllers.get(taskId)?.abort();
+    },
+    stopRun: (reason) => {
+      pool.stopReasons.set(RUN_STOP_KEY, reason);
+      run.abort();
+    },
+  });
+  const unwatch = budget.watch(ctx.ledger);
+  bound.current = budget;
+  bound.stop = () => {
+    unwatch();
+    budget.dispose();
+  };
+}
+
+async function drive(pool: PoolState, ctx: PoolContext, capacityOf: () => number, run: AbortController): Promise<void> {
+  const bound = { current: ctx.budget, stop: () => undefined };
+  try {
+    for (;;) {
+      bindLate(pool, ctx, run, bound);
+      const change = ctx.coordinator.nextChange();
+      const step = nextStep(ctx.coordinator.tasks(), pool.states, ctx.coordinator.publishedKeys());
+      skip(pool, ctx, step.skipped);
+      if (step.skipped.length > 0) continue;
+      if (ctx.signal.aborted && step.ready.length > 0) {
+        cancelPending(pool, ctx, step.ready);
+        continue;
+      }
+      if (!ctx.signal.aborted) launchReady(pool, ctx, step.ready, capacityOf());
+      if (pool.running.size === 0) return;
+      const settled = await Promise.race([...pool.running.values(), change, pool.resumeSlot.promise]);
+      if (settled) settle(pool, ctx, settled);
     }
-    if (!ctx.signal.aborted) launchReady(pool, ctx, step.ready, capacity);
-    if (pool.running.size === 0) return;
-    const settled = await Promise.race([...pool.running.values(), ctx.coordinator.nextChange()]);
-    if (settled) settle(pool, ctx, settled);
+  } finally {
+    bound.stop();
   }
 }
 
@@ -165,22 +205,33 @@ export async function runPool(options: PoolOptions): Promise<PoolReport> {
     coordinator,
     budget: options.budget,
     priorityOf: options.priorityOf,
+    controls: options.controls,
   };
-  const capacity = Math.max(1, Math.floor(options.concurrency));
-  const pool: PoolState = { states: new Map(), reports: new Map(), running: new Map(), controllers: new Map(), stopReasons: new Map() };
+  const capacityOf = () => Math.max(1, Math.floor(options.controls?.concurrency ?? options.concurrency));
+  const states = new Map<string, ScheduledState>();
+  const reports = new Map<string, PoolTaskReport>();
+  const resumeSlot = createResumeSlot(states, reports, () => coordinator.tasks().map((task) => task.id));
+  const pool: PoolState = { states, reports, running: new Map(), controllers: new Map(), stopReasons: new Map(), resumeSlot };
   const stopWatching = coordinator.watch(options.ledger);
   const stopBudget = bindBudget(pool, options, controller);
+  options.attachSession?.(sessionFor({
+    states: pool.states,
+    resume: (taskId) => pool.resumeSlot.resume(taskId),
+    coordinator,
+    controls: options.controls,
+  }));
   try {
-    await drive(pool, ctx, capacity);
+    await drive(pool, ctx, capacityOf, controller);
   } finally {
+    resumeSlot.close();
     stopWatching();
     stopBudget();
   }
   invalidateConsumers(pool, ctx);
+  const contracts = coordinator.tasks();
   return {
-    tasks: options.tasks.map(
-      (task) => pool.reports.get(task.id) ?? notRunReport(task.id, "skipped", NEVER_REACHED_REASON),
-    ),
+    tasks: contracts.map((task) => pool.reports.get(task.id) ?? notRunReport(task.id, "skipped", NEVER_REACHED_REASON)),
     coordination: coordinator.report(),
+    contracts,
   };
 }

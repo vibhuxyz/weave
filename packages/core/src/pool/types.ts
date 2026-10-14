@@ -25,6 +25,23 @@ export type InspectHarvest = (
   files: readonly string[],
 ) => Promise<string | null>;
 
+export interface PoolControls {
+  concurrency: number;
+  budget?: BudgetManager;
+  priorityOf?: (taskId: string) => number;
+  waitForOwnership: boolean;
+}
+
+export interface PoolSession {
+  isOpen(taskId: string): boolean;
+  retarget(taskId: string, patch: Partial<TaskContract>): boolean;
+  admit(tasks: readonly TaskContract[]): { readonly ok: true } | { readonly ok: false; readonly reason: string };
+  setConcurrency(workers: number): void;
+  setBudget(budget: BudgetManager): void;
+  setPriority(priorityOf: (taskId: string) => number): void;
+  resume(taskId: string): boolean;
+}
+
 export interface PoolOptions {
   readonly tasks: readonly TaskContract[];
   readonly repoRoot: string;
@@ -40,6 +57,8 @@ export interface PoolOptions {
   readonly coordinator?: Coordinator;
   readonly budget?: BudgetManager;
   readonly priorityOf?: (taskId: string) => number;
+  readonly controls?: PoolControls;
+  readonly attachSession?: (session: PoolSession) => void;
 }
 
 export type SettledStatus = "ok" | "failed" | "cancelled" | "skipped";
@@ -61,6 +80,7 @@ export interface PoolTaskReport {
 export interface PoolReport {
   readonly tasks: readonly PoolTaskReport[];
   readonly coordination: CoordinationReport;
+  readonly contracts?: readonly TaskContract[];
 }
 
 export interface PoolContext {
@@ -77,4 +97,6 @@ export interface PoolContext {
   readonly coordinator: Coordinator;
   readonly budget: BudgetManager | undefined;
   readonly priorityOf: ((taskId: string) => number) | undefined;
+  readonly controls: PoolControls | undefined;
+  readonly retryIndex?: number;
 }

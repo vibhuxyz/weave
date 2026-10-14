@@ -34,8 +34,15 @@ export function useLocalPathTarget(candidate: string | undefined): string | null
 
 export function MarkdownInlineCode({ children, node: _node, ...rest }: ComponentProps<"code"> & { node?: unknown }) {
   const text = plainText(children);
+  const openPath = useContext(LocalPathOpenerContext);
   const path = useLocalPathTarget(text);
-  if (path) return <LocalPathButton path={path}>{text}</LocalPathButton>;
+  if (path && openPath) {
+    return (
+      <button type="button" title={`Open ${path}`} data-streamdown="inline-code" className={rest.className} onClick={() => openPath(path)}>
+        {text}
+      </button>
+    );
+  }
   return (
     <code data-streamdown="inline-code" {...rest}>
       {children}

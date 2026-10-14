@@ -141,7 +141,7 @@ function AnalogClockFace({ time }: { time: Date }) {
   );
 }
 
-/** Digital face: large light-weight mono HH:MM for an even, instrument-like
+/** Digital face: large light-weight HH:MM for an even, instrument-like
  *  readout that reuses the analog clock's three inks — white/near-black marks
  *  for the digits, the second-hand red for a colon that blinks once a second
  *  (mirroring the analog second hand's tick), and the muted minute-hand gray
@@ -157,7 +157,7 @@ function DigitalClockFace({
       className="flex h-full w-full items-center justify-center text-clock-mark"
     >
       <div
-        className="flex items-baseline font-mono font-light tabular-nums tracking-[-0.01em]"
+        className="flex items-baseline font-light tabular-nums tracking-[-0.04em]"
         style={{
           fontSize:
             "clamp(2.25rem, calc(4.25rem * var(--widget-scale, 1)), 6.5rem)",
@@ -208,7 +208,7 @@ export function ClockWidget({
   });
 
   const isDigital = mode === "digital";
-  const shapeClass = isDigital ? "rounded-xl" : "rounded-full";
+  const shapeClass = isDigital ? "rounded-3xl shadow-lg" : "rounded-full";
 
   return (
     <div className="relative h-full w-full">
@@ -217,9 +217,7 @@ export function ClockWidget({
         aria-label={currentLabel}
         className={cn(
           "pointer-events-none absolute inset-0 overflow-hidden bg-clock-face",
-          isDigital
-            ? "border border-clock-mark/10"
-            : "border border-clock-mark/5",
+          isDigital ? "border-0" : "border border-clock-mark/5",
           shapeClass,
         )}
       >

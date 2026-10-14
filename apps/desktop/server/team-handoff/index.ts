@@ -1,5 +1,5 @@
-export { askToCommit } from "./ask-to-commit.ts";
 export { CHAT_TASK_ID, TEAM_RUN_COMMIT_MESSAGE } from "./constants.ts";
-export { promptMayHandOff, settleHandoff } from "./settle-handoff.ts";
-export { watchTurn } from "./watch-turn.ts";
+export { promptMayHandOff, releaseToTeam, settleHandoff } from "./settle-handoff.ts";
+export { armHandoff, watchTurn } from "./watch-turn.ts";
+export { handoffWhenClosed } from "./when-closed.ts";
 export type { TeamRunStart } from "./types.ts";

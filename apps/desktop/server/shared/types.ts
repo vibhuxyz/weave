@@ -108,6 +108,7 @@ export type ClientMessage =
   | { readonly type: "start-run"; readonly request: string; readonly images?: readonly PromptImageData[] }
   | { readonly type: "read-file"; readonly path: string }
   | { readonly type: "cancel-run" }
+  | { readonly type: "resume-task"; readonly taskId: string }
   | { readonly type: "decide-run-plan"; readonly runKey: string; readonly approved: boolean }
   | { readonly type: "decide-run-result"; readonly runKey: string; readonly decision: ResultDecision }
   | {

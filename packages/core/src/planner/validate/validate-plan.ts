@@ -1,4 +1,5 @@
 import type { VerificationRung } from "@weave/protocol";
+import { groundingErrors } from "./check-grounding.ts";
 import { concurrentWriteConflicts } from "./concurrent-writes.ts";
 import type { PlanReview, PlanValidationContext, ReviewedTask } from "./types.ts";
 
@@ -75,7 +76,7 @@ function outputsWithoutProducer(tasks: readonly ReviewedTask[]): readonly string
 
 export function validatePlan(tasks: readonly ReviewedTask[], context: PlanValidationContext): PlanReview {
   return {
-    errors: [...concurrentWriteConflicts(tasks), ...unknownEmployees(tasks, context.employeeIds), ...unknownEngines(tasks, context.engineIds), ...unsupportedRungs(tasks, context.supportedRungs), ...undeclaredOutputs(tasks)],
-    warnings: [...unknownSkills(tasks, context.skillNames), ...missingVerification(tasks, context.supportedRungs), ...outputsWithoutProducer(tasks), ...tasksWithoutMilestones(tasks)],
+    errors: [...concurrentWriteConflicts(tasks), ...unknownEmployees(tasks, context.employeeIds), ...unsupportedRungs(tasks, context.supportedRungs), ...undeclaredOutputs(tasks), ...groundingErrors(tasks, context)],
+    warnings: [...unknownEngines(tasks, context.engineIds), ...unknownSkills(tasks, context.skillNames), ...missingVerification(tasks, context.supportedRungs), ...outputsWithoutProducer(tasks), ...tasksWithoutMilestones(tasks)],
   };
 }

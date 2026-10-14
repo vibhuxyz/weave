@@ -10,13 +10,39 @@ import {
 } from "@/shared/ui";
 import type { SessionModes } from "@/features/chat/hooks";
 
-/**
- * Whether the composer shows the agent's native modes, which is also what tells
- * the config pills to drop a duplicate `mode` option. Exported so the two
- * cannot drift into rendering the same setting twice.
- */
+const MODE_DETAIL: Readonly<Record<string, string>> = {
+  default: "Ask before edits and new files.",
+  acceptedits: "Edit and create files without asking.",
+  auto: "Edit and create files without asking.",
+  dontask: "Edit and create files without asking.",
+  bypasspermissions: "Bypass permissions and execute without asking.",
+  alwaysapprove: "Bypass permissions and execute without asking.",
+  plan: "Plan the work and don't change files.",
+};
+
+export function modeDetail(mode: { readonly id: string; readonly description: string | null }): string | null {
+  const key = mode.id.toLowerCase().replace(/[^a-z]/g, "");
+  return MODE_DETAIL[key] ?? mode.description;
+}
+
 export function hasSelectableModes(modes: SessionModes | null): modes is SessionModes {
   return modes !== null && modes.availableModes.length >= 2;
+}
+
+function ModeChoice({
+  mode,
+}: {
+  readonly mode: { readonly id: string; readonly name: string; readonly description: string | null };
+}) {
+  const detail = modeDetail(mode);
+  return (
+    <DropdownMenuRadioItem value={mode.id}>
+      <span className="flex flex-col">
+        <span>{mode.name}</span>
+        {detail && <span className="text-muted-foreground text-xs">{detail}</span>}
+      </span>
+    </DropdownMenuRadioItem>
+  );
 }
 
 /**
@@ -59,16 +85,7 @@ export function ModePicker({
           onValueChange={onSelect}
         >
           {modes.availableModes.map((mode) => (
-            <DropdownMenuRadioItem key={mode.id} value={mode.id}>
-              <span className="flex flex-col">
-                <span>{mode.name}</span>
-                {mode.description && (
-                  <span className="text-muted-foreground text-xs">
-                    {mode.description}
-                  </span>
-                )}
-              </span>
-            </DropdownMenuRadioItem>
+            <ModeChoice key={mode.id} mode={mode} />
           ))}
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>

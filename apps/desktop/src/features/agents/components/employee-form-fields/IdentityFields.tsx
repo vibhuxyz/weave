@@ -1,19 +1,21 @@
-import type { FieldErrors, UseFormRegister } from "react-hook-form";
+import type { FieldErrors, UseFormSetValue } from "react-hook-form";
 import { EMPLOYEE_ID_PATTERN } from "@weave/core/browser";
 import type { EmployeeFormValues } from "@/features/employees";
-import { LIST_HINT } from "./constants";
+import { CheckSelect, InstructionSelect, MultiSelect, RESPONSIBILITY_CHOICES, RULE_CHOICES, RoleSelect } from "../employee-choices";
 import { TextField } from "./FormFields";
+import type { FieldGroupProps } from "./types";
 
-interface IdentityFieldsProps {
-  readonly register: UseFormRegister<EmployeeFormValues>;
+interface IdentityFieldsProps extends FieldGroupProps {
   readonly errors: FieldErrors<EmployeeFormValues>;
   readonly isIdLocked: boolean;
+  readonly setValue: UseFormSetValue<EmployeeFormValues>;
 }
 
-export function IdentityFields({ register, errors, isIdLocked }: IdentityFieldsProps) {
+export function IdentityFields({ register, control, setValue, errors, isIdLocked }: IdentityFieldsProps) {
   return (
     <fieldset className="space-y-5">
       <legend className="sr-only">Identity</legend>
+      <RoleSelect setValue={setValue} />
       <TextField register={register} name="name" label="Name" placeholder="e.g. Payments Engineer" rules={{ validate: (value) => value.trim() !== "" || "Give the employee a name." }} error={errors.name?.message} />
       <TextField
         register={register}
@@ -26,9 +28,9 @@ export function IdentityFields({ register, errors, isIdLocked }: IdentityFieldsP
         error={errors.id?.message}
       />
       <TextField register={register} name="description" label="Description" placeholder="What this employee owns" />
-      <TextField register={register} name="responsibilities" label="Responsibilities" rows={4} hint={`${LIST_HINT} Matched against task text to assign work.`} />
-      <TextField register={register} name="rules" label="Rules" rows={3} hint={`${LIST_HINT} Standards this employee follows.`} />
-      <TextField register={register} name="instructions" label="Instructions" rows={8} hint="Markdown given to the employee on every task." />
+      <MultiSelect control={control} name="responsibilities" label="Responsibilities" hint="Matched against task text to assign work." options={RESPONSIBILITY_CHOICES} placeholder="Choose responsibilities" variant="menu" />
+      <CheckSelect control={control} name="rules" label="Rules" hint="Standards this employee follows." options={RULE_CHOICES} />
+      <InstructionSelect control={control} />
     </fieldset>
   );
 }

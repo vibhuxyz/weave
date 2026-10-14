@@ -61,6 +61,10 @@ function projectTaskEvent(event: WeaveEvent, taskId: string): RunUpdate | null {
       return { kind: "file", taskId, path: event.path, change: "deleted" };
     case "worker.progress":
       return { kind: "activity", taskId, activity: capped(event.activity, MAX_DETAIL_CHARS) };
+    case "task.retrying":
+      return { kind: "activity", taskId, activity: capped(`Retry ${event.attempt} of ${event.maxAttempts} in ${Math.round(event.delayMs / 1000)}s: ${event.reason}`, MAX_DETAIL_CHARS) };
+    case "task.waiting":
+      return { kind: "blocked", taskId, reason: capped(event.reason, MAX_DETAIL_CHARS) };
     case "verification.rung":
       return { kind: "verifying", taskId, rung: event.rung };
     case "usage":
@@ -155,6 +159,13 @@ export function projectRunEvent(event: WeaveEvent): RunUpdate | null {
       return event.route === "plan" ? { kind: "planning", planner: engineLabel(event.plannerEngineId), reviewer: engineLabel(event.reviewerEngineId) } : null;
     case "plan.reviewed":
       return projectPlanReview(event);
+    case "plan.rejected":
+      return {
+        kind: "plan-rejected",
+        reasons: event.reasons.slice(0, MAX_PLAN_WARNINGS).map((reason) => capped(reason, MAX_WARNING_CHARS)),
+        hiddenReasonCount: Math.max(0, event.reasons.length - MAX_PLAN_WARNINGS),
+        willRepair: event.willRepair,
+      };
     case "plan.execution":
       return {
         kind: "execution-plan",

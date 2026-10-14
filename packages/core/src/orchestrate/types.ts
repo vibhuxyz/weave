@@ -5,8 +5,9 @@ import type { Assignment, EmployeeRegistry } from "../employees/index.ts";
 import type { Contract } from "../contracts/index.ts";
 import type { Decision } from "../decide/index.ts";
 import type { VerifyWorkspace } from "../integrator/index.ts";
+import type { ProjectModel } from "../context/index.ts";
 import type { PlanIntent, PlannedTask, ProjectKind } from "../planner/index.ts";
-import type { RunWorker } from "../pool/index.ts";
+import type { PoolSession, RunWorker } from "../pool/index.ts";
 import type { RunPlanReport } from "../run-plan/index.ts";
 
 export type TurnRunner = (prompt: string, signal?: AbortSignal) => Promise<string>;
@@ -41,6 +42,8 @@ export interface PlanAndRunOptions {
   readonly employees?: EmployeesOptions;
   readonly approvePlan?: () => Promise<boolean>;
   readonly images?: readonly PromptImage[];
+  readonly planningBudgetMs?: number;
+  readonly onPoolSession?: (session: PoolSession) => void;
 }
 
 export type PlanAndRunResult =
@@ -59,7 +62,9 @@ export type PlanAndRunResult =
 export interface PlanningInput {
   readonly request: string;
   readonly projectContext?: string | null;
+  readonly model?: ProjectModel | null;
   readonly preflightWarnings?: readonly string[];
+  readonly planningBudgetMs?: number;
   readonly employeeRoster?: string | null;
   readonly employeeIds?: readonly string[] | null;
   readonly engineCandidates: readonly EngineCandidate[];
@@ -69,6 +74,7 @@ export interface PlanningInput {
   readonly runTurn: TurnRunner;
   readonly reviewTurn?: TurnRunner;
   readonly signal?: AbortSignal;
+  readonly notes?: string | null;
 }
 
 export type PlanningOutcome =

@@ -1,6 +1,6 @@
+export { ParallelSuggest } from "./ParallelSuggest";
 export { RunPanel } from "./RunPanel";
 export { RunStream } from "./RunStream";
-export { WorkerColumns } from "./WorkerColumns";
 export { EventsPanel } from "./EventsPanel";
 export { FilesPanel } from "./FilesPanel";
 export { RunSummary } from "./RunSummary";

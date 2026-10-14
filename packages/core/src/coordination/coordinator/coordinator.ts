@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { WEAVE_SENDER, type CoordinationDraft, type CoordinationEvent, type DependencyNeed, type TaskContract } from "@weave/protocol";
 import type { Ledger } from "../../shared/index.ts";
+import { publishedOutputKey } from "../../scheduler/index.ts";
 import { ArtifactStore, DependencyGraph, artifactKey, invalidatedConsumers, staleConsumers, type ArtifactInput, type ArtifactKind } from "../dependencies/index.ts";
 import type { EmployeeSubmission } from "../employee/index.ts";
 import { Mailboxes, recipientsFor, type InboxBatch } from "../mailbox/index.ts";
@@ -55,6 +56,14 @@ export class Coordinator {
     return this.graph.current();
   }
 
+  publishedKeys(): ReadonlySet<string> {
+    const keys = new Set<string>();
+    for (const [producer, names] of this.artifacts.outputsByProducer()) {
+      for (const name of names) keys.add(publishedOutputKey(producer, name));
+    }
+    return keys;
+  }
+
   nextChange(): Promise<void> {
     return this.wake.promise;
   }
@@ -71,6 +80,15 @@ export class Coordinator {
       awaited: () => this.graph.dependentsOf(taskId),
       published: () => this.artifacts.outputsByProducer().get(taskId) ?? new Set(),
     };
+  }
+
+  private recordClaim(taskId: string, claimed: ReturnType<OwnershipRegistry["claim"]>): void {
+    if (claimed.ok) {
+      if (claimed.resources.length > 0) this.ledger.append("ownership.claimed", { taskId, resources: [...claimed.resources] });
+      return;
+    }
+    const conflicts = claimed.conflicts.map((conflict) => `${describeResource(conflict.resource)} held by ${conflict.heldBy}`).sort();
+    this.ledger.append("ownership.blocked", { taskId, conflicts });
   }
 
   tryClaim(task: TaskContract): boolean {
@@ -243,6 +261,21 @@ export class Coordinator {
 
   expansions(): readonly ExpandedScope[] {
     return this.expanded;
+  }
+
+  admit(tasks: readonly TaskContract[]): { readonly ok: true } | { readonly ok: false; readonly reason: string } {
+    const admitted = this.graph.admit(tasks);
+    if (!admitted.ok) return admitted;
+    this.notifyChange();
+    return { ok: true };
+  }
+
+  retarget(taskId: string, patch: Partial<TaskContract>): boolean {
+    if (!this.graph.replace(taskId, patch)) return false;
+    const task = this.graph.current().find((candidate) => candidate.id === taskId);
+    if (task) this.recordClaim(taskId, this.ownership.claim(taskId, claimsForTask(task)));
+    this.notifyChange();
+    return true;
   }
 
   private recordSubtask(taskId: string, subtask: string): CoordinationEvent {

@@ -1,7 +1,5 @@
 import type { GraphDependency, GraphTask, Schedule, ScheduledInterval } from "./types.ts";
 
-// Only a dependency on a whole task delays a start. One that names outputs is
-// fetched mid-flight, so both tasks run side by side (see scheduler/).
 function gatingDependencies(task: GraphTask): readonly GraphDependency[] {
   return (task.dependencies ?? []).filter((dependency) => (dependency.requiredOutputs ?? []).length === 0);
 }

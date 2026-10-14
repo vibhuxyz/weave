@@ -1,6 +1,7 @@
 import { statSync } from "node:fs";
 import type { CommandSafetyResult } from "./types.ts";
-import { isInside, realish } from "./path-confinement.ts";
+import { isInside, isSharedReadPath, realish } from "./path-confinement.ts";
+import { classifyCommand } from "./read-only-commands.ts";
 import { resolveParentPaths, splitShellWords, type DirectoryView } from "./shell/index.ts";
 
 const SENSITIVE_PATTERNS = [
@@ -90,29 +91,39 @@ function leadingPath(text: string, pattern: RegExp): string {
   return (pattern.exec(text)?.[0] ?? "").replace(TRAILING_PUNCTUATION, "");
 }
 
-function isAllowedPath(path: string, normalizedCwd: string): boolean {
-  return ENGINE_TASK_LOG_PATTERN.test(path) || isInside(normalizedCwd, path);
+interface PathScope {
+  readonly cwd: string;
+  readonly readsShared: boolean;
 }
 
-function isSpacedPathInside(wordPath: string, unspacedPath: string, normalizedCwd: string): boolean {
-  return wordPath !== unspacedPath && !PARENT_SEGMENT.test(wordPath) && isInside(normalizedCwd, wordPath);
+function isAllowedPath(path: string, scope: PathScope): boolean {
+  if (ENGINE_TASK_LOG_PATTERN.test(path) || isInside(scope.cwd, path)) return true;
+  return scope.readsShared && isSharedReadPath(path);
 }
 
-function findOutsidePathInWord(word: string, normalizedCwd: string): string | null {
+function isSpacedPathInside(wordPath: string, unspacedPath: string, scope: PathScope): boolean {
+  return wordPath !== unspacedPath && !PARENT_SEGMENT.test(wordPath) && isAllowedPath(wordPath, scope);
+}
+
+function findOutsidePathInWord(word: string, scope: PathScope): string | null {
   for (const match of word.matchAll(USER_PATH_START)) {
     const rest = word.slice(match.index);
     const unspacedPath = leadingPath(rest, PATH_UNTIL_WHITESPACE);
-    if (isAllowedPath(unspacedPath, normalizedCwd)) continue;
+    if (isAllowedPath(unspacedPath, scope)) continue;
     const wordPath = leadingPath(rest, PATH_UNTIL_WORD_END);
-    if (isSpacedPathInside(wordPath, unspacedPath, normalizedCwd)) continue;
+    if (isSpacedPathInside(wordPath, unspacedPath, scope)) continue;
     return wordPath;
   }
   return null;
 }
 
 function findOutsideUserPath(command: string, normalizedCwd: string): string | null {
+  const scope = {
+    cwd: normalizedCwd,
+    readsShared: classifyCommand(command).kind === "read-only",
+  };
   for (const word of splitShellWords(command)) {
-    const outsidePath = findOutsidePathInWord(word, normalizedCwd);
+    const outsidePath = findOutsidePathInWord(word, scope);
     if (outsidePath) return outsidePath;
   }
   return null;

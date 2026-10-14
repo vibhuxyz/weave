@@ -15,7 +15,11 @@ function section(title: string, lines: readonly string[]): readonly string[] {
 function sectionsOf(answer: ProjectAnswer): readonly (readonly string[])[] {
   const { dependencies, verification } = answer;
   return [
-    [`Search terms: ${answer.terms.join(", ") || "none"}`, flat(`Application: ${answer.application ? `${answer.application.name} (${answer.application.dir}, ${answer.application.kind})` : "not identified"}`)],
+    [
+      `Search terms: ${answer.terms.join(", ") || "none"}`,
+      `Package manager: ${answer.packageManager ?? "none"}`,
+      flat(`Application: ${answer.application ? `${answer.application.name} (${answer.application.dir}, ${answer.application.kind})` : "not identified"}`),
+    ],
     section("Relevant files", answer.files.map((file) => `${file.path} (matched ${file.matchedTerms.join(", ")}; ${file.reasons.join("; ")})`)),
     section("Relevant symbols", answer.symbols.map(({ symbol }) => `${symbol.kind} ${symbol.name} (${symbol.file}:${symbol.line}${symbol.isExported ? ", exported" : ""})`)),
     section("API routes and contracts", answer.apis.map((api) => `${api.method} ${api.path} (${api.source}, ${api.file}:${api.line}${api.handler ? `, ${api.handler}` : ""})`)),

@@ -18,14 +18,25 @@ function dependenciesWithin(tasks: readonly TaskContract[]): readonly TaskContra
   return tasks.map((task) => ({ ...task, dependencies: task.dependencies?.filter((dependency) => ids.has(dependency.task)) }));
 }
 
+function mergeContracts(current: readonly TaskContract[] | undefined, rerun: readonly TaskContract[] | undefined): readonly TaskContract[] | undefined {
+  if (!current) return rerun;
+  if (!rerun) return current;
+  const replaced = new Map(rerun.map((task) => [task.id, task]));
+  const merged = current.map((task) => replaced.get(task.id) ?? task);
+  const known = new Set(merged.map((task) => task.id));
+  return [...merged, ...rerun.filter((task) => !known.has(task.id))];
+}
+
 function replaceReports(pool: PoolReport, rerun: PoolReport): PoolReport {
   const rerunById = new Map(rerun.tasks.map((entry) => [entry.taskId, entry]));
+  const contracts = mergeContracts(pool.contracts, rerun.contracts);
   return {
     tasks: pool.tasks.map((entry) => rerunById.get(entry.taskId) ?? entry),
     coordination: {
       addedDependencies: [...pool.coordination.addedDependencies, ...rerun.coordination.addedDependencies],
       escalations: [...pool.coordination.escalations, ...rerun.coordination.escalations],
     },
+    ...(contracts ? { contracts } : {}),
   };
 }
 

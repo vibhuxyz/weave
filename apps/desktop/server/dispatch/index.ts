@@ -14,3 +14,6 @@ export { handleSetMode } from "./handle-set-mode.ts";
 export type { SetModeOptions } from "./handle-set-mode.ts";
 export { handleStartSetup } from "./handle-start-setup.ts";
 export type { StartSetupOptions } from "./handle-start-setup.ts";
+export { createRecoveryContext, persistRecoveryDecision } from "./recovery-helper.ts";
+export type { RecoveryContext, RecoveryDecisionParams } from "./recovery-helper.ts";
+

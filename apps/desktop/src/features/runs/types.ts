@@ -120,6 +120,12 @@ export interface RunPlanSummary {
   readonly risks: readonly string[];
 }
 
+export interface PlanRejection {
+  readonly reasons: readonly string[];
+  readonly hiddenReasonCount: number;
+  readonly willRepair: boolean;
+}
+
 export interface PlanReviewSummary {
   readonly classification: RunClassification | null;
   readonly critique: RunCritique | null;
@@ -163,6 +169,7 @@ export interface RunState {
   readonly resultDecision: ResultDecisionState | null;
   readonly plan: RunPlanSummary | null;
   readonly review: PlanReviewSummary | null;
+  readonly rejections: readonly PlanRejection[];
   readonly planning: PlanningEnginesSummary | null;
   readonly execution: RunExecutionPlan | null;
   readonly workerCount: RunWorkerCount | null;
@@ -183,7 +190,7 @@ export interface RunState {
 
 export type DraftRoute =
   | { readonly kind: "team"; readonly request: string }
-  | { readonly kind: "chat"; readonly text: string; readonly canHandOff: boolean };
+  | { readonly kind: "chat"; readonly text: string; readonly canHandOff: boolean; readonly suggestParallel: boolean };
 
 export interface DraftContext {
   readonly imageCount: number;

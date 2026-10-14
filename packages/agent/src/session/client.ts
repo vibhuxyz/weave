@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, resolve } from "node:path";
 import * as acp from "@agentclientprotocol/sdk";
 import type { SessionUpdate, TaskContract } from "@weave/protocol";
@@ -7,6 +8,7 @@ import {
   firstMatch,
   isInside,
   isPlanModeExit,
+  isUserMemoryNote,
   isUserSkillPath,
   relativeInside,
   toAcpResponse,
@@ -20,6 +22,7 @@ export interface SessionClientOptions {
   readonly sink: SessionSink;
   readonly policy: PermissionPolicy;
   readonly askUser?: QuestionAsker;
+  readonly home?: string;
 }
 
 function sliceFileLines(
@@ -70,21 +73,27 @@ export class SessionClient implements acp.Client {
   readonly sink: SessionSink;
   readonly policy: PermissionPolicy;
   readonly askUser: QuestionAsker | undefined;
+  readonly home: string;
   readonly written = new Set<string>();
   replaying = false;
 
-  constructor({ task, sink, policy, askUser }: SessionClientOptions) {
+  constructor({ task, sink, policy, askUser, home }: SessionClientOptions) {
     this.task = task;
     this.sink = sink;
     this.policy = policy;
     this.askUser = askUser;
+    this.home = home ?? homedir();
+  }
+
+  private canReadOutsideTask(absolute: string): boolean {
+    return isUserSkillPath(absolute, this.home) || isUserMemoryNote(absolute, this.home);
   }
 
   private safeResolve(requestedPath: string, mode: "read" | "write"): string {
     const absolute = isAbsolute(requestedPath)
       ? requestedPath
       : resolve(this.task.cwd, requestedPath);
-    if (mode === "read" && isUserSkillPath(absolute)) return absolute;
+    if (mode === "read" && this.canReadOutsideTask(absolute)) return absolute;
     if (!isInside(this.task.cwd, absolute)) {
       throw new Error(`Refused path outside the task dir: ${requestedPath}. Do not retry this path.`);
     }

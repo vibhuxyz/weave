@@ -57,3 +57,11 @@ export async function runStopSequence(options: StopSequenceOptions): Promise<Sto
 
   return { checkpoint, taskStatus };
 }
+
+export async function createRecoveryCheckpoint(options: Omit<StopSequenceOptions, "cancel" | "drainMs">): Promise<Checkpoint> {
+  const { weaveDir, cwd, taskId, runId, goal, reason, tasksStore } = options;
+  const state = await foldStoppedState(weaveDir, cwd, runId, goal, taskId);
+  const checkpoint = await writeCheckpoint(weaveDir, taskId, state, reason);
+  await tasksStore.setLatestCheckpoint(taskId, `${checkpoint.id}.json`);
+  return checkpoint;
+}

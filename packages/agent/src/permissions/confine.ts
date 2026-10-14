@@ -1,17 +1,17 @@
-import { tmpdir } from "node:os";
 import type {
   RequestPermissionRequest,
   TaskContract,
   ToolKind,
 } from "@weave/protocol";
 import { firstMatch } from "./globs.ts";
-import { isInside, relativeInside } from "./path-confinement.ts";
+import { isInside, isScratchPath, isSharedReadPath, relativeInside } from "./path-confinement.ts";
 import { extractCommand, extractWorkingDir, inspectCommandBoundaries } from "./command-safety.ts";
 import { classifyCommand } from "./read-only-commands.ts";
 import {
   changesAnythingInPlanMode,
   findAllowOption,
   findRejectOption,
+  isAlwaysApproveMode,
   isPlanModeExit,
   PLAN_MODE_ID,
 } from "./options.ts";
@@ -29,22 +29,30 @@ const READ_ONLY_KINDS = new Set<ToolKind>([
   "switch_mode",
 ]);
 
-const UNIX_TEMP_DIRS = ["/tmp", "/private/tmp"] as const;
-
 function mutates(kind: ToolKind | null | undefined): boolean {
   return kind == null || !READ_ONLY_KINDS.has(kind);
 }
 
-function isScratchPath(path: string): boolean {
-  return [tmpdir(), ...UNIX_TEMP_DIRS].some((root) => isInside(root, path));
+function mayReadSharedPaths(kind: ToolKind | null | undefined, rawInput: unknown): boolean {
+  if (!mutates(kind)) return true;
+  if (kind !== "execute" && kind != null) return false;
+  const command = extractCommand(rawInput);
+  return command !== null && classifyCommand(command).kind === "read-only";
+}
+
+function isKeptLocation(cwd: string, path: string, mayReadShared: boolean): boolean {
+  if (isInside(cwd, path) || isScratchPath(path)) return true;
+  return mayReadShared && isSharedReadPath(path);
 }
 
 function checkPathBoundaries(
   task: TaskContract,
-  locations: readonly { path: string }[],
+  request: RequestPermissionRequest,
   reject?: string,
 ): PermissionDecision | null {
-  const outside = locations.find((loc) => !isInside(task.cwd, loc.path) && !isScratchPath(loc.path));
+  const locations = request.toolCall.locations ?? [];
+  const mayReadShared = mayReadSharedPaths(request.toolCall.kind, request.toolCall.rawInput);
+  const outside = locations.find((loc) => !isKeptLocation(task.cwd, loc.path, mayReadShared));
   if (outside) {
     return {
       decision: "reject",
@@ -142,7 +150,7 @@ export const confineToTaskDir: PermissionPolicy = (task, request) => {
   }
 
   const locations = request.toolCall.locations ?? [];
-  const boundaryError = checkPathBoundaries(task, locations, reject);
+  const boundaryError = checkPathBoundaries(task, request, reject);
   if (boundaryError) return boundaryError;
 
   const readOnlyError = checkReadOnlyViolations(task, locations, request.toolCall.kind, reject);
@@ -176,15 +184,6 @@ export interface GuardedPolicyOptions {
   readonly currentModeId?: () => string | null;
 }
 
-/**
- * The task's guard, then the mode, then the user.
- *
- * A command that only reports — `grep`, `find`, `git status` — is answered
- * here rather than shown: it has already cleared `confineToTaskDir`, so asking
- * about it buys no safety and trains the user to click through the cards that
- * do matter. Anything that could write, install, delete or reach the network
- * still goes to them.
- */
 export function createGuardedPermissionPolicy(
   prompter?: PermissionPrompter,
   { currentModeId }: GuardedPolicyOptions = {},
@@ -211,6 +210,8 @@ export function createGuardedPermissionPolicy(
       };
     }
 
+    if (isAlwaysApproveMode(currentModeId?.() ?? null)) return autoDecision;
+
     const isExecute = request.toolCall.kind === "execute" || command !== null;
     if (!isExecute || !prompter) return autoDecision;
 
@@ -229,4 +230,11 @@ export const rejectAll: PermissionPolicy = (_task, request) => ({
   decision: "reject",
   optionId: request ? (findRejectOption(request) ?? undefined) : undefined,
   reason: "policy: rejectAll",
+});
+
+export const replyWithoutTools: PermissionPolicy = (_task, request) => ({
+  decision: "reject",
+  optionId: request ? (findRejectOption(request) ?? undefined) : undefined,
+  reason: "Reply with one JSON object. Do not call tools, read files, or run commands.",
+  source: "policy",
 });

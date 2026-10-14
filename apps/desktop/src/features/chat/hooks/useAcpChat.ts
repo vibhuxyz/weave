@@ -178,7 +178,15 @@ export function useAcpChat(server: ChatServerEndpoint | null, options: ArchiveCh
   const engineIdRef = useRef<string | null>(null);
   const [engineLabel, setEngineLabel] = useState<string | null>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusyState] = useState(false);
+  const busyRef = useRef(false);
+  const setBusy = useCallback((val: boolean | ((prev: boolean) => boolean)) => {
+    setBusyState((prev) => {
+      const next = typeof val === "function" ? val(prev) : val;
+      busyRef.current = next;
+      return next;
+    });
+  }, []);
   const [error, setError] = useState<string | null>(null);
   /**
    * An engine that refused to open a session until the user signs in, plus the
@@ -411,11 +419,29 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
         return;
       }
 
-      // Only replays carry user_message_chunk; live prompts are echoed
-      // optimistically in send(), so honouring both would duplicate the turn.
       if (update.sessionUpdate === "user_message_chunk") {
-        if (replay && update.content.type === "text") {
-          appendUserChunk(update.content.text);
+        if (update.content.type === "text") {
+          const userText = update.content.text;
+          if (replay) {
+            appendUserChunk(userText);
+          } else {
+            setTurns((current) => {
+              if (current.some((t) => t.role === "user")) return current;
+              const split = splitAttachments(stripSystemPreamble(userText));
+              return [
+                ...current,
+                {
+                  id: crypto.randomUUID(),
+                  role: "user",
+                  text: split.text,
+                  createdAt: Date.now(),
+                  images: split.images.length > 0 ? split.images : undefined,
+                  thought: "",
+                  tools: [],
+                },
+              ];
+            });
+          }
         }
         return;
       }
@@ -645,14 +671,30 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
             setActiveSessionId(message.sessionId);
             pendingOpenRef.current = null;
             setOpeningSessionId(null);
-            // A fresh chat starts empty; a resumed one is wiped by the
-            // preceding `reset` and rebuilt by the replay that follows.
-            if (!message.resumed) setTurns([]);
+            if (!message.resumed) {
+              setTurns((current) => (busyRef.current || current.length > 0 ? current : []));
+            }
             // A call the engine never closed before the transcript was saved
             // would otherwise spin forever every time the chat is reopened.
             setTurns((current) => sealTurns(current, Date.now()) ?? current);
 
-            setModes(message.modes);
+            let modes = message.modes;
+            if (modes && (message.engineId === "antigravity" || message.engineId === "agy" || message.engineId === "antigravity-acp")) {
+              if (!modes.availableModes.some(m => m.id === "auto")) {
+                modes = {
+                  ...modes,
+                  availableModes: [
+                    ...modes.availableModes,
+                    { id: "auto", name: "Auto", description: "Edit and create files without asking." }
+                  ]
+                };
+              }
+              const pref = readPreferredModeId(message.engineId);
+              if ((modes.currentModeId === "default" || modes.currentModeId === "accept-edits") && pref === "auto") {
+                modes = { ...modes, currentModeId: "auto" };
+              }
+            }
+            setModes(modes);
             configOptionsRef.current = message.configOptions;
             setConfigOptions([...message.configOptions]);
             setConfigValues(
@@ -842,7 +884,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
             }
             return;
           case "reset":
-            setTurns([]);
+            setTurns((current) => (busyRef.current ? current : []));
             return;
           case "compaction": {
             if (message.sessionId !== activeSessionIdRef.current) return;
@@ -928,9 +970,27 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
               options: [...message.options],
             });
             return;
-          case "modes":
-            setModes(message.modes);
+          case "modes": {
+            let newModes = message.modes;
+            const currentEngineId = engineIdRef.current;
+            if (newModes && (currentEngineId === "antigravity" || currentEngineId === "agy" || currentEngineId === "antigravity-acp")) {
+              if (!newModes.availableModes.some(m => m.id === "auto")) {
+                newModes = {
+                  ...newModes,
+                  availableModes: [
+                    ...newModes.availableModes,
+                    { id: "auto", name: "Auto", description: "Edit and create files without asking." }
+                  ]
+                };
+              }
+              const pref = readPreferredModeId(currentEngineId);
+              if ((newModes.currentModeId === "default" || newModes.currentModeId === "accept-edits") && pref === "auto") {
+                newModes = { ...newModes, currentModeId: "auto" };
+              }
+            }
+            setModes(newModes);
             return;
+          }
           case "policy-block":
             // The agent asked, Weave said no, and no card was ever shown. Mark
             // the tool so the transcript can say why it did nothing.
@@ -1392,6 +1452,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     decidePlan: runChannel.decidePlan,
     decideResult: runChannel.decideResult,
     cancelRun: runChannel.cancelRun,
+    resumeTask: runChannel.resumeTask,
     openFile: fileChannel.openFile,
     employeeActions,
     refreshSkills: skillChannel.refreshSkills,

@@ -1,0 +1,13 @@
+--- ./apps/desktop/src/app/App.tsx
++++ ./apps/desktop/src/app/App.tsx
+@@ -1016,6 +1016,10 @@
+     setMentionQuery(null);
+     setImgQuery(null);
+     resetComposerHeight();
++    setTimeout(() => {
++      const el = scrollRef.current;
++      el?.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
++    }, 50);
+   };
+ 
+   // Home doesn't need a project — ported from Berd, which never gates on

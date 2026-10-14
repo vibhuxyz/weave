@@ -44,21 +44,25 @@ function BlockView({
   isPlanning,
   projectDir,
   onOpenDiff,
+  showHeader = true,
 }: {
   readonly block: StreamBlock;
   readonly plannerLabel: string | null;
   readonly isPlanning: boolean;
   readonly projectDir: string | null;
   readonly onOpenDiff?: (turnId: string, path?: string) => void;
+  readonly showHeader?: boolean;
 }) {
   const isPlanner = block.taskId === PLANNER_TASK_ID;
   const diff = useMemo(() => turnDiff(block.turn), [block.turn]);
-  
+
   return (
     <section className="flex flex-col gap-2" aria-label={isPlanner ? "Planning" : `Task ${block.taskId}`}>
-      <header className="flex items-center gap-2 text-xs">
-        {isPlanner ? <PlannerHeader label={plannerLabel} isPlanning={isPlanning} /> : <TaskHeader block={block} />}
-      </header>
+      {showHeader && (
+        <header className="flex items-center gap-2 text-xs">
+          {isPlanner ? <PlannerHeader label={plannerLabel} isPlanning={isPlanning} /> : <TaskHeader block={block} />}
+        </header>
+      )}
       <TurnSegments turn={block.turn} onOpenDiff={(path) => onOpenDiff?.(block.turn.id, path)} />
       {block.hiddenToolCount > 0 && <span className="text-[11px] text-agent-text-faint">(+{block.hiddenToolCount} more steps)</span>}
       {diff.files.length > 0 && (

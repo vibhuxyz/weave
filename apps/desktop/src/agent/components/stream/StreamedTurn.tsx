@@ -70,7 +70,7 @@ export function StreamedTurn(props: StreamedTurnProps) {
     onStop: props.onAction ? () => props.onAction?.({ type: "cancel_run" }) : undefined,
   };
   return (
-    <div className="flex w-full flex-col gap-4 text-agent-text">
+    <div className="flex w-full flex-col gap-3 text-agent-text">
       <TurnSegments turn={turn} onOpenDiff={props.onOpenDiff} />
       <InteractiveBlocks blocks={viewModel.blocks} handlers={handlers} />
       {!showsStatus && diff.files.length > 0 && (

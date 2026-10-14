@@ -30,7 +30,7 @@ import { ENGINES, DEFAULT_ENGINE_ID, tokenReportingFor } from "@weave/agent/brow
 import { EnginePicker } from '@/features/engines/components';
 import { SettingsView } from '@/features/settings';
 import { ChatSkeleton, ContextPanel, EngineSetupPanel, hasSelectableModes, ModePicker, PermissionCard, QuestionCard, UserMessage, type ContextPanelTab } from '@/features/chat/components';
-import { chatCommandFor, routeDraft, RunPanel, RunStream, selectIsPlanOpen, selectIsRunActive, useRunStore } from '@/features/runs';
+import { chatCommandFor, ParallelSuggest, routeDraft, RunPanel, RunStream, selectIsPlanOpen, selectIsRunActive, useRunStore } from '@/features/runs';
 import { FileViewer, useFileStore } from '@/features/files';
 import { LocalPathOpenerContext } from '@/shared/ui/ai-elements';
 
@@ -174,6 +174,7 @@ export function App() {
     decidePlan,
     decideResult,
     cancelRun,
+    resumeTask,
     openFile,
     employeeActions,
     refreshSkills,
@@ -226,7 +227,7 @@ export function App() {
     "berd:view",
     "home",
     (v, d) =>
-      v === "home" || v === "agents" || v === "personas" || v === "plugins" || v === "skills" || v === "project" || v === "settings" ? v : d,
+      v === "home" || v === "chat" || v === "agents" || v === "personas" || v === "plugins" || v === "skills" || v === "project" || v === "settings" ? v : d,
   );
 
   const openSettings = useCallback(() => {
@@ -936,6 +937,22 @@ export function App() {
     }
   };
 
+  const beginTeamRun = (request: string) => {
+    showUserMessage(draft, imageAttachments.map((image) => ({
+      previewUrl: image.previewUrl,
+      mimeType: image.mimeType,
+      prompt: image.prompt,
+    })));
+    startRun(request, imageAttachments.map((image) => ({
+      data: image.base64,
+      mimeType: image.mimeType,
+      prompt: image.prompt,
+    })));
+    setImageAttachments([]);
+    setDraft("");
+    resetComposerHeight();
+  };
+
   const submit = () => {
     // A turn is already in flight — the button shows Stop, and Enter must
     // agree with it. Without this guard an impatient second Enter appends a
@@ -945,19 +962,7 @@ export function App() {
     dismissFinishedRun();
     const route = routeDraft(draft, { imageCount: imageAttachments.length, mentionCount: mentioned.length, isRunActive });
     if (route.kind === "team") {
-      showUserMessage(draft, imageAttachments.map((image) => ({
-        previewUrl: image.previewUrl,
-        mimeType: image.mimeType,
-        prompt: image.prompt,
-      })));
-      startRun(route.request, imageAttachments.map((image) => ({
-        data: image.base64,
-        mimeType: image.mimeType,
-        prompt: image.prompt,
-      })));
-      setImageAttachments([]);
-      setDraft("");
-      resetComposerHeight();
+      beginTeamRun(route.request);
       return;
     }
     if (!route.text.trim() && imageAttachments.length === 0) return;
@@ -1046,6 +1051,7 @@ export function App() {
     previewTint ??
     toneColor(projects.find((p) => p.dir === activeDir)?.tint) ??
     "transparent";
+  const composerRoute = routeDraft(draft, { imageCount: imageAttachments.length, mentionCount: mentioned.length, isRunActive });
 
   const handleHeaderMouseDown = (e: React.MouseEvent) => {
     // Only drag on primary (left) button
@@ -1367,7 +1373,7 @@ export function App() {
           )}
         >
           {isOpeningChat && <ChatSkeleton />}
-          {!isOpeningChat && turns.length === 0 && ready && <ConversationStart agent={selectedAgent} />}
+          {!isOpeningChat && !busy && turns.length === 0 && ready && <ConversationStart agent={selectedAgent} />}
           {!isOpeningChat && turns.map((turn) =>
             turn.role === "notice" ? (
               turn.compaction ? (
@@ -1419,6 +1425,7 @@ export function App() {
           <RunStream 
             onKeepInChat={keepInChat} 
             onDecideResult={decideResult} 
+            onResumeTask={resumeTask}
             projectDir={activeDir ?? null}
             onOpenDiff={(turnId, path) => {
               setDiffFocusPath(path);
@@ -1517,6 +1524,10 @@ export function App() {
               isDraggingImage && "outline outline-2 outline-offset-[-2px] outline-primary",
             )}
           >
+            <ParallelSuggest
+              visible={composerRoute.kind === "chat" && composerRoute.suggestParallel}
+              onRun={() => beginTeamRun(draft.trim())}
+            />
             <CommandMenu
               commands={commandMatches}
               activeIndex={commandIndex}

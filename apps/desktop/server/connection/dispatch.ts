@@ -10,7 +10,6 @@ import { handleChatAction, handleDeleteProject, parseAutoArchiveDays } from "../
 import type { ChatAction } from "../archive/index.ts";
 import { createCheckpointTask, runCancelCheckpoint } from "./checkpoint-task.ts";
 import { answerQuestion, createUserAsker } from "../questions/index.ts";
-import { askToCommit } from "../team-handoff/index.ts";
 import { handleEmployeeMessage } from "../employees/index.ts";
 import { sendSkillListing } from "../skills/index.ts";
 import { handleProjectMessage } from "../project-model/index.ts";
@@ -78,9 +77,7 @@ export function handleClientMessage(
 
   switch (msg.type) {
     case "cancel":
-      // Release anything the agent is blocked on first: a cancel with a
-      // permission card still open would otherwise leave the engine waiting
-      // on a response that is never coming.
+      sessionMgr.cancelRequested = true;
       for (const requestId of pendingPermissions.cancelAll()) {
         send({ type: "permission-cancelled", requestId });
       }
@@ -286,6 +283,10 @@ export function handleClientMessage(
       runs.cancel();
       return;
 
+    case "resume-task":
+      if (typeof msg.taskId === "string" && msg.taskId.trim() !== "") runs.resume(msg.taskId, send);
+      return;
+
     case "list-employees":
     case "read-employee":
     case "save-employee":
@@ -332,7 +333,6 @@ export function handleClientMessage(
           send,
           sendChats,
           startTeamRun: (start) => void runs.start({ ...runStartBase(), ...start }),
-          confirmTeamCommit: (message) => askToCommit(createUserAsker({ pending: pendingQuestions, send }), message),
           teamEstimates,
         }),
       );

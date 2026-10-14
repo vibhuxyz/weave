@@ -47,7 +47,7 @@ export function EmployeeDialog({ state, saveEmployee, onClose, onSaved }: Employ
             <SheetTitle className="text-sm font-normal text-foreground">{DIALOG_TITLES[state.mode]}</SheetTitle>
           </div>
           <div className="min-h-0 flex-1 space-y-8 overflow-y-auto px-7 pb-5">
-            <IdentityFields register={register} errors={formState.errors} isIdLocked={state.mode === "customize"} />
+            <IdentityFields register={register} control={control} setValue={setValue} errors={formState.errors} isIdLocked={state.mode === "customize"} />
             <SkillPicker control={control} />
             <PermissionFields register={register} control={control} />
             <PolicyFields register={register} control={control} />

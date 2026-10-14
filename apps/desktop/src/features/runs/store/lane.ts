@@ -51,6 +51,7 @@ function startedAttempt(lane: Lane): Lane {
     reason: null,
     merge: null,
     blockedReason: null,
+    awaited: lane.awaited.map((entry) => ({ ...entry, hasArrived: true })),
     verification: null,
     settledCostUsd: lane.settledCostUsd + lane.attemptCostUsd,
     attemptCostUsd: 0,

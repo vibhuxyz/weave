@@ -6,7 +6,7 @@ import { MAX_ROWS_PER_GROUP } from "./constants";
 import { DiffStat } from "./DiffStat";
 import { DisclosureHeader } from "../DisclosureHeader";
 import { diffTotalsOf } from "./tool-diff";
-import { groupLabel, runningLabel, actionColor, actionOf } from "./tool-label";
+import { groupLabel, runningLabel } from "./tool-label";
 import { ToolRow } from "./ToolRow";
 
 export function ToolGroup({
@@ -24,8 +24,8 @@ export function ToolGroup({
   const visible = tools.slice(-MAX_ROWS_PER_GROUP);
   const hiddenCount = tools.length - visible.length;
   return (
-    <div className="flex flex-col gap-2">
-      <DisclosureHeader open={open} onToggle={() => setOpen((value) => !value)} className={running ? actionColor(actionOf(running)) : tools.length > 0 ? actionColor(actionOf(tools[0]!)) : undefined}>
+    <div className="flex flex-col gap-1.5">
+      <DisclosureHeader open={open} onToggle={() => setOpen((value) => !value)}>
         {running ? (
           <Shimmer>{runningLabel(running)}</Shimmer>
         ) : (
@@ -36,8 +36,8 @@ export function ToolGroup({
         )}
       </DisclosureHeader>
       {open && (
-        <ul className="divide-y divide-agent-border overflow-hidden rounded-xl border border-agent-border">
-          {hiddenCount > 0 && <li className="px-4 py-2 text-agent-text-faint text-xs">({hiddenCount} earlier steps hidden)</li>}
+        <ul className="flex flex-col border-l border-agent-border/80 pl-3">
+          {hiddenCount > 0 && <li className="py-1 text-agent-text-faint text-xs">({hiddenCount} earlier steps hidden)</li>}
           {visible.map((tool) => (
             <ToolRow key={tool.id} tool={tool} turn={turn} onOpenDiff={onOpenDiff} />
           ))}

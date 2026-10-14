@@ -1,4 +1,5 @@
 import { DEFAULT_MCP_PROTOCOL_VERSION, ESTIMATE_TOOL_DEFINITION, JSON_RPC_ERRORS, JSON_RPC_VERSION, MCP_SERVER_NAME, MCP_SERVER_VERSION } from "./constants.ts";
+import { HANDOFF_TOOL_DEFINITION } from "./handoff-tool.ts";
 import type { JsonRpcId, ToolRunner } from "./types.ts";
 
 interface RpcRequest {
@@ -48,7 +49,7 @@ export async function answerMcp(message: unknown, run: ToolRunner): Promise<obje
     case "ping":
       return rpcResult(id, {});
     case "tools/list":
-      return rpcResult(id, { tools: [ESTIMATE_TOOL_DEFINITION] });
+      return rpcResult(id, { tools: [ESTIMATE_TOOL_DEFINITION, HANDOFF_TOOL_DEFINITION] });
     case "tools/call":
       return callTool(id, params, run);
     default:

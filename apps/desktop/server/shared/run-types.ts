@@ -140,6 +140,7 @@ export type RunUpdate =
       readonly tasks: readonly RunPlanTask[];
     }
   | { readonly kind: "plan-review"; readonly classification: RunClassification | null; readonly critique: RunCritique | null; readonly warnings: readonly string[]; readonly hiddenWarningCount: number }
+  | { readonly kind: "plan-rejected"; readonly reasons: readonly string[]; readonly hiddenReasonCount: number; readonly willRepair: boolean }
   | { readonly kind: "execution-plan"; readonly plan: RunExecutionPlan }
   | { readonly kind: "worker-count"; readonly count: RunWorkerCount }
   | { readonly kind: "planning"; readonly planner: string | null; readonly reviewer: string | null }

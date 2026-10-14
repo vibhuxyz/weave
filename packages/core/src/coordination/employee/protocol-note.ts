@@ -9,7 +9,7 @@ export function renderEmployeeProtocol(): string {
     `${fence}${EVENT_FENCE_LANGUAGE}`,
     '{ "type": "artifact.ready", "data": { "artifact": { "name": "schema", "summary": "what it is", "provides": ["Todo", "CreateTodoInput"], "files": [{ "path": "db/schema.sql", "content": "..." }] } } }',
     fence,
-    '"provides" lists the exact output names dependent employees wait for. A dependent starts as soon as every name it needs is published, without waiting for the rest of your task to finish.',
+    '"provides" lists the exact output names dependent employees wait for. A dependent does not start until every name it needs is published, and it does not wait for the rest of your task.',
     "Types: artifact.ready, artifact.updated, contract.published, contract.changed (same artifact data);",
     'dependency.blocked { "need": { "output": "name", "task": "optional id" }, "reason": "..." };',
     'subtask.completed { "subtask": "the milestone, worded as Weave listed it" };',

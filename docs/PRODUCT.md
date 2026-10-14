@@ -69,7 +69,7 @@ A discovered skill whose name matches a built-in skill replaces that built-in. B
 
 The Skills screen lists them. It does not have a create-skill dialog.
 
-ACP may read a skill file under these home roots even when the path is outside the task directory: `~/.agents/skills`, `~/.claude/skills`, `~/.codex/skills`, `~/.cursor/skills`, `~/.grok/skills`, `~/.grok/bundled/skills`, `~/.weave/skills`. Writes stay inside the task directory.
+ACP and a read-only shell command may read a skill file under these home roots even when the path is outside the task directory: `~/.agents/skills`, `~/.claude/skills`, `~/.codex/skills`, `~/.cursor/skills`, `~/.grok/skills`, `~/.grok/bundled/skills`, `~/.weave/skills`. They may also read a markdown note under `~/.grok/memory-v2`. Writes stay inside the task directory. Other files under that memory root, including its database, stay refused.
 
 ## Plugins
 

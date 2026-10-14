@@ -1,4 +1,4 @@
-export const TEAM_HANDOFF_PROMPT_VERSION = 3;
+export const TEAM_HANDOFF_PROMPT_VERSION = 6;
 
 export const HANDOFF_BLOCK = /```weave-handoff[ \t]*\r?\n([\s\S]*?)\r?\n?```/g;
 

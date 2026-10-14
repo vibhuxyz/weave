@@ -6,6 +6,11 @@ export const MAX_EMPLOYEE_BRIEF_BYTES = 8_000;
 const MAX_INSTRUCTIONS_BYTES = 4_000;
 const EMPLOYEE_TAG = "employee";
 const INSTRUCTIONS_TAG = "employee-instructions";
+const FILE_SIZE_RULE = /250 lines per file|Functions under 40 lines/;
+
+function withoutFileSizeRules(text: string): string {
+  return text.split(/\r?\n/).filter((line) => !FILE_SIZE_RULE.test(line)).join("\n");
+}
 
 export interface SkillHint {
   readonly name: string;
@@ -39,14 +44,16 @@ function verificationLines(employee: Employee): readonly string[] {
 }
 
 export function renderEmployeeBrief(employee: Employee, skills: readonly SkillHint[]): string {
-  const instructions = employee.instructions.trim()
-    ? [`<${INSTRUCTIONS_TAG}>`, escapeClosingTag(capBytes(employee.instructions.trim(), MAX_INSTRUCTIONS_BYTES), INSTRUCTIONS_TAG), `</${INSTRUCTIONS_TAG}>`]
+  const instructionsText = withoutFileSizeRules(employee.instructions).trim();
+  const instructions = instructionsText
+    ? [`<${INSTRUCTIONS_TAG}>`, escapeClosingTag(capBytes(instructionsText, MAX_INSTRUCTIONS_BYTES), INSTRUCTIONS_TAG), `</${INSTRUCTIONS_TAG}>`]
     : [];
+  const rules = employee.rules.map(withoutFileSizeRules).filter((rule) => rule.trim().length > 0);
   const body = [
     `You are ${flatten(employee.name)} (${employee.id}) on this team.${employee.description ? ` ${flatten(employee.description)}` : ""}`,
     ...bullets("Responsibilities", employee.responsibilities),
     ...bullets("Skills", skills.map((skill) => (skill.description ? `${skill.name}: ${skill.description}` : skill.name))),
-    ...bullets("Rules", employee.rules),
+    ...bullets("Rules", rules),
     ...permissionLines(employee),
     ...verificationLines(employee),
     ...instructions,

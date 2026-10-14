@@ -66,10 +66,7 @@ function dependencyLines(task: ContextSources["task"]): readonly string[] {
   const whole = dependencies.filter((dependency) => dependency.requiredOutputs.length === 0);
   return [
     ...(needed.length > 0
-      ? [
-          `Start now. Later you will need ${needed.map((dependency) => `${dependency.requiredOutputs.join(", ")} from ${dependency.task}`).join("; ")}.`,
-          "Do everything that does not need them first. When you reach the point where you genuinely need one, publish a dependency.blocked event naming that output and carry on with whatever else you can do; Weave delivers it to you as soon as it exists.",
-        ]
+      ? [`${needed.map((dependency) => `${dependency.requiredOutputs.join(", ")} from ${dependency.task}`).join("; ")} is already published. Use it. Do not invent a second copy.`]
       : []),
     ...(whole.length > 0 ? [`${whole.map((dependency) => dependency.task).join(", ")} finished before you started, so their work is already in your copy.`] : []),
   ];

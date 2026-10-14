@@ -85,6 +85,7 @@ const KNOWN_CLIENT_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   "start-run",
   "read-file",
   "cancel-run",
+  "resume-task",
   "decide-run-plan",
   "decide-run-result",
   ...EMPLOYEE_CLIENT_MESSAGE_TYPES,

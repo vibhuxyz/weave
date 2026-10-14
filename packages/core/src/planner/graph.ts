@@ -1,4 +1,5 @@
 import type { TaskContract } from "@weave/protocol";
+import type { PlanIssue } from "./issue-types.ts";
 
 type GraphTask = Pick<TaskContract, "id" | "dependencies">;
 
@@ -27,23 +28,43 @@ function findCycle(tasks: readonly GraphTask[]): string[] | null {
   return null;
 }
 
-export function validateGraph(tasks: readonly GraphTask[]): string[] {
-  const issues: string[] = [];
+export function graphIssues(tasks: readonly GraphTask[]): readonly PlanIssue[] {
+  const issues: PlanIssue[] = [];
   const ids = new Set<string>();
   for (const task of tasks) {
-    if (ids.has(task.id)) issues.push(`Duplicate task id ${task.id}`);
+    if (ids.has(task.id)) issues.push({ kind: "duplicate-id", task: task.id });
     ids.add(task.id);
   }
   for (const task of tasks) {
     for (const dependency of task.dependencies ?? []) {
-      if (dependency.task === task.id) issues.push(`Task ${task.id} depends on itself`);
-      else if (!ids.has(dependency.task)) {
-        issues.push(`Task ${task.id} depends on unknown task ${dependency.task}`);
-      }
+      if (dependency.task === task.id) issues.push({ kind: "self-dependency", task: task.id });
+      else if (!ids.has(dependency.task)) issues.push({ kind: "unknown-dependency", task: task.id, waitsOn: dependency.task });
     }
   }
-  if (issues.length > 0) return issues;
-
   const cycle = findCycle(tasks);
-  return cycle ? [`Dependency cycle: ${cycle.join(" -> ")}`] : [];
+  if (cycle) issues.push({ kind: "cycle", path: cycle });
+  return issues;
+}
+
+function legacyGraphIssue(issue: PlanIssue): string {
+  switch (issue.kind) {
+    case "cycle":
+      return `Dependency cycle: ${issue.path.join(" -> ")}`;
+    case "unknown-dependency":
+      return `Task ${issue.task} depends on unknown task ${issue.waitsOn}`;
+    case "self-dependency":
+      return `Task ${issue.task} depends on itself`;
+    case "duplicate-id":
+      return `Duplicate task id ${issue.task}`;
+    case "path-overlap":
+      return `${issue.tasks.join(" and ")} both own ${issue.paths.join(", ")}`;
+    default: {
+      const unreachable: never = issue;
+      return unreachable;
+    }
+  }
+}
+
+export function validateGraph(tasks: readonly GraphTask[]): string[] {
+  return graphIssues(tasks).map(legacyGraphIssue);
 }

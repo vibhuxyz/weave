@@ -4,7 +4,7 @@ import type { EmployeeFormValues } from "@/features/employees";
 import { FIELD, LABEL } from "@/features/projects/components";
 import { cn } from "@/shared/lib";
 import { Switch } from "@/shared/ui";
-import type { CountFieldName, FlagFieldName, TextFieldName } from "./types";
+import type { FlagFieldName, TextFieldName } from "./types";
 
 interface TextFieldProps {
   readonly register: UseFormRegister<EmployeeFormValues>;
@@ -53,12 +53,3 @@ export function FlagField({ control, name, label }: { readonly control: Control<
   );
 }
 
-export function CountField({ register, name, label, max }: { readonly register: UseFormRegister<EmployeeFormValues>; readonly name: CountFieldName; readonly label: string; readonly max: number }) {
-  const id = useId();
-  return (
-    <div className="space-y-2">
-      <label htmlFor={id} className={LABEL}>{label}</label>
-      <input id={id} type="number" min={0} max={max} step={1} className={cn(FIELD, "h-11")} {...register(name, { valueAsNumber: true, min: 0, max })} />
-    </div>
-  );
-}

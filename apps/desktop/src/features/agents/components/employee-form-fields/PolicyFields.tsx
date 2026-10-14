@@ -1,20 +1,21 @@
 import { useWatch } from "react-hook-form";
-import { LIST_HINT, MAX_MEMORY_ENTRIES, MAX_RECALL_COUNT } from "./constants";
-import { CountField, FlagField, TextField } from "./FormFields";
+import { CAPABILITY_CHOICES, CountSelect, EngineSelect, MEMORY_ENTRY_PRESETS, MEMORY_RECALL_PRESETS, MultiSelect } from "../employee-choices";
+import { MAX_MEMORY_ENTRIES, MAX_RECALL_COUNT } from "./constants";
+import { FlagField } from "./FormFields";
 import { RungPicker } from "./RungPicker";
 import type { FieldGroupProps } from "./types";
 
-export function PolicyFields({ register, control }: FieldGroupProps) {
+export function PolicyFields({ control }: FieldGroupProps) {
   const isRestricted = useWatch({ control, name: "isEngineListRestricted" });
   const isMemoryEnabled = useWatch({ control, name: "isMemoryEnabled" });
   return (
     <>
       <fieldset className="space-y-5">
         <legend className="mb-3 text-sm text-foreground">Engines</legend>
-        <TextField register={register} name="preferredEngines" label="Try first" rows={2} hint={`${LIST_HINT} Engine ids such as claude-code or codex.`} />
+        <EngineSelect control={control} name="preferredEngines" label="Try first" hint="Checked engines are tried in the order you pick them." />
         <FlagField control={control} name="isEngineListRestricted" label="Only allow listed engines" />
-        {isRestricted && <TextField register={register} name="allowedEngines" label="Allowed engines" rows={2} hint={`${LIST_HINT} Any other engine is never used.`} />}
-        <TextField register={register} name="capabilities" label="Capabilities needed" rows={2} hint={`${LIST_HINT} For example: browser.`} />
+        {isRestricted ? <EngineSelect control={control} name="allowedEngines" label="Allowed engines" hint="Any other engine is never used." /> : null}
+        <MultiSelect control={control} name="capabilities" label="Capabilities needed" hint="For example: browser." options={CAPABILITY_CHOICES} variant="chips" />
       </fieldset>
       <fieldset className="space-y-5">
         <legend className="mb-3 text-sm text-foreground">Verification before merge</legend>
@@ -24,12 +25,12 @@ export function PolicyFields({ register, control }: FieldGroupProps) {
       <fieldset className="space-y-5">
         <legend className="mb-3 text-sm text-foreground">Memory</legend>
         <FlagField control={control} name="isMemoryEnabled" label="Remember outcomes and notes" />
-        {isMemoryEnabled && (
+        {isMemoryEnabled ? (
           <div className="grid grid-cols-2 gap-3">
-            <CountField register={register} name="memoryMaxEntries" label="Entries kept" max={MAX_MEMORY_ENTRIES} />
-            <CountField register={register} name="memoryRecallCount" label="Recalled per task" max={MAX_RECALL_COUNT} />
+            <CountSelect control={control} name="memoryMaxEntries" label="Entries kept" presets={MEMORY_ENTRY_PRESETS} max={MAX_MEMORY_ENTRIES} />
+            <CountSelect control={control} name="memoryRecallCount" label="Recalled per task" presets={MEMORY_RECALL_PRESETS} max={MAX_RECALL_COUNT} />
           </div>
-        )}
+        ) : null}
       </fieldset>
     </>
   );

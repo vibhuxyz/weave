@@ -1,8 +1,10 @@
 export { runPool } from "./pool.ts";
 export { scopeViolations } from "./scope.ts";
 export type {
+  PoolControls,
   PoolOptions,
   PoolReport,
+  PoolSession,
   PoolTaskReport,
   InspectHarvest,
   RunWorker,

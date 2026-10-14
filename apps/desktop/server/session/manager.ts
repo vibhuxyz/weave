@@ -24,11 +24,16 @@ export class DesktopSessionManager {
   pendingPreamble: string | null = null;
   taskCreated = false;
   taskGoal = "";
+  cancelRequested = false;
   private readonly ctx: SessionContext;
 
   constructor(initialEngineId: string, ctx: SessionContext) {
     this.currentEngineId = initialEngineId;
     this.ctx = ctx;
+  }
+
+  get dataDir(): string {
+    return this.ctx.dataDir;
   }
 
   sendAuthRequired(error: AuthRequiredError): void {

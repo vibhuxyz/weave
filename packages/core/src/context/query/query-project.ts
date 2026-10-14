@@ -5,6 +5,7 @@ import { callNeighbours, changesTouching, fileNeighbours } from "./related.ts";
 import { matchingTerms } from "../words/index.ts";
 import { requestTermsOf } from "./terms.ts";
 import type { ProjectAnswer, RankedFile, RankedSymbol } from "./types.ts";
+import { namedSymbols } from "./named-symbols.ts";
 import { relevantTests, verificationCommands } from "./verification.ts";
 
 const MAX_FILES = 12;
@@ -34,6 +35,15 @@ function similarFiles(model: ProjectModel, request: string): readonly RankedFile
   return [...best].map(([path, entry]) => ({ path, workspace: workspaceOf.get(path) ?? null, score: entry.score, matchedTerms: [], reasons: [entry.reason] }));
 }
 
+function rankedSymbols(request: string, known: ProjectModel["symbols"], lexical: readonly RankedSymbol[]): Pick<ProjectAnswer, "symbols" | "anchors"> {
+  const named = namedSymbols(known, request);
+  const namedIds = new Set(named.map((entry) => entry.symbol.id));
+  return {
+    anchors: named.map((entry) => ({ file: entry.symbol.file, symbol: entry.symbol.name })),
+    symbols: [...named, ...lexical.filter((entry) => !namedIds.has(entry.symbol.id))].slice(0, MAX_SYMBOLS),
+  };
+}
+
 export function queryProject(model: ProjectModel, request: string): ProjectAnswer {
   const parsed = requestTermsOf(request);
   const lexical = rankFiles(model, indexModel(model), parsed);
@@ -50,7 +60,8 @@ export function queryProject(model: ProjectModel, request: string): ProjectAnswe
     .filter((entry) => entry.matchedTerms.length > 0)
     .sort((a, b) => b.matchedTerms.length - a.matchedTerms.length || (fileRank.get(a.symbol.file) ?? 0) - (fileRank.get(b.symbol.file) ?? 0) || a.symbol.line - b.symbol.line)
     .slice(0, MAX_SYMBOLS);
-  const symbolIds = new Set(symbols.map((entry) => entry.symbol.id));
+  const picked = rankedSymbols(request, model.symbols, symbols);
+  const symbolIds = new Set(picked.symbols.map((entry) => entry.symbol.id));
   const testFiles = new Set(model.files.filter((file) => file.kind === "test").map((file) => file.path));
   const productApis = model.apis.filter((api) => !testFiles.has(api.file));
   const matchingApis = productApis.filter((api) => matchingTerms(parsed.terms, `${api.path} ${api.handler ?? ""}`).length > 0);
@@ -59,9 +70,11 @@ export function queryProject(model: ProjectModel, request: string): ProjectAnswe
   return {
     request,
     terms: parsed.terms,
+    packageManager: model.stack.packageManager,
     application: application ? { name: application.name, dir: application.dir, kind: application.kind } : null,
+    anchors: picked.anchors,
     files,
-    symbols,
+    symbols: picked.symbols,
     dependencies: { ...fileNeighbours(model, fileSet), ...callNeighbours(model, symbolIds, fileSet) },
     apis,
     events: model.events.filter((event) => !testFiles.has(event.file) && (fileSet.has(event.file) || matchingTerms(parsed.terms, event.name).length > 0)).slice(0, MAX_EVENTS),

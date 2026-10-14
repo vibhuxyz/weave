@@ -47,11 +47,22 @@ export interface PlannerPromptInput {
   engineCatalog?: string | null;
 }
 
+export interface PlanAnchorFile {
+  readonly file: string;
+  readonly symbol: string;
+}
+
+export interface PlanGrounding {
+  readonly packageManager: string | null;
+  readonly anchorFiles: readonly PlanAnchorFile[];
+}
+
 export interface PlanRequest extends PlannerPromptInput {
   cwd: string;
   employeeIds?: readonly string[] | null;
   skillNames?: readonly string[] | null;
   engineIds?: readonly string[] | null;
+  grounding?: PlanGrounding | null;
   reviewTurn?: ReviewTurn;
   runTurn: (prompt: string, signal?: AbortSignal) => Promise<string>;
   signal?: AbortSignal;

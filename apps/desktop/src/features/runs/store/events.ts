@@ -27,6 +27,8 @@ function textOf(update: RunUpdate): string {
       return `${update.status} on ${update.branch}`;
     case "note":
       return update.text;
+    case "plan-rejected":
+      return update.reasons.join("; ");
     case "repo-setup":
     case "result-decision":
       return update.summary;

@@ -10,4 +10,5 @@ export interface TeamRunStart {
 export interface TurnWatch {
   readonly read: () => string;
   readonly close: () => void;
+  readonly whenClosed: (listener: () => void) => void;
 }

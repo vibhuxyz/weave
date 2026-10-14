@@ -17,10 +17,6 @@ class Fifo {
 
 const MAX_LISTED_PROBLEMS = 10;
 
-function gatesStart(dependency: { readonly requiredOutputs: readonly string[] }): boolean {
-  return dependency.requiredOutputs.length === 0;
-}
-
 function planProblem(tasks: readonly SchedulableTask[]): string | null {
   const ids = new Set(tasks.map((task) => task.id));
   if (ids.size !== tasks.length) return "task ids must be unique";
@@ -42,7 +38,7 @@ export class Readiness {
     for (const task of tasks) {
       const dependencies = task.dependencies ?? [];
       this.dependencies.set(task.id, dependencies.map((dependency) => dependency.task));
-      this.waitingOn.set(task.id, new Set(dependencies.filter(gatesStart).map((dependency) => dependency.task)));
+      this.waitingOn.set(task.id, new Set(dependencies.map((dependency) => dependency.task)));
       for (const dependency of dependencies) this.addDependent(dependency.task, task.id);
       if (this.waitingOn.get(task.id)?.size === 0) this.fresh.push(task.id);
     }

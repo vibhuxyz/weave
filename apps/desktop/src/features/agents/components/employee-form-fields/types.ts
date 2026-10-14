@@ -5,7 +5,6 @@ type FieldNamesOf<T> = { [K in keyof EmployeeFormValues]: EmployeeFormValues[K] 
 
 export type TextFieldName = FieldNamesOf<string>;
 export type FlagFieldName = FieldNamesOf<boolean>;
-export type CountFieldName = FieldNamesOf<number>;
 
 export interface FieldGroupProps {
   readonly register: UseFormRegister<EmployeeFormValues>;

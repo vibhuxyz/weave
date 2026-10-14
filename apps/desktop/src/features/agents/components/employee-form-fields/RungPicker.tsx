@@ -3,6 +3,7 @@ import { VERIFICATION_RUNGS } from "@weave/protocol";
 import type { EmployeeFormValues } from "@/features/employees";
 import { LABEL } from "@/features/projects/components";
 import { cn } from "@/shared/lib";
+import { CHIP_OFF, CHIP_ON } from "../employee-choices";
 
 interface RungPickerProps {
   readonly control: Control<EmployeeFormValues>;
@@ -27,7 +28,7 @@ export function RungPicker({ control, name, label }: RungPickerProps) {
                   type="button"
                   aria-pressed={isOn}
                   onClick={() => field.onChange(isOn ? field.value.filter((item) => item !== rung) : [...field.value, rung])}
-                  className={cn("rounded-full border px-3 py-1 text-xs transition-colors", isOn ? "border-primary bg-primary/15 text-foreground" : "border-border/60 text-muted-foreground hover:text-foreground")}
+                  className={cn("rounded-full border px-3 py-1 text-xs transition-colors", isOn ? CHIP_ON : CHIP_OFF)}
                 >
                   {rung}
                 </button>

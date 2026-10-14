@@ -5,12 +5,6 @@ import { useAgents } from '@/features/agents/hooks';
 import { useWidgetActivationGuard } from "./useWidgetActivationGuard";
 import type { WidgetRenderProps } from "./types";
 
-/**
- * Adapted from upstream `AgentPinWidget`. Upstream reads a persona from
- * `agentStore` + a CDN avatar; Berd resolves the agent from `useAgents` and
- * renders its `AgentAvatar`. Click starts a chat with the agent (routed
- * through `onOpenAgent`, wired to Berd's `handleChatWithAgent`).
- */
 function agentIdOf(state: Record<string, unknown> | undefined): string | null {
   return typeof state?.agentId === "string" ? state.agentId : null;
 }
@@ -24,16 +18,14 @@ export const AgentPinWidget = memo(function AgentPinWidget({
   const { agents } = useAgents();
 
   const agentId = agentIdOf(instance.state);
-  const agent =
-    agents.find((a) => a.id === agentId) ??
-    agents.find((a) => a.builtin) ??
-    agents[0];
+  const agent = agentId ? agents.find((candidate) => candidate.id === agentId) : undefined;
   const label = agent?.name ?? "Agent";
   const resolvedId = agent?.id ?? agentId ?? "agent";
 
-  const handleClick = useWidgetActivationGuard(shouldIgnoreActivation, () =>
-    (onTagAgentInComposer ?? onOpenAgent)?.(resolvedId),
-  );
+  const handleClick = useWidgetActivationGuard(shouldIgnoreActivation, () => {
+    if (!agent) return;
+    (onTagAgentInComposer ?? onOpenAgent)?.(agent.id);
+  });
 
   return (
     <div className="group pointer-events-none relative flex h-full w-full items-center justify-center text-center text-foreground">

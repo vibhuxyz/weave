@@ -1,4 +1,4 @@
-import { deliveryPlanOf, type DeliveryPlan, type planAndRun } from "@weave/core";
+import { deliveryPlanOf, type DeliveryPlan, type planAndRun, type PoolSession } from "@weave/core";
 import type { WeaveEvent } from "@weave/protocol";
 import type { ResultDecision, RunOutcome, ServerMessage } from "../shared/index.ts";
 import { errorMessage } from "../shared/index.ts";
@@ -30,6 +30,7 @@ export interface RunController {
   readonly cancel: () => void;
   readonly decide: (runKey: string, approved: boolean) => void;
   readonly decideResult: (runKey: string, decision: ResultDecision, send: (message: ServerMessage) => void) => Promise<void>;
+  readonly resume: (taskId: string, send: (message: ServerMessage) => void) => void;
 }
 
 function outcomeOf(result: PlanAndRunResult, plan: DeliveryPlan | null): RunOutcome {
@@ -53,7 +54,7 @@ function requestProblem(request: string): string | null {
 }
 
 export function createRunController(runPlanAndRun: PlanAndRun, dependencies: RunDependencies = DEFAULT_RUN_DEPENDENCIES): RunController {
-  const active: { abort: AbortController | null; runKey: string | null; gate: ApprovalGate | null } = { abort: null, runKey: null, gate: null };
+  const active: { abort: AbortController | null; runKey: string | null; gate: ApprovalGate | null; pool: PoolSession | null } = { abort: null, runKey: null, gate: null, pool: null };
   const pending = createPendingResult();
 
   const start = async (input: StartRunInput): Promise<void> => {
@@ -92,6 +93,7 @@ export function createRunController(runPlanAndRun: PlanAndRun, dependencies: Run
         employees: {},
         adaptive: { budgets: ready.budgets },
         approvePlan: gate.wait,
+        onPoolSession: (session) => { active.pool = session; },
         ...(images.images.length > 0 ? { images: images.images } : {}),
       });
       const plan = result.status === "ran" ? deliveryPlanOf(result.report) : null;
@@ -100,13 +102,22 @@ export function createRunController(runPlanAndRun: PlanAndRun, dependencies: Run
     } catch (error: unknown) {
       send({ type: "run-finished", runKey, outcome: { status: "error", reason: `Parallel run failed: ${errorMessage(error)}` } });
     } finally {
-      Object.assign(active, { abort: null, runKey: null, gate: null });
+      Object.assign(active, { abort: null, runKey: null, gate: null, pool: null });
     }
+  };
+
+  const resume = (taskId: string, send: (message: ServerMessage) => void): void => {
+    if (!active.runKey) {
+      send({ type: "error", message: "No team run is in progress." });
+      return;
+    }
+    if (active.pool?.resume(taskId)) return;
+    send({ type: "error", message: "That worker cannot be resumed. Its retries are already finished, or the run has moved on." });
   };
 
   const decide = (runKey: string, approved: boolean): void => {
     if (active.runKey === runKey) active.gate?.decide(approved);
   };
 
-  return { start, cancel: () => active.abort?.abort(), decide, decideResult: pending.decide };
+  return { start, cancel: () => active.abort?.abort(), decide, decideResult: pending.decide, resume };
 }

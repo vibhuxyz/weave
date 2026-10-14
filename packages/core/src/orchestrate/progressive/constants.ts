@@ -1,0 +1,11 @@
+export const DIRECT_TASK_ID = "T1";
+export const MAX_PLAN_ATTEMPTS = 2;
+export const MAX_FINDINGS_BYTES = 2_048;
+export const MAX_DISCOVERED_PATHS = 20;
+export const MAX_AREAS = 12;
+export const FINDINGS_TAG = "worker-findings";
+export const ONE_AREA_REASON = "the request stays in one area";
+export const SAME_TREE_REASON = "the work shares one tree";
+export const AREAS_REASON = "the request spans independent areas";
+export const DISCOVERY_REASON = "the worker found independent areas";
+export const START_NOTE = "Start on this now. If a shared contract blocks other areas, publish that contract and keep working in the area you already started.";

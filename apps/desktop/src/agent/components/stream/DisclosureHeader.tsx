@@ -29,7 +29,7 @@ export function DisclosureHeader({
       )}
     >
       <span className="min-w-0 truncate">{children}</span>
-      {!isDisabled && <Chevron className="size-3.5 shrink-0" />}
+      {!isDisabled && <Chevron className="size-3 shrink-0 opacity-70" />}
     </button>
   );
 }
