@@ -1,4 +1,3 @@
-export { ParallelSuggest } from "./ParallelSuggest";
 export { RunPanel } from "./RunPanel";
 export { RunStream } from "./RunStream";
 export { EventsPanel } from "./EventsPanel";

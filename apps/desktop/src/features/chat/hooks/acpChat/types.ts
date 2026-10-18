@@ -92,14 +92,14 @@ export interface TurnUsage {
   cachedWriteTokens?: number;
 }
 
-/** An agent whose instructions were in force for a turn. */
+export type TurnAgentKind = "persona" | "employee";
+
 export interface TurnPersona {
   id: string;
   name: string;
-  /** Custom avatar data-URI; absent means the character art keyed off `id`. */
   icon?: string;
-  /** A bundled character the user picked for this agent. */
   character?: string;
+  kind?: TurnAgentKind;
 }
 
 /** A Stop-sequence checkpoint (CONTINUATION.md §8) attached to the turn it
@@ -129,6 +129,24 @@ export interface EngineHandoffNotice {
   readonly bytes: number;
 }
 
+export interface TurnRunLane {
+  readonly taskId: string;
+  readonly title: string;
+  readonly status: "waiting" | "running" | "ok" | "failed" | "rejected" | "cancelled";
+  readonly changedFiles: number;
+  readonly costUsd: number;
+  readonly employeeId?: string | null;
+}
+
+export interface TurnRunSummary {
+  readonly outcomeText: string;
+  readonly durationMs: number;
+  readonly costUsd: number;
+  readonly lanes: readonly TurnRunLane[];
+  readonly files: readonly string[];
+  readonly hiddenFileCount: number;
+}
+
 export interface ChatTurn {
   id: string;
   role: "user" | "assistant" | "notice";
@@ -138,13 +156,9 @@ export interface ChatTurn {
   historyGap?: number;
   handoff?: EngineHandoffNotice;
   checkpoint?: TurnCheckpoint;
-  /** Names of agents @-mentioned on this prompt, for the pills on the bubble. */
   mentions?: string[];
-  /**
-   * Agents active for this turn — standing plus @-mentioned. Carried on both
-   * halves of the exchange so the run card can say who answered.
-   */
   personas?: TurnPersona[];
+  skills?: string[];
   images?: ChatImageAttachment[];
   /** The agent's reasoning stream (`agent_thought_chunk`), shown collapsed. */
   thought: string;
@@ -155,6 +169,7 @@ export interface ChatTurn {
   usage?: TurnUsage;
   sourceEventIds?: string[];
   sourceSeq?: number;
+  run?: TurnRunSummary;
 }
 
 export type ConnectionState =

@@ -159,6 +159,8 @@ export class Coordinator {
         return { ok: true, event: this.requestDependency(taskId, submission.data.need, submission.data.reason) };
       case "scope.expand":
         return { ok: true, event: this.expandScope(taskId, submission.data.paths, submission.data.reason) };
+      case "split.suggested":
+        return { ok: true, event: this.recordSplit(taskId, submission.data.areas, submission.data.reason) };
       case "subtask.completed":
         return { ok: true, event: this.recordSubtask(taskId, submission.data.subtask) };
       case "task.blocked":
@@ -276,6 +278,20 @@ export class Coordinator {
     if (task) this.recordClaim(taskId, this.ownership.claim(taskId, claimsForTask(task)));
     this.notifyChange();
     return true;
+  }
+
+  expand(taskId: string, patch: Partial<TaskContract>, incoming: readonly TaskContract[]): { readonly ok: true } | { readonly ok: false; readonly reason: string } {
+    const expanded = this.graph.expand(taskId, patch, incoming);
+    if (!expanded.ok) return expanded;
+    const task = this.graph.current().find((candidate) => candidate.id === taskId);
+    if (task) this.recordClaim(taskId, this.ownership.claim(taskId, claimsForTask(task)));
+    this.notifyChange();
+    return { ok: true };
+  }
+
+  private recordSplit(taskId: string, areas: readonly string[], reason: string): CoordinationEvent {
+    this.ledger.append("split.suggested", { taskId, areas: [...areas], reason });
+    return this.emit(taskId, { type: "split.suggested", data: { areas: [...areas], reason } });
   }
 
   private recordSubtask(taskId: string, subtask: string): CoordinationEvent {

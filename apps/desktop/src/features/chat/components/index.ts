@@ -9,6 +9,7 @@ export { QuestionCard } from "./question";
 export { cleanOutput } from "./clean-output";
 export { toolRunState } from "./ToolStatusIcon";
 export { UserMessage } from "./UserMessage";
+export { TurnAgents } from "./turn-agents";
 export {
   PromptCard,
   PromptCardHeader,

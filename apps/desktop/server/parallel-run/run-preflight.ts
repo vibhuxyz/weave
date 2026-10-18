@@ -1,14 +1,16 @@
 import type { Budgets } from "@weave/core";
 import { loadBudgets, type BudgetLoad } from "../budgets/index.ts";
 import { prepareRepo, type RepoCheck } from "../git-setup/index.ts";
+import { holdAwake, type HoldAwake } from "../keep-awake/index.ts";
 import { errorMessage, type RunOutcome } from "../shared/index.ts";
 
 export interface RunDependencies {
   readonly readBudgets: (projectDir: string) => Promise<BudgetLoad>;
   readonly prepareRepo: (projectDir: string) => Promise<RepoCheck>;
+  readonly holdAwake: HoldAwake;
 }
 
-export const DEFAULT_RUN_DEPENDENCIES: RunDependencies = { readBudgets: loadBudgets, prepareRepo };
+export const DEFAULT_RUN_DEPENDENCIES: RunDependencies = { readBudgets: loadBudgets, prepareRepo, holdAwake };
 
 export type Preflight =
   | { readonly ok: true; readonly budgets: Budgets; readonly repoSetup: string | null }

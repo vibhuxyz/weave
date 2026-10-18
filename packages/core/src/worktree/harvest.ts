@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HARVEST_AUTHOR_EMAIL, HARVEST_AUTHOR_NAME, HARVEST_EXCLUDED_PATHS } from "./constants.ts";
+import { gitStep } from "./git-step.ts";
 import { outputLines, runGit } from "./run-git.ts";
 import type { Harvest, WorktreeResult } from "./types.ts";
 import type { Worktree } from "./worktree.ts";
@@ -77,11 +78,6 @@ const AUTHOR_ARGS = ["-c", `user.name=${HARVEST_AUTHOR_NAME}`, "-c", `user.email
 
 function isHarvestable(path: string): boolean {
   return !path.split("/").includes("node_modules");
-}
-
-async function gitStep(repoRoot: string, args: readonly string[], env?: Readonly<Record<string, string>>): Promise<WorktreeResult<string>> {
-  const run = await runGit(repoRoot, args, env ? { env } : {});
-  return run.ok ? { ok: true, value: run.output.trim() } : { ok: false, reason: `git ${args[0] ?? ""} failed in ${repoRoot}: ${run.output.trim()}` };
 }
 
 async function commitFilesOnBase(input: SnapshotInput, files: readonly string[], scratch: string): Promise<WorktreeResult<Harvest>> {

@@ -6,7 +6,7 @@ export const HANDOFF_TOOL_NAME = "weave_handoff";
 export const HANDOFF_TOOL_DEFINITION = {
   name: HANDOFF_TOOL_NAME,
   description:
-    "Ask Weave to start workers on the remaining work. Call this when the rest splits across folders that do not share files, or when the user asks to start workers, run in parallel, or split the work. Every remaining item must name a folder. If this returns an error, fix the arguments and call it again. Then keep working on the files you still own.",
+    "Ask Weave to start workers on the remaining work. Call this when the rest splits across folders that do not share files, or when the user asks to start workers, run in parallel, or split the work. Each remaining piece names the folders it changes and the pieces it waits for. If this returns an error, fix the arguments and call it again. Then keep working on the files you still own.",
   inputSchema: {
     type: "object",
     properties: {
@@ -14,8 +14,17 @@ export const HANDOFF_TOOL_DEFINITION = {
       done: { type: "array", items: { type: "string" }, description: "What this chat already finished" },
       remaining: {
         type: "array",
-        items: { type: "string" },
-        description: "Each independent piece, naming the folder it changes, such as apps/web",
+        description: "Each independent piece of the remaining work",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "A short lower-case name for this piece, such as api-health" },
+            work: { type: "string", description: "What this worker must do" },
+            paths: { type: "array", items: { type: "string" }, description: "The folders this piece changes, such as apps/web. No two pieces may share a folder." },
+            dependsOn: { type: "array", items: { type: "string" }, description: "The ids of the pieces that must finish first, or [] when this can start right away" },
+          },
+          required: ["id", "work", "paths"],
+        },
       },
       findings: { type: "array", items: { type: "string" }, description: "Facts the other workers need, including any contract they must wait for" },
     },

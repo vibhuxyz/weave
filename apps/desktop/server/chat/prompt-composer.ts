@@ -1,5 +1,5 @@
 import { promptBlocks, type PromptBlock } from "@weave/agent";
-import { ASK_USER_SECTION } from "@weave/core";
+import { ASK_USER_SECTION, RESPONSE_FORMAT_SECTION } from "@weave/core";
 import type { PromptImageData } from "../shared/index.ts";
 
 export interface ComposeSystemOptions {
@@ -8,6 +8,7 @@ export interface ComposeSystemOptions {
   readonly pluginBlock?: string;
   readonly ruleCatalog?: string;
   readonly decisionsBlock?: string | null;
+  readonly pinnedSkills?: string;
   readonly builtinSkillCatalog?: string;
   readonly skillCatalog?: string;
   readonly teamHandoff?: string;
@@ -20,10 +21,12 @@ export function composeSystemPrompt(
   const blocks = [
     options.pendingPreamble,
     options.persona?.trim() || null,
+    options.pinnedSkills,
     options.pluginBlock?.trim() || null,
     options.ruleCatalog,
     options.decisionsBlock,
     ASK_USER_SECTION,
+    RESPONSE_FORMAT_SECTION,
     options.builtinSkillCatalog,
     options.skillCatalog,
     options.teamHandoff,

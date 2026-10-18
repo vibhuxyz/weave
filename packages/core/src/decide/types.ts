@@ -3,17 +3,16 @@ import type { PlannedTask, ProjectKind } from "../planner/index.ts";
 
 export type DecisionReason =
   | "single-task"
-  | "too-few-tasks"
   | "unverifiable-task"
-  | "overlapping-paths"
   | "disjoint-paths"
   | "no-contract"
   | "single-component"
   | "components-with-contract"
+  | "overlap-serialized"
   | "adaptive";
 
 export interface Decision {
-  mode: "sequential" | "parallel";
+  mode: "sequential" | "parallel" | "graph";
   reason: DecisionReason;
 }
 

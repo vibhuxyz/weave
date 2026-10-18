@@ -28,7 +28,7 @@ import { estimateDepsFor, openConnectionTools } from "../team-tools/index.ts";
 import { CompactionController } from "../compaction/index.ts";
 import { ReplayGate } from "../history/index.ts";
 import { EngineAuthStates, type ActiveAuthSession } from "../auth/index.ts";
-import { BUDGET_CLIENT_MESSAGE_TYPES, EMPLOYEE_CLIENT_MESSAGE_TYPES, PROJECT_CLIENT_MESSAGE_TYPES, SKILL_CLIENT_MESSAGE_TYPES, errorMessage } from "../shared/index.ts";
+import { BUDGET_CLIENT_MESSAGE_TYPES, DIFF_CLIENT_MESSAGE_TYPES, EMPLOYEE_CLIENT_MESSAGE_TYPES, PROJECT_CLIENT_MESSAGE_TYPES, SKILL_CLIENT_MESSAGE_TYPES, errorMessage } from "../shared/index.ts";
 import type { ClientMessage, ServerMessage, EngineEntry } from "../shared/index.ts";
 import type { ConnectionStorage } from "./types.ts";
 
@@ -92,6 +92,7 @@ const KNOWN_CLIENT_MESSAGE_TYPES: ReadonlySet<string> = new Set([
   ...SKILL_CLIENT_MESSAGE_TYPES,
   ...PROJECT_CLIENT_MESSAGE_TYPES,
   ...BUDGET_CLIENT_MESSAGE_TYPES,
+  ...DIFF_CLIENT_MESSAGE_TYPES,
 ]);
 
 function parseClientMessage(raw: unknown): ClientMessage | null {
@@ -201,11 +202,12 @@ export async function handleConnection(
     mcpServers: tools.mcpServers,
   });
 
-  const selectBuiltinSkills = createSkillSelector(projectModels);
-  const [ruleCatalog, skillCatalog] = await Promise.all([
+  const [ruleCatalog, projectSkills] = await Promise.all([
     discoverRules(storage.ruleDirs).then(formatRulesBlock),
-    discoverSkills(storage.skillDirs).then(formatSkillCatalog),
+    discoverSkills(storage.skillDirs),
   ]);
+  const skillCatalog = formatSkillCatalog(projectSkills);
+  const selectBuiltinSkills = createSkillSelector(projectModels, { projectSkills, skillRoots: storage.skillDirs });
 
   const lastThreadId = chats.lastSessionId();
   try {

@@ -21,6 +21,7 @@ export function deliveryPlanOf(report: RunPlanReport): DeliveryPlan | null {
   return {
     runId: report.runId,
     baseCommit: report.baseCommit,
+    snapshotOf: report.snapshotOf,
     integrationHead: head,
     integrationStatus: integration && head !== null ? integration.status : "not-merged",
     detail: integration && head !== null ? integration.detail : notMergedDetail,

@@ -34,6 +34,7 @@ export function sessionFor(input: {
     },
     retarget: (taskId, patch) => coordinator.retarget(taskId, patch),
     admit: (tasks) => coordinator.admit(tasks),
+    expand: (taskId, patch, incoming) => coordinator.expand(taskId, patch, incoming),
     setConcurrency: (workers) => { if (controls) controls.concurrency = workers; },
     setBudget: (budget) => { if (controls) controls.budget = budget; },
     setPriority: (priorityOf) => { if (controls) controls.priorityOf = priorityOf; },

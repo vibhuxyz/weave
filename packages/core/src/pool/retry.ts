@@ -8,7 +8,7 @@ export const MAX_PUBLISH_RETRIES = 1;
 const PUBLISH_DELAY_MS = 5_000;
 const MAX_NOTE_CHARS = 300;
 
-const TRANSIENT_FAILURE = /timeout|timed out|stall|crash|econnreset|econnrefused|socket hang up|overloaded|rate limit|\b429\b|\b502\b|\b503\b|\b504\b|network/i;
+const TRANSIENT_FAILURE = /timeout|timed out|\bstall(?:ed)?\b|crash|econnreset|econnrefused|socket hang up|overloaded|rate limit|\b429\b|\b502\b|\b503\b|\b504\b|network/i;
 const PERMANENT_FAILURE = /verify|rejected|scope|allowed path|outside|permission|invalid plan/i;
 
 export interface RetryCounts {
@@ -41,7 +41,7 @@ export function missingOutputs(taskId: string, ctx: PoolContext): readonly strin
 }
 
 export function decideRetry(report: PoolTaskReport, counts: RetryCounts, missing: readonly string[]): RetryDecision {
-  if (report.status === "cancelled" || report.isRejected) return { action: "settle" };
+  if (report.status === "cancelled" || report.isRejected || report.isSetupFailure) return { action: "settle" };
   if (report.status === "failed" && isTransientFailure(report.reason) && counts.transient < MAX_TRANSIENT_RETRIES) {
     const delayMs = TRANSIENT_DELAYS_MS[counts.transient] ?? PUBLISH_DELAY_MS;
     const reason = clip(report.reason ?? "the worker failed");

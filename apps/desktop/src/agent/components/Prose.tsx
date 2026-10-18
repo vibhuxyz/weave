@@ -1,4 +1,4 @@
-import { MessageResponse } from "@/shared/ui/ai-elements";
+import { MessageResponse, RESPONSE_CARD_RENDERERS, detectCards } from "@/shared/ui/ai-elements";
 import { cn } from "@/shared/lib";
 
 /**
@@ -23,17 +23,23 @@ export function Prose({
         "[&_p]:my-2.5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         "[&_strong]:text-agent-text-bright [&_strong]:font-semibold",
         "[&_em]:text-agent-text-strong",
-        "[&_h1]:text-agent-text-bright [&_h2]:text-agent-text-bright [&_h3]:text-agent-text-bright [&_h4]:text-agent-text-bright [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h1]:mt-6 [&_h2]:mt-5 [&_h3]:mt-4 [&_h1]:mb-2 [&_h2]:mb-2 [&_h3]:mb-1.5",
+        "[&_h1]:text-agent-text-bright [&_h2]:text-agent-text-bright [&_h3]:text-agent-text-bright [&_h4]:text-agent-text-bright [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h4]:font-semibold",
+        "[&_h1]:tracking-tight [&_h2]:tracking-tight [&_h3]:tracking-tight",
+        "[&_h1]:mt-7 [&_h2]:mt-6 [&_h3]:mt-5 [&_h4]:mt-4 [&_h1]:mb-2 [&_h2]:mb-1.5 [&_h3]:mb-1 [&_h4]:mb-1",
         "[&_a]:text-agent-low-fg [&_a]:underline-offset-2",
-        "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1 [&_li]:marker:text-agent-text-faint",
+        "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1.5 [&_li]:marker:text-agent-text-faint [&_li]:pl-0.5",
+        "[&_li>strong:first-child]:text-agent-text-bright [&_li>strong:first-child]:font-semibold",
+        "[&_:not(pre)>code]:rounded [&_:not(pre)>code]:border [&_:not(pre)>code]:border-agent-chip-border [&_:not(pre)>code]:bg-agent-chip-bg [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-px [&_:not(pre)>code]:text-[0.9em]",
         "[&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-agent-code-border [&_pre]:bg-agent-code-bg [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-6",
         "[&_blockquote]:border-l-2 [&_blockquote]:border-agent-accent/50 [&_blockquote]:pl-3 [&_blockquote]:text-agent-info-fg",
         "[&_table]:my-4 [&_table]:w-full [&_table]:text-xs [&_th]:border-b [&_th]:border-agent-border [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left [&_th]:text-agent-text-muted [&_td]:border-b [&_td]:border-agent-border-subtle [&_td]:px-2 [&_td]:py-1.5",
-        "[&_hr]:my-5 [&_hr]:border-agent-border",
+        "[&_hr]:my-6 [&_hr]:border-agent-border-subtle",
         className,
       )}
     >
-      <MessageResponse>{tidyProse(children)}</MessageResponse>
+      <MessageResponse codeRenderers={RESPONSE_CARD_RENDERERS}>
+        {detectCards(tidyProse(children))}
+      </MessageResponse>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { FIELD, LABEL } from "@/features/projects/components";
 import { cn } from "@/shared/lib";
 import { Button, Sheet, SheetContent, SheetTitle } from "@/shared/ui";
+import { SkillChecklist } from "../skill-choice";
 import { PersonaAvatarButton } from "./PersonaAvatarButton";
 
 interface PersonaDialogProps {
@@ -10,11 +11,13 @@ interface PersonaDialogProps {
   readonly name: string;
   readonly description: string;
   readonly instructions: string;
+  readonly skills: readonly string[];
   readonly character: string;
   readonly error: string | null;
   readonly onName: (value: string) => void;
   readonly onDescription: (value: string) => void;
   readonly onInstructions: (value: string) => void;
+  readonly onSkills: (next: string[]) => void;
   readonly onSelectAvatar: () => void;
   readonly onClose: () => void;
   readonly onSubmit: () => void;
@@ -29,11 +32,13 @@ export function PersonaDialog({
   name,
   description,
   instructions,
+  skills,
   character,
   error,
   onName,
   onDescription,
   onInstructions,
+  onSkills,
   onSelectAvatar,
   onClose,
   onSubmit,
@@ -81,6 +86,7 @@ export function PersonaDialog({
               <label htmlFor="persona-instructions" className={LABEL}>Instructions</label>
               <textarea id="persona-instructions" value={instructions} onChange={(event) => onInstructions(event.target.value)} rows={8} placeholder="Review the diff, name the risk, and do not rewrite the feature." className={cn(FIELD, "resize-y py-3 leading-relaxed")} />
             </div>
+            <SkillChecklist value={skills} hint="Skills this persona follows. They load into the chat whenever the persona is set to Always or turned on." onChange={onSkills} />
           </div>
           <div className="flex shrink-0 items-center justify-end gap-3 border-t border-border/40 px-7 pt-3 pb-6">
             {error && <p role="alert" className="mr-auto text-destructive text-xs">{error}</p>}

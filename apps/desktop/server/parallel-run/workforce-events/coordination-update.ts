@@ -52,6 +52,8 @@ export function coordinationUpdate(event: CoordinationEvent): RunUpdate | null {
     }
     case "scope.expand":
       return note(taskId, "info", `Asked to also work on ${event.data.paths.join(", ")}: ${flattened(event.data.reason)}`);
+    case "split.suggested":
+      return note(taskId, "info", `Suggested splitting the work${event.data.areas.length > 0 ? ` across ${event.data.areas.join(", ")}` : ""}: ${flattened(event.data.reason)}`);
     case "scope.granted":
       return note(event.data.taskId, "info", `Scope widened to ${event.data.paths.join(", ")}`);
     case "scope.denied":

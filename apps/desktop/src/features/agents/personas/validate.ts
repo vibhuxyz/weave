@@ -42,6 +42,7 @@ export function personaRecord(draft: PersonaDraft, existing: Agent | undefined):
     name: draft.name.trim(),
     description: draft.description.trim(),
     instructions: draft.instructions.trim(),
+    skills: [...new Set(draft.skills)].sort(),
     ...(character ? { character } : {}),
     ...(isBuiltinPersonaId(id) ? { overridesBuiltin: true } : {}),
     builtin: false,

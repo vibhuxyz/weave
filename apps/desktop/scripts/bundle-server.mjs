@@ -20,6 +20,7 @@
  */
 import { build } from "esbuild";
 import { fileURLToPath } from "node:url";
+import { cpSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { copyPtyNative } from "./pty-native.mjs";
 
@@ -64,6 +65,11 @@ console.log(
     ? `[bundle-server] no native files copied: ${native.skipped}`
     : `[bundle-server] ${native.platformArch} native: ${native.copied.join(", ")} -> ${native.targetDir}`,
 );
+
+const bundledSkillsDir = join(resourcesDir, "skills");
+rmSync(bundledSkillsDir, { recursive: true, force: true });
+cpSync(join(desktop, "skills"), bundledSkillsDir, { recursive: true });
+console.log(`[bundle-server] skills -> ${bundledSkillsDir}`);
 
 const bytes = Object.values(result.metafile.outputs).reduce(
   (total, output) => total + output.bytes,

@@ -1,0 +1,11 @@
+export { buildFileTree, folderPaths } from "./file-tree";
+export type { TreeEntry, TreeFile, TreeFolder, TreeNode } from "./file-tree";
+export { mergeSpans } from "./merge-spans";
+export type { Span } from "./merge-spans";
+export { sideTexts } from "./side-text";
+export type { SideTexts } from "./side-text";
+export { toPatch } from "./to-patch";
+export { tokenizeWords } from "./tokenize-words";
+export { wordDiff } from "./word-diff";
+export { withWordSegments } from "./word-segments";
+export { contextRev, sourceKey, sourceRange } from "./source";

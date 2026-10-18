@@ -1,0 +1,20 @@
+export const WORD_DIFF_MAX_LINE_CHARS = 1_000;
+export const WORD_DIFF_MAX_TOKENS = 400;
+export const WORD_DIFF_MAX_PAIRS_PER_FILE = 500;
+export const WORD_DIFF_MIN_SIMILARITY = 0.4;
+
+export const CONTEXT_EXPAND_STEP = 20;
+export const COLLAPSE_FILES_THRESHOLD = 20;
+export const COLLAPSE_LINES_THRESHOLD = 2_000;
+export const VIRTUALIZE_ROW_THRESHOLD = 100;
+export const ROW_HEIGHT_PX = 19;
+export const OVERSCAN_ROWS = 24;
+
+export const HIGHLIGHT_MAX_BYTES = 200_000;
+export const HIGHLIGHT_MAX_LINES = 5_000;
+
+export const PATCH_BATCH_SIZE = 20;
+export const COMMIT_LIST_LIMIT = 100;
+export const COMMIT_SEARCH_DEBOUNCE_MS = 200;
+export const FILE_SEARCH_DEBOUNCE_MS = 300;
+export const MAX_VISIBLE_SKIPPED = 20;

@@ -216,7 +216,7 @@ export type WeaveEvent =
   | (BaseEvent & {
       type: "plan.created";
       kind: "existing" | "greenfield";
-      mode: "sequential" | "parallel";
+      mode: "sequential" | "parallel" | "graph";
       reason: string;
       concurrency: number;
       goal: string | null;

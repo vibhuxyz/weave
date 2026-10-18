@@ -44,6 +44,7 @@ export interface CoordinationDataByType {
   "dependency.ready": { consumer: string; outputs: string[]; pending: string[] };
   "dependency.blocked": { need: DependencyNeed; reason: string };
   "scope.expand": { paths: string[]; reason: string };
+  "split.suggested": { areas: string[]; reason: string };
   "scope.granted": { taskId: string; paths: string[]; context: string };
   "scope.denied": { taskId: string; paths: string[]; reason: string };
   "dependency.resolved": { consumer: string; producer: string; output: string };
@@ -83,6 +84,7 @@ export type EmployeeEventType =
   | "contract.changed"
   | "dependency.blocked"
   | "scope.expand"
+  | "split.suggested"
   | "review.requested"
   | "verification.failed"
   | "verification.passed"

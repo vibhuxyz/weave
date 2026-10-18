@@ -12,6 +12,9 @@ export interface SkillEntry {
 const FRONTMATTER_LINE_PATTERN = /^([A-Za-z0-9_-]+):\s*(.*)$/;
 const LIST_ITEM_PATTERN = /^\s*-\s+/;
 const QUOTED_VALUE_PATTERN = /^["']|["']$/g;
+const BLOCK_SCALAR_PATTERN = /^([>|])[+-]?$/;
+const INDENTED_LINE_PATTERN = /^[ \t]+\S/;
+const ESCAPED_CHARACTER_PATTERN = /\\(["\\])/g;
 
 function frontmatter(text: string): string | null {
   if (!text.startsWith("---\n") && !text.startsWith("---\r\n")) return null;
@@ -33,6 +36,16 @@ function parseFrontmatter(block: string): Record<string, string | string[]> {
     if (key === undefined || rawValue === undefined) continue;
     const value = rawValue.trim();
 
+    const blockStyle = BLOCK_SCALAR_PATTERN.exec(value)?.[1];
+    if (blockStyle !== undefined) {
+      const body: string[] = [];
+      while (i + 1 < lines.length && INDENTED_LINE_PATTERN.test(lines[i + 1] ?? "")) {
+        i++;
+        body.push((lines[i] ?? "").trim());
+      }
+      out[key] = body.join(blockStyle === ">" ? " " : "\n");
+      continue;
+    }
     if (value === "" || value === "[]") {
       const items: string[] = [];
       while (i + 1 < lines.length) {
@@ -52,7 +65,9 @@ function parseFrontmatter(block: string): Record<string, string | string[]> {
         .filter(Boolean);
       continue;
     }
-    out[key] = value.replace(QUOTED_VALUE_PATTERN, "");
+    const isDoubleQuoted = value.length > 1 && value.startsWith('"') && value.endsWith('"');
+    const unquoted = value.replace(QUOTED_VALUE_PATTERN, "");
+    out[key] = isDoubleQuoted ? unquoted.replace(ESCAPED_CHARACTER_PATTERN, "$1") : unquoted;
   }
   return out;
 }

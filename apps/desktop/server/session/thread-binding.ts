@@ -1,5 +1,5 @@
 import { getEngine, type EngineSupervisor } from "@weave/agent";
-import type { HistoryArchive } from "../history/index.ts";
+import { archiveHasRunTurn, type HistoryArchive } from "../history/index.ts";
 import { isMultiEngineThread, prepareHandoff, resumeTarget } from "../thread/index.ts";
 import type { SessionContext } from "./types.ts";
 
@@ -58,7 +58,7 @@ function sendArchive(ctx: SessionContext, threadId: string, archive: HistoryArch
 
 export function prepareThreadReplay(ctx: SessionContext, threadId: string, engineSessionId: string): void {
   const archive = loadArchive(ctx, threadId);
-  if (archive !== null && isMultiEngineThread(ctx.chats, threadId)) {
+  if (archive !== null && (isMultiEngineThread(ctx.chats, threadId) || archiveHasRunTurn(archive))) {
     sendArchive(ctx, threadId, archive);
     ctx.replayGate.mute(engineSessionId);
     return;

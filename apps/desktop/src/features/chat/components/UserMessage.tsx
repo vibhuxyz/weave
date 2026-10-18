@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckIcon, CopyIcon, ImageOffIcon, RotateCcwIcon } from "lucide-react";
 import { Button } from "@/shared/ui";
-import { AgentAvatar } from '@/features/agents/components';
 import { useCopyToClipboard } from "@/shared/hooks";
 import { cn } from "@/shared/lib";
 import { sentAgo, useNow, type SentAgo } from "@/agent/lib";
 import { formatDate, formatRelativeTime } from "@/shared/i18n";
-import type { ChatImageAttachment } from '@/features/chat/hooks';
+import type { ChatImageAttachment, TurnPersona } from '@/features/chat/hooks';
+import { mentionedTurnAgents, TurnAgents } from "./turn-agents";
 
 /**
  * A user turn: the prompt, its attachments, and hover actions to copy or edit.
@@ -44,6 +44,8 @@ export function UserMessage({
   text,
   createdAt,
   mentions,
+  personas,
+  skills,
   images,
   onEdit,
   onResend,
@@ -52,6 +54,8 @@ export function UserMessage({
   text: string;
   createdAt?: number;
   mentions?: string[];
+  personas?: TurnPersona[];
+  skills?: string[];
   images?: ChatImageAttachment[];
   /** Fallback when there is nowhere to send from: refill the composer. */
   onEdit?: (text: string) => void;
@@ -130,6 +134,9 @@ export function UserMessage({
         </div>
       )}
 
+      {!editing && (
+        <TurnAgents agents={mentionedTurnAgents(personas, mentions)} skills={skills} label="Using" align="end" />
+      )}
       {editing ? (
         // The editor takes the bubble's place rather than opening elsewhere,
         // so the prompt stays where the user was already looking. Neutral
@@ -212,19 +219,6 @@ export function UserMessage({
             "bg-agent-surface-hover text-agent-text-bright",
           )}
         >
-          {mentions && mentions.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {mentions.map((name) => (
-                <span
-                  key={name}
-                  className="flex items-center gap-1 rounded-md bg-white/10 px-1.5 py-0.5 text-agent-text text-xs"
-                >
-                  <AgentAvatar name={name} size="sm" className="size-4" />
-                  {name}
-                </span>
-              ))}
-            </div>
-          )}
           {text && (
             <div
               className={cn(

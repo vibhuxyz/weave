@@ -54,6 +54,7 @@ export type DeliveryStatus = IntegrationReport["status"] | "not-merged";
 export interface DeliveryPlan {
   readonly runId: string;
   readonly baseCommit: string;
+  readonly snapshotOf: string | null;
   readonly integrationHead: string | null;
   readonly integrationStatus: DeliveryStatus;
   readonly detail: string;

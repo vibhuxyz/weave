@@ -8,6 +8,7 @@ export interface WeaveLocations {
   readonly home: string;
   readonly databasePath: string;
   readonly globalSkillsDir: string;
+  readonly bundledSkillsDir: string;
   readonly globalRulesDir: string;
 }
 

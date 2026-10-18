@@ -31,6 +31,7 @@ function candidates(event: CoordinationEvent, dependentsOf: DependentsOf): reado
     case "dependency.blocked":
       return event.data.need.task ? [event.data.need.task, WEAVE_SENDER] : [WEAVE_SENDER];
     case "scope.expand":
+    case "split.suggested":
       return [WEAVE_SENDER];
     case "scope.granted":
     case "scope.denied":

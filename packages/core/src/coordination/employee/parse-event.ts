@@ -1,6 +1,6 @@
 import { EMPLOYEE_EVENT_TYPES, RESOURCE_KINDS, type DependencyNeed, type EmployeeEventType, type ResourceKind } from "@weave/protocol";
 import { isRecord, readOptionalString, readPattern, readString, readStringList, type FieldContext } from "../../shared/index.ts";
-import { MAX_ARTIFACT_PATH_CHARS, MAX_EVENT_TEXT_CHARS, MAX_EXPAND_PATHS, MAX_NAME_CHARS, MAX_SUBTASK_CHARS, OUTPUT_NAME_PATTERN } from "./constants.ts";
+import { MAX_ARTIFACT_PATH_CHARS, MAX_EVENT_TEXT_CHARS, MAX_EXPAND_PATHS, MAX_SPLIT_AREAS, MAX_NAME_CHARS, MAX_SUBTASK_CHARS, OUTPUT_NAME_PATTERN } from "./constants.ts";
 import { parseArtifact } from "./parse-artifact.ts";
 import type { EmployeeSubmission, ParseSubmissionResult } from "./types.ts";
 
@@ -64,6 +64,11 @@ function parseData(type: EmployeeEventType, ctx: FieldContext): EmployeeSubmissi
         return null;
       }
       return { type, data: { paths, reason } };
+    }
+    case "split.suggested": {
+      const reason = readString(ctx, "reason", MAX_EVENT_TEXT_CHARS);
+      const areas = readStringList(ctx, "areas", { maxItems: MAX_SPLIT_AREAS, maxChars: MAX_ARTIFACT_PATH_CHARS });
+      return reason === null ? null : { type, data: { areas, reason } };
     }
     case "review.requested":
     case "verification.failed":

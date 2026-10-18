@@ -254042,14 +254042,38 @@ var ChatDirectory = class {
   }
 };
 
-// server/dispatch/continue-unfinished.ts
+// server/dispatch/continuation/constants.ts
 var MAX_CONTINUATIONS = 20;
 var MAX_STALLED_CONTINUATIONS = 3;
-var CONTINUABLE_STOPS = /* @__PURE__ */ new Set(["end_turn", "max_tokens", "max_turn_requests"]);
-var CONTINUE_UNFINISHED = "Your last turn stopped before the request was done. Continue the user's original request from where you left off, using tools as needed. When it is fully done, reply with a short summary of what changed and anything still open.";
-var WRAP_UP_UNFINISHED = "This is the last automatic continuation. Finish the step you are on, then reply with a summary of what is done and exactly what is still left.";
+var MAX_SILENT_CONTINUATIONS = 8;
+
+// server/dispatch/continuation/prompts.ts
+var RESUME_CUT_OFF = "Continue.";
+var AUTOMATIC_NOTE = "Weave sent this automatically; it is not a new instruction from the user.";
+var FINISH_PARTIAL_ANSWER = `${AUTOMATIC_NOTE} Your last turn ended before you answered. Finish the user's most recent request and do not start work they did not ask for. When it is fully done, reply with a short summary of what changed and anything still open.`;
+var WRAP_UP_UNFINISHED = `${AUTOMATIC_NOTE} This is the last automatic continuation. Finish the step you are on, then reply with a summary of what is done and exactly what is still left.`;
 function continuationPrompt(attempt) {
-  return attempt >= MAX_CONTINUATIONS ? WRAP_UP_UNFINISHED : CONTINUE_UNFINISHED;
+  return attempt >= MAX_CONTINUATIONS ? WRAP_UP_UNFINISHED : FINISH_PARTIAL_ANSWER;
+}
+function continuationBlocks({
+  attempt,
+  hasTextSincePrompt,
+  persona
+}) {
+  if (!hasTextSincePrompt && attempt < MAX_CONTINUATIONS) return buildPromptBlocks(RESUME_CUT_OFF);
+  return buildPromptBlocks(
+    composeSystemPrompt(continuationPrompt(attempt), { pendingPreamble: null, persona })
+  );
+}
+function continuationNotice(continuations, engineLabel3) {
+  return continuations > MAX_SILENT_CONTINUATIONS ? `Weave auto-continued this turn ${continuations} times because ${engineLabel3} kept ending its turns early. Check that the result is what you asked for.` : null;
+}
+
+// server/dispatch/continue-unfinished.ts
+var CONTINUABLE_STOPS = /* @__PURE__ */ new Set(["end_turn", "max_tokens", "max_turn_requests"]);
+var STARTING_TOOL_STATUSES = /* @__PURE__ */ new Set(["pending", "in_progress"]);
+function isToolCallStarting(status) {
+  return status === void 0 || status === null || typeof status === "string" && STARTING_TOOL_STATUSES.has(status);
 }
 function shouldContinueUnfinished(stopReason, progress, isCancelled = false) {
   if (isCancelled) return false;
@@ -254065,6 +254089,7 @@ function watchUnfinished(ledger, taskId) {
   let toolCalls = 0;
   let totalTextChars = 0;
   let textAfterLastToolChars = 0;
+  let textCharsSincePrompt = 0;
   let stopReason;
   const deriveProgress = () => {
     const hasUserFacingText = totalTextChars > 0;
@@ -254090,13 +254115,14 @@ function watchUnfinished(ledger, taskId) {
     if (update.sessionUpdate === "tool_call") {
       usedTools = true;
       toolCalls += 1;
-      textAfterLastToolChars = 0;
+      if (isToolCallStarting(update.status)) textAfterLastToolChars = 0;
     } else if (update.sessionUpdate === "tool_call_update") {
       usedTools = true;
     }
     const chunk = answerText(update).trim();
     if (chunk.length > 0) {
       totalTextChars += chunk.length;
+      textCharsSincePrompt += chunk.length;
       if (usedTools) {
         textAfterLastToolChars += chunk.length;
       }
@@ -254107,11 +254133,16 @@ function watchUnfinished(ledger, taskId) {
     recordTurnEnd: (reason) => {
       stopReason = reason;
     },
+    beginSubTurn: () => {
+      textCharsSincePrompt = 0;
+    },
+    hasTextSincePrompt: () => textCharsSincePrompt > 0,
     reset: () => {
       usedTools = false;
       toolCalls = 0;
       totalTextChars = 0;
       textAfterLastToolChars = 0;
+      textCharsSincePrompt = 0;
       stopReason = void 0;
     },
     close: unsubscribe
@@ -254120,6 +254151,7 @@ function watchUnfinished(ledger, taskId) {
 async function promptUntilAnswer(input2) {
   input2.activity.reset();
   const deadline = input2.timeoutMs ? Date.now() + input2.timeoutMs : void 0;
+  input2.activity.beginSubTurn?.();
   let result = await input2.run(input2.first);
   input2.activity.recordTurnEnd?.(result.stopReason);
   let continuations = 0;
@@ -254134,6 +254166,7 @@ async function promptUntilAnswer(input2) {
     await input2.beforeContinuation?.(continuations);
     const toolCallsBefore = input2.activity.snapshot().toolCalls;
     const blocks = typeof input2.followUp === "function" ? input2.followUp(continuations) : input2.followUp;
+    input2.activity.beginSubTurn?.();
     result = await input2.run(blocks);
     input2.activity.recordTurnEnd?.(result.stopReason);
     stalledContinuations = input2.activity.snapshot().toolCalls > toolCallsBefore ? 0 : stalledContinuations + 1;
@@ -254184,6 +254217,34 @@ async function persistRecoveryDecision(ctx, params) {
     ...checkpointId ? { checkpointId } : {}
   });
   return checkpointId;
+}
+
+// server/dispatch/stall-recovery/constants.ts
+var MAX_STALL_RECOVERIES = 2;
+var STALL_RESUME_PROMPT = "Weave sent this automatically; it is not a new instruction from the user. The engine stopped responding and was restarted, so your last action may not have been applied. Check the current state of the files, redo anything that did not complete, then finish the user's most recent request and do not start work they did not ask for. When it is fully done, reply with a short summary of what changed and anything still open.";
+
+// server/dispatch/stall-recovery/recover-stall.ts
+function withStallRecovery({
+  run,
+  revive,
+  resumeBlocks,
+  onRecovering,
+  isCancelled
+}) {
+  let recoveries = 0;
+  const attempt = async (blocks) => {
+    try {
+      return await run(blocks);
+    } catch (error61) {
+      if (!(error61 instanceof EngineStalledError)) throw error61;
+      if (recoveries >= MAX_STALL_RECOVERIES || isCancelled()) throw error61;
+      recoveries += 1;
+      onRecovering(error61.message);
+      await revive();
+      return attempt(resumeBlocks());
+    }
+  };
+  return attempt;
 }
 
 // server/team-handoff/constants.ts
@@ -254536,8 +254597,12 @@ function isMultiEngineThread(chats, threadId) {
 
 // server/thread/turn-capture.ts
 import { isAbsolute as isAbsolute5, relative as relative6 } from "node:path";
+var STARTING_TOOL_STATUSES2 = /* @__PURE__ */ new Set(["pending", "in_progress"]);
 function textOrNull(value) {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+function isToolCallStarting2(status) {
+  return status === void 0 || status === null || typeof status === "string" && STARTING_TOOL_STATUSES2.has(status);
 }
 function locationPaths(value) {
   if (!Array.isArray(value)) return [];
@@ -254549,7 +254614,7 @@ function toolSignal(update) {
   return {
     kind: "tool",
     id,
-    isStart: update.sessionUpdate === "tool_call",
+    isStart: update.sessionUpdate === "tool_call" && isToolCallStarting2(update.status),
     title: textOrNull(update.title),
     toolKind: textOrNull(update.kind),
     status: textOrNull(update.status),
@@ -254816,12 +254881,18 @@ async function handlePrompt({
         sessionId: sessionMgr.supervisor.current.sessionId
       });
     }
-    const session = sessionMgr.supervisor.current;
-    const recCtx = createRecoveryContext(sessionMgr, projectDir, continuationTaskId, ledger, tasksStore, session.sessionId);
+    const { supervisor } = sessionMgr;
+    const recCtx = createRecoveryContext(sessionMgr, projectDir, continuationTaskId, ledger, tasksStore, supervisor.current.sessionId);
     const finished = await promptUntilAnswer({
-      run: (promptBlocks2) => session.prompt([...promptBlocks2]),
+      run: withStallRecovery({
+        run: (promptBlocks2) => supervisor.current.prompt([...promptBlocks2]),
+        revive: () => supervisor.reviveCurrent(),
+        resumeBlocks: () => buildPromptBlocks(composeSystemPrompt(STALL_RESUME_PROMPT, { pendingPreamble: null, persona: msg.persona })),
+        onRecovering: (reason) => ledger.append("error", { taskId: "desktop", where: "engine.stalled", message: reason }),
+        isCancelled: () => sessionMgr.cancelRequested
+      }),
       first: blocks,
-      followUp: (attempt) => buildPromptBlocks(continuationPrompt(attempt)),
+      followUp: (attempt) => continuationBlocks({ attempt, hasTextSincePrompt: unfinished.hasTextSincePrompt(), persona: msg.persona }),
       activity: unfinished,
       isCancelled: () => sessionMgr.cancelRequested,
       beforeContinuation: (attempt) => persistRecoveryDecision(recCtx, {
@@ -254857,8 +254928,10 @@ async function handlePrompt({
       });
     }
     send2({ type: "turn-end", stopReason, usage });
-    compaction.recordTurnCompleted(session.sessionId);
-    const threadId = sessionMgr.threadId ??= session.sessionId;
+    const nudgeNotice = continuationNotice(finished.continuations, sessionMgr.currentEngineId);
+    if (nudgeNotice !== null) send2({ type: "error", message: nudgeNotice });
+    compaction.recordTurnCompleted(supervisor.current.sessionId);
+    const threadId = sessionMgr.threadId ??= supervisor.current.sessionId;
     const recorded = chats.record(threadId, {
       title: titleFromPrompt(text),
       engineId: sessionMgr.currentEngineId,

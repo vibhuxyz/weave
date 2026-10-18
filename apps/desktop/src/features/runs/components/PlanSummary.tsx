@@ -5,7 +5,7 @@ import { usdFromMicro, workerCapacityText, workerCountText, workforceText } from
 import { selectWorkforce, useRunStore } from "../store";
 import type { PlanningEnginesSummary } from "../types";
 
-const MODE_LABEL = { sequential: "One worker, in order", parallel: "Parallel workers" } as const;
+const MODE_LABEL = { sequential: "One worker, in order", parallel: "Parallel workers", graph: "Parallel workers, shared folders in order" } as const;
 const RISK_CLASS = { low: "", medium: "text-agent-medium-fg", high: "text-agent-high-fg" } as const;
 const MS_PER_SECOND = 1_000;
 const SECONDS = { style: "unit", unit: "second", unitDisplay: "short", maximumFractionDigits: 0 } as const;
@@ -29,13 +29,13 @@ function planningText(planning: PlanningEnginesSummary | null): string {
 }
 
 export function PlanSummary() {
-  const { plan, planning, classification, critique, contractVersion, integration, orchestration, workerCount } = useRunStore(
-    useShallow((state) => ({ plan: state.run?.plan ?? null, planning: state.run?.planning ?? null, classification: state.run?.review?.classification ?? null, critique: state.run?.review?.critique ?? null, contractVersion: state.run?.contractVersion ?? null, integration: state.run?.integration ?? null, orchestration: state.run?.orchestration ?? null, workerCount: state.run?.workerCount ?? null })),
+  const { plan, planning, outcome, classification, critique, contractVersion, integration, orchestration, workerCount } = useRunStore(
+    useShallow((state) => ({ plan: state.run?.plan ?? null, planning: state.run?.planning ?? null, outcome: state.run?.outcome ?? null, classification: state.run?.review?.classification ?? null, critique: state.run?.review?.critique ?? null, contractVersion: state.run?.contractVersion ?? null, integration: state.run?.integration ?? null, orchestration: state.run?.orchestration ?? null, workerCount: state.run?.workerCount ?? null })),
   );
   const live = workforceText(useRunStore(useShallow(selectWorkforce)));
   const estimatedUsd = orchestration ? usdFromMicro(orchestration.estimatedCostMicroUsd) : null;
   const estimatedCost = estimatedUsd === null ? null : formatNumber(estimatedUsd, USD);
-  if (!plan) return <p className="text-agent-text-muted text-xs">{planningText(planning)}</p>;
+  if (!plan) return outcome ? null : <p className="text-agent-text-muted text-xs">{planningText(planning)}</p>;
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-agent-text-muted">
       {classification && <span className={RISK_CLASS[classification.risk]}>{classificationText(classification)}</span>}

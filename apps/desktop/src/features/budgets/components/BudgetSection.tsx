@@ -28,7 +28,7 @@ export function BudgetSection({ actions }: { readonly actions: BudgetActions }) 
     <section className="space-y-4" aria-label="Spending limits">
       <div>
         <h2 className="font-medium text-base text-foreground">Spending limits</h2>
-        <p className="mt-1 text-muted-foreground text-sm">Limits for /parallel runs in this project. Leave a box empty for no limit.</p>
+        <p className="mt-1 text-muted-foreground text-sm">Limits for team runs in this project. Leave a box empty for no limit.</p>
       </div>
       {state.status === "idle" && <p className="text-muted-foreground text-sm">Open a project to set its limits.</p>}
       {state.status === "loading" && <p role="status" className="text-muted-foreground text-sm">Loading limits…</p>}

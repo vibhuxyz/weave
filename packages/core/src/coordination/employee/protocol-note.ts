@@ -13,6 +13,7 @@ export function renderEmployeeProtocol(): string {
     "Types: artifact.ready, artifact.updated, contract.published, contract.changed (same artifact data);",
     'dependency.blocked { "need": { "output": "name", "task": "optional id" }, "reason": "..." };',
     'subtask.completed { "subtask": "the milestone, worded as Weave listed it" };',
+    'split.suggested { "areas": ["repo/relative/dir"], "reason" }: publish once, only if the request turns out to span independent areas that other workers could do in parallel, then keep working in your own area.',
     'task.blocked { "reason" }; review.requested, verification.failed, verification.passed { "summary" }; escalation.created { "subject", "reason" }.',
     "Report a milestone the moment it is done, not at the end. Report milestones, outputs and blockers only: never a single file edit, command or tool call.",
     "When you are blocked on one input, publish dependency.blocked and keep doing the work that does not need it.",

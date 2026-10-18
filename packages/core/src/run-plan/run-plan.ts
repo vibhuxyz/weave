@@ -10,6 +10,7 @@ import { checkCleanBase, runGit, type WorktreeResult } from "../worktree/index.t
 import { CONTRACT_REVISION_ID, RESERVED_TASK_IDS } from "./constants.ts";
 import { runWithRevisions } from "./revisions.ts";
 import { engineWorker } from "./engine-worker.ts";
+import { conflictResolver } from "./resolve-conflict.ts";
 import type { RunPlanOptions, RunPlanReport, RunPlanResult } from "./types.ts";
 
 async function resolveCommit(repoRoot: string, ref: string): Promise<WorktreeResult<string>> {
@@ -62,9 +63,7 @@ export async function runPlan(options: RunPlanOptions): Promise<RunPlanResult> {
   const issues = planIssues(options.tasks);
   if (issues.length > 0) return { ok: false, reason: `The plan cannot run: ${issues.join("; ")}` };
   const repoRoot = resolve(options.repoRoot);
-  const clean = await checkCleanBase(repoRoot);
-  if (!clean.ok) return clean;
-  const base = options.baseRef === undefined ? clean : await resolveCommit(repoRoot, options.baseRef);
+  const base = options.baseRef === undefined ? await checkCleanBase(repoRoot) : await resolveCommit(repoRoot, options.baseRef);
   if (!base.ok) return base;
 
   const weaveDir = weaveDirFor(repoRoot, options.config);
@@ -83,6 +82,7 @@ export async function runPlan(options: RunPlanOptions): Promise<RunPlanResult> {
     runRound: (roundTasks, roundBase, attempt) => runPool({
       tasks: roundTasks, repoRoot, weaveDir, ledger, shouldInstall, runWorker, attempt,
       baseCommit: roundBase,
+      snapshot: options.snapshot,
       inspectHarvest: options.inspectHarvest,
       concurrency: options.controls?.concurrency ?? options.concurrency,
       signal: options.signal,
@@ -97,9 +97,13 @@ export async function runPlan(options: RunPlanOptions): Promise<RunPlanResult> {
   const candidates = mergeCandidates(pool.contracts ?? tasks, pool);
   const integration = isCancelled || candidates.length === 0
     ? null
-    : await integrate({ repoRoot, weaveDir, ledger, baseCommit, candidates, shouldInstall, verify: options.verify ?? verifyWithLadder });
+    : await integrate({
+      repoRoot, weaveDir, ledger, baseCommit, candidates, shouldInstall,
+      verify: options.verify ?? verifyWithLadder,
+      resolveConflict: conflictResolver({ ledger, runWorker, signal: options.signal ?? new AbortController().signal }),
+    });
 
   const status = overallStatus(pool, integration, isCancelled, candidates.length);
   ledger.append("run.finished", { status: status === "ok" ? "ok" : status === "cancelled" ? "cancelled" : "failed", wallMs: Date.now() - started });
-  return { ok: true, value: { runId: ledger.runId, ledgerFile: ledger.file, baseCommit, status, pool, integration } };
+  return { ok: true, value: { runId: ledger.runId, ledgerFile: ledger.file, baseCommit, snapshotOf: options.snapshot?.headCommit ?? null, status, pool, integration } };
 }

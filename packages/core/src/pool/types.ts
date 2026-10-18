@@ -2,7 +2,7 @@ import type { TaskContract } from "@weave/protocol";
 import type { BudgetManager } from "../adaptive/index.ts";
 import type { CoordinationChannel, CoordinationReport, Coordinator } from "../coordination/index.ts";
 import type { Ledger } from "../shared/index.ts";
-import type { Harvest } from "../worktree/index.ts";
+import type { Harvest, RunSnapshot } from "../worktree/index.ts";
 
 export interface WorkerInput {
   readonly task: TaskContract;
@@ -36,6 +36,7 @@ export interface PoolSession {
   isOpen(taskId: string): boolean;
   retarget(taskId: string, patch: Partial<TaskContract>): boolean;
   admit(tasks: readonly TaskContract[]): { readonly ok: true } | { readonly ok: false; readonly reason: string };
+  expand(taskId: string, patch: Partial<TaskContract>, incoming: readonly TaskContract[]): { readonly ok: true } | { readonly ok: false; readonly reason: string };
   setConcurrency(workers: number): void;
   setBudget(budget: BudgetManager): void;
   setPriority(priorityOf: (taskId: string) => number): void;
@@ -52,6 +53,7 @@ export interface PoolOptions {
   readonly signal?: AbortSignal;
   readonly shouldInstall?: boolean;
   readonly baseCommit?: string;
+  readonly snapshot?: RunSnapshot;
   readonly inspectHarvest?: InspectHarvest;
   readonly attempt?: number;
   readonly coordinator?: Coordinator;
@@ -75,6 +77,7 @@ export interface PoolTaskReport {
   readonly wallMs: number;
   readonly ranIn: "shared" | "worktree" | null;
   readonly isRejected: boolean;
+  readonly isSetupFailure: boolean;
 }
 
 export interface PoolReport {

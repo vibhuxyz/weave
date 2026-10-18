@@ -113,7 +113,7 @@ export interface PlanningEnginesSummary {
 }
 
 export interface RunPlanSummary {
-  readonly mode: "sequential" | "parallel";
+  readonly mode: "sequential" | "parallel" | "graph";
   readonly reason: string;
   readonly goal: string | null;
   readonly assumptions: readonly string[];
@@ -190,12 +190,14 @@ export interface RunState {
 
 export type DraftRoute =
   | { readonly kind: "team"; readonly request: string }
-  | { readonly kind: "chat"; readonly text: string; readonly canHandOff: boolean; readonly suggestParallel: boolean };
+  | { readonly kind: "chat"; readonly text: string; readonly canHandOff: boolean };
 
 export interface DraftContext {
   readonly imageCount: number;
   readonly mentionCount: number;
   readonly isRunActive: boolean;
+  readonly multitask: boolean;
+  readonly stayInChat: boolean;
 }
 
 export interface ResultDecisionState {

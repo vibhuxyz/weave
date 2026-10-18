@@ -28,13 +28,14 @@ export function PersonaEditor({ initial, takenKeys, onClose, onSave, children }:
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [instructions, setInstructions] = useState(initial?.instructions ?? "");
+  const [skills, setSkills] = useState<readonly string[]>(initial?.skills ?? []);
   const [character, setCharacter] = useState(() => avatarKeyForEdit(initial?.character, takenKeys, initial?.id));
   const copy = formCopy(initial);
   const [error, setError] = useState<string | null>(null);
   const [stage, setStage] = useState<PickerStage>({ kind: "form" });
 
   const submit = () => {
-    const result = onSave({ name, description, instructions, character }, initial?.id ?? null);
+    const result = onSave({ name, description, instructions, skills, character }, initial?.id ?? null);
     if (result.ok) onClose();
     else setError(result.message);
   };
@@ -73,11 +74,13 @@ export function PersonaEditor({ initial, takenKeys, onClose, onSave, children }:
         name={name}
         description={description}
         instructions={instructions}
+        skills={skills}
         character={character}
         error={error}
         onName={setName}
         onDescription={setDescription}
         onInstructions={setInstructions}
+        onSkills={setSkills}
         onSelectAvatar={() => setStage({ kind: "collections" })}
         onClose={onClose}
         onSubmit={submit}

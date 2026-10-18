@@ -11,6 +11,7 @@ import {
   SKILLS_DIR_NAME,
   WEAVE_HOME_DIR_NAME,
 } from "./constants.ts";
+import { bundledSkillsDir } from "./bundled-skills-dir.ts";
 import type { ProjectLocations, ProjectRecord, WeaveLocations } from "./types.ts";
 
 export function weaveLocations(homeOverride: string | undefined): WeaveLocations {
@@ -19,6 +20,7 @@ export function weaveLocations(homeOverride: string | undefined): WeaveLocations
     home,
     databasePath: join(home, DATA_DIR_NAME, DATABASE_FILE_NAME),
     globalSkillsDir: join(home, SKILLS_DIR_NAME),
+    bundledSkillsDir: bundledSkillsDir(),
     globalRulesDir: join(home, RULES_DIR_NAME),
   };
 }
@@ -28,7 +30,7 @@ export function projectLocations(weave: WeaveLocations, project: ProjectRecord):
   return {
     dataDir,
     logsDir: join(dataDir, LOGS_DIR_NAME),
-    skillDirs: [join(dataDir, SKILLS_DIR_NAME), join(project.rootPath, COMMITTED_SKILLS_DIR), weave.globalSkillsDir],
+    skillDirs: [join(dataDir, SKILLS_DIR_NAME), join(project.rootPath, COMMITTED_SKILLS_DIR), weave.globalSkillsDir, weave.bundledSkillsDir],
     ruleDirs: [join(dataDir, RULES_DIR_NAME), join(project.rootPath, COMMITTED_RULES_DIR), weave.globalRulesDir],
   };
 }

@@ -41,6 +41,10 @@ export function renderBriefing(batch: InboxBatch, awaited: readonly Dependent[] 
   return [renderEmployeeProtocol(), ...(waiting ? [waiting] : []), ...(inbox ? [inbox] : [])].join("\n\n");
 }
 
+export function withEmployeeProtocol(body: string): string {
+  return [renderEmployeeProtocol(), body].join("\n\n");
+}
+
 export function unpublishedOutputs(awaited: readonly Dependent[], published: ReadonlySet<string>): readonly string[] {
   const wanted = awaited.flatMap((dependent) => [...dependent.requiredOutputs]);
   return [...new Set(wanted)].filter((output) => !published.has(output)).sort();

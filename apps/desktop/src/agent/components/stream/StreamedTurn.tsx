@@ -2,12 +2,14 @@ import { useMemo } from "react";
 import type { PlanExitIntent } from "@/shared/lib";
 import type { GitStatus } from "../../../../server/index.ts";
 import type { ChatTurn, TurnPlan } from "@/features/chat/hooks";
+import { TurnAgents } from "@/features/chat/components/turn-agents";
 import { type BlockAction, messageToBlocks } from "@/agent/normalize";
 import { turnDiff } from "@/agent/diff";
 import { BlockErrorBoundary } from "../BlockErrorBoundary";
 import type { PlanProgress } from "../plan";
 import { FilesChanged } from "./FilesChanged";
 import { InteractiveBlocks } from "./InteractiveBlocks";
+import { RunDetails } from "./RunDetails";
 import { StreamStatusLine } from "./StreamStatusLine";
 import { ThoughtRow } from "./ThoughtRow";
 import { TurnSegments } from "./TurnSegments";
@@ -71,6 +73,7 @@ export function StreamedTurn(props: StreamedTurnProps) {
   };
   return (
     <div className="flex w-full flex-col gap-3 text-agent-text">
+      <TurnAgents agents={turn.personas} label="Answering as" />
       <TurnSegments turn={turn} onOpenDiff={props.onOpenDiff} />
       <InteractiveBlocks blocks={viewModel.blocks} handlers={handlers} />
       {!showsStatus && diff.files.length > 0 && (
@@ -78,6 +81,7 @@ export function StreamedTurn(props: StreamedTurnProps) {
           <FilesChanged diff={diff} projectDir={props.projectDir} isActive={props.diffOpen} onOpenDiff={props.onOpenDiff} />
         </BlockErrorBoundary>
       )}
+      {turn.run && <RunDetails run={turn.run} />}
       {showsStatus && <StreamStatusLine turn={turn} onOpenTasks={props.onOpenTasks} planProgress={props.planProgress} onOpenPlan={props.onOpenPlan} />}
     </div>
   );

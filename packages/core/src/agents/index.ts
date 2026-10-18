@@ -9,6 +9,7 @@ import type { AgentId, AgentProfile } from "./types.ts";
 
 export type { AgentId, AgentAccess, AgentProfile } from "./types.ts";
 export { ASK_USER_SECTION } from "./base.prompt.ts";
+export { RESPONSE_FORMAT_SECTION } from "./response-format.prompt.ts";
 
 export const BUILTIN_AGENTS: readonly AgentProfile[] = [
   frontendEngineer,

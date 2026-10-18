@@ -17,6 +17,8 @@ function textOf(update: RunUpdate): string {
       return `waiting for ${update.output}`;
     case "awaited-arrived":
       return `${update.output} arrived from ${update.producer}`;
+    case "task-started":
+      return "started";
     case "task-settled":
       return update.status;
     case "merge":

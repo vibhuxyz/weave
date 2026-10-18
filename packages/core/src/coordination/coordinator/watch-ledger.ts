@@ -5,9 +5,13 @@ import type { PublishResult } from "./types.ts";
 
 type Submit = (taskId: string, submission: EmployeeSubmission) => PublishResult;
 
+const BLOCK_BREAK = "\n";
+const BLOCK_BREAK_UPDATES: ReadonlySet<string> = new Set(["tool_call", "agent_thought_chunk"]);
+
 function agentText(event: WeaveEvent): { readonly taskId: string; readonly text: string } | null {
   if (event.type !== "agent.message" || !event.taskId || !isRecord(event.update)) return null;
   const { sessionUpdate, content } = event.update;
+  if (typeof sessionUpdate === "string" && BLOCK_BREAK_UPDATES.has(sessionUpdate)) return { taskId: event.taskId, text: BLOCK_BREAK };
   if (sessionUpdate !== "agent_message_chunk" || !isRecord(content) || content["type"] !== "text") return null;
   return typeof content["text"] === "string" ? { taskId: event.taskId, text: content["text"] } : null;
 }

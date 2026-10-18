@@ -1,6 +1,6 @@
 import { applyConfigOptions, blocksForSessionPrompt, openSession, replyWithoutTools, type PromptImage } from "@weave/agent";
 import { agentConfigFrom, type RunConfig } from "@weave/protocol";
-import { PLANNER_WORKTREE_ID } from "../run-plan/index.ts";
+import { COORDINATOR_TURN_ID, PLANNER_WORKTREE_ID } from "../run-plan/index.ts";
 import type { Ledger } from "../shared/index.ts";
 import { createWorktree, removeWorktree } from "../worktree/index.ts";
 import type { TurnRunner } from "./types.ts";
@@ -21,6 +21,7 @@ export interface PlannerWorkspaceInput {
 }
 
 interface EngineTurnInput {
+  readonly messageTaskId?: string;
   readonly cwd: string;
   readonly ledger: Ledger;
   readonly chain: EngineChain;
@@ -43,6 +44,7 @@ async function applyChosenOptions(session: Awaited<ReturnType<typeof openSession
 
 function engineTurn(input: EngineTurnInput): { run: TurnRunner; close: () => void } {
   const { cwd, ledger, chain, config, images } = input;
+  const messageTaskId = input.messageTaskId ?? PLANNER_WORKTREE_ID;
   const parts: string[] = [];
   const thoughtParts: string[] = [];
   let sessionPromise: Promise<Awaited<ReturnType<typeof openSession>>> | null = null;
@@ -56,7 +58,7 @@ function engineTurn(input: EngineTurnInput): { run: TurnRunner; close: () => voi
       task: { id: PLANNER_WORKTREE_ID, prompt: "", cwd },
       sink: {
         onUpdate: (update) => {
-          ledger.append("agent.message", { taskId: PLANNER_WORKTREE_ID, update });
+          ledger.append("agent.message", { taskId: messageTaskId, update });
           if (update.sessionUpdate === "agent_message_chunk" && update.content.type === "text") parts.push(update.content.text);
           if (update.sessionUpdate === "agent_thought_chunk" && update.content.type === "text") thoughtParts.push(update.content.text);
         },
@@ -144,6 +146,7 @@ export async function openCoordinatorTurn(input: PlannerWorkspaceInput): Promise
     baseRef: input.baseRef,
   });
   const coordinator = engineTurn({
+    messageTaskId: COORDINATOR_TURN_ID,
     cwd: worktree.path,
     ledger: input.ledger,
     chain: chainFor(input.engineId, input.engineIds),

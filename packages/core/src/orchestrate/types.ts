@@ -43,6 +43,8 @@ export interface PlanAndRunOptions {
   readonly approvePlan?: () => Promise<boolean>;
   readonly images?: readonly PromptImage[];
   readonly planningBudgetMs?: number;
+  readonly presetTasks?: readonly PlannedTask[];
+  readonly briefings?: ReadonlyMap<string, string>;
   readonly onPoolSession?: (session: PoolSession) => void;
 }
 

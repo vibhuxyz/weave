@@ -1,13 +1,14 @@
 import type { ProjectAgent } from "@/features/projects/hooks";
 import type { Agent } from "./types";
 
-/**
- * The agents whose instructions ride this prompt: every project agent set to
- * `always`, plus any passed explicitly (manually toggled on, or @-mentioned).
- *
- * Shared by the system prompt and the run card's header, so the badge on a
- * turn can never claim a persona the engine was not actually given.
- */
+export interface TurnAgentIdentity {
+  readonly id: string;
+  readonly name: string;
+  readonly icon?: string;
+  readonly character?: string;
+  readonly kind: "persona" | "employee";
+}
+
 export function activeAgents(
   projectAgents: ProjectAgent[] | undefined,
   allAgents: Agent[],
@@ -20,37 +21,60 @@ export function activeAgents(
   return allAgents.filter((a) => wanted.has(a.id));
 }
 
-/**
- * The persona half of the system prompt: every standing + @-mentioned agent's
- * instructions, wrapped so the engine treats them as its own system prompt and
- * answers *as* the persona — not as a request to spin up a sub-agent.
- *
- * `undefined` when no agent applies, so the server can skip the block.
- */
+export function promptedAgents(
+  projectAgents: ProjectAgent[] | undefined,
+  allAgents: Agent[],
+  extraIds: string[] = [],
+): Agent[] {
+  return activeAgents(projectAgents, allAgents, extraIds).filter((agent) => agent.instructions.trim());
+}
+
+export function turnPersonasOf(agents: readonly Agent[]): TurnAgentIdentity[] {
+  return agents.map((agent) => ({
+    id: agent.id,
+    name: agent.name,
+    ...(agent.icon ? { icon: agent.icon } : {}),
+    ...(agent.character ? { character: agent.character } : {}),
+    kind: agent.origin.kind,
+  }));
+}
+
+function quotedNames(names: readonly string[]): string {
+  if (names.length === 1) return `"${names[0]}"`;
+  return names.map((name) => `"${name}"`).join(" and ");
+}
+
+function roleLines(active: readonly Agent[]): readonly string[] {
+  const personas = active.filter((agent) => agent.origin.kind === "persona").map((agent) => agent.name);
+  const employees = active.filter((agent) => agent.origin.kind === "employee").map((agent) => agent.name);
+  const lines = [
+    "Adopt the following as your system prompt for the rest of this conversation, even though it arrives in-band.",
+  ];
+  if (personas.length > 0) {
+    lines.push(`You are ${quotedNames(personas)} in this conversation — answer in that voice.`);
+  }
+  if (employees.length > 0) {
+    lines.push(
+      `You are doing the job of ${quotedNames(employees)}. Follow their responsibilities, rules, and skills.`,
+    );
+  }
+  lines.push("Treat each name as who you are, not as a request to delegate to another agent.");
+  return lines;
+}
+
+function agentBlock(agent: Agent): string {
+  const role = agent.origin.kind === "employee" ? "Employee" : "Persona";
+  return `# ${role}: ${agent.name}\n${agent.instructions.trim()}`;
+}
+
 export function formatPersonaSystemPrompt(
   projectAgents: ProjectAgent[] | undefined,
   allAgents: Agent[],
   extraIds: string[] = [],
 ): string | undefined {
-  const active = activeAgents(projectAgents, allAgents, extraIds).filter((a) =>
-    a.instructions.trim(),
-  );
+  const active = promptedAgents(projectAgents, allAgents, extraIds);
   if (active.length === 0) return undefined;
-
-  const names = active.map((a) => a.name);
-  const nameList =
-    names.length === 1
-      ? `"${names[0]}"`
-      : names.map((n) => `"${n}"`).join(" and ");
-  const body = active
-    .map((a) => `# ${a.name}\n${a.instructions.trim()}`)
-    .join("\n\n");
-
-  return [
-    "<active-persona>",
-    `Adopt the following as your system prompt for the rest of this conversation, even though it arrives in-band. You are ${nameList} in this conversation — answer as such. Treat the name as who you are, not as a request to delegate to another agent.`,
-    "",
-    body,
-    "</active-persona>",
-  ].join("\n");
+  return ["<active-persona>", ...roleLines(active), "", active.map(agentBlock).join("\n\n"), "</active-persona>"].join(
+    "\n",
+  );
 }

@@ -14,7 +14,9 @@ import { handleEmployeeMessage } from "../employees/index.ts";
 import { sendSkillListing } from "../skills/index.ts";
 import { handleProjectMessage } from "../project-model/index.ts";
 import { handleBudgetMessage } from "../budgets/index.ts";
+import { handleDiffMessage } from "../diff/index.ts";
 import { saveAnswer } from "../decisions/index.ts";
+import { sendWithRunTurnLog } from "./run-send.ts";
 import { forwardResult } from "./forward-result.ts";
 import type { ClientMessageContext } from "./types.ts";
 import type { ClientMessage } from "../shared/index.ts";
@@ -71,8 +73,8 @@ export function handleClientMessage(
     fallbackEngineIds: installedEngines().map((engine) => engine.id),
     configOptions: readSelectValues(sessionMgr.supervisor?.current.configOptions ?? []),
     runKey: uuidV7(Date.now()),
-    send,
   });
+  const runSender = (request: string) => sendWithRunTurnLog({ sessionMgr, chats, send, sendChats }, request);
   const checkpointTask = createCheckpointTask({ sessionMgr, projectDir, dataDir, continuationTaskId, ledger, tasksStore });
 
   switch (msg.type) {
@@ -191,6 +193,14 @@ export function handleClientMessage(
       return;
     }
 
+    case "diff-refs":
+    case "diff-commits":
+    case "diff-files":
+    case "diff-patch":
+    case "diff-context":
+      queueTask(() => handleDiffMessage(msg, projectDir, send));
+      return;
+
     case "list-files":
       forwardResult(
         searchProjectFiles(projectDir, msg.query),
@@ -266,7 +276,7 @@ export function handleClientMessage(
     }
 
     case "start-run":
-      void runs.start({ ...runStartBase(), request: msg.request, images: msg.images });
+      void runs.start({ ...runStartBase(), request: msg.request, images: msg.images, send: runSender(msg.request) });
       return;
 
     case "decide-run-result":
@@ -332,7 +342,7 @@ export function handleClientMessage(
           decisions,
           send,
           sendChats,
-          startTeamRun: (start) => void runs.start({ ...runStartBase(), ...start }),
+          startTeamRun: (start) => void runs.start({ ...runStartBase(), ...start, autoApprove: true, send: runSender(start.request) }),
           teamEstimates,
         }),
       );

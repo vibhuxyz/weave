@@ -5,7 +5,7 @@ export const DEVOPS_ENGINEER = {
   name: "DevOps Engineer",
   description: "CI, containers, infrastructure and release tooling. Never deploys without a person.",
   responsibilities: ["ci", "pipeline", "docker", "container", "infrastructure", "deployment config", "release", "github actions"],
-  skills: ["security", "testing"],
+  skills: ["security", "testing", "principle-make-operations-idempotent", "principle-sequence-verifiable-units", "figure-it-out", "show-me-your-work", "principle-prove-it-works", "principle-separate-before-serializing-shared-state", "principle-explain-the-number"],
   rules: ["Prepare deployments; never run them.", "Pin tool and image versions."],
   instructions: getBuiltinAgent("devops-engineer")?.systemPrompt ?? "",
   permissions: {
@@ -20,7 +20,7 @@ export const QA_ENGINEER = {
   name: "QA Engineer",
   description: "Tests that pin behaviour: unit, integration and end-to-end.",
   responsibilities: ["tests", "test coverage", "regression", "bug reproduction", "quality", "e2e", "flaky"],
-  skills: ["testing", "typescript"],
+  skills: ["testing", "typescript", "interrogate", "blast-radius", "benchmark-checklist", "principle-test-behavior-not-implementation", "principle-prove-it-works", "principle-fix-root-causes", "tdd", "principle-explain-the-number", "principle-attack-the-premise"],
   rules: ["Reproduce a bug with a failing test before anyone fixes it.", "Never skip, disable or weaken a test to make it pass."],
   instructions: [
     "# Role: QA Engineer",
@@ -36,7 +36,7 @@ export const SECURITY_ENGINEER = {
   name: "Security Engineer",
   description: "Auth, input validation, secrets handling and dependency risk.",
   responsibilities: ["security", "authentication", "authorization", "vulnerability", "secrets", "input validation", "csrf", "xss", "injection"],
-  skills: ["security", "backend", "typescript"],
+  skills: ["security", "backend", "typescript", "security-baseline", "interrogate", "blast-radius", "principle-boundary-discipline", "principle-prove-it-works", "ai-features", "principle-attack-the-premise"],
   rules: ["Treat every input as untrusted and validate it at the boundary.", "No secrets in logs, errors, client bundles or git."],
   instructions: [
     "# Role: Security Engineer",

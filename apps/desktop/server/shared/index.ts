@@ -15,3 +15,5 @@ export { PROJECT_CLIENT_MESSAGE_TYPES } from "./project-types.ts";
 export type { ApiView, CappedList, ChangeView, CodeLocation, ProjectClientMessage, ProjectOverview, ProjectQueryResult, ProjectServerMessage, Reach, WorkspaceView } from "./project-types.ts";
 export { BUDGET_CLIENT_MESSAGE_TYPES } from "./budget-types.ts";
 export type { BudgetClientMessage, BudgetServerMessage, BudgetSettings, LimitSettings, SpendView } from "./budget-types.ts";
+export { DIFF_CLIENT_MESSAGE_TYPES } from "./diff-types.ts";
+export type { BranchRef, Commit, DiffClientMessage, DiffHunk, DiffLine, DiffLineKind, DiffRange, DiffServerMessage, FileDiff, FileDiffStatus, FileStat, LineSegment, SkippedFile } from "./diff-types.ts";

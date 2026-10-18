@@ -3,13 +3,14 @@ import { buildProjectModel, queryProject, type ProjectModel } from "../../contex
 import type { EmployeeRegistry } from "../../employees/index.ts";
 import type { InspectHarvest, PoolControls, PoolSession } from "../../pool/index.ts";
 import type { PlannedTask } from "../../planner/index.ts";
-import type { RunPlanResult } from "../../run-plan/index.ts";
+import type { Reviser, RunPlanResult } from "../../run-plan/index.ts";
 import type { Ledger } from "../../shared/index.ts";
 import { loadRoster, rememberRun, withEmployeeVerification } from "../employee-setup.ts";
 import type { Staffing } from "../plan-and-run.ts";
 import type { PlanAndRunOptions, PlanAndRunResult, PlanningOutcome } from "../types.ts";
 import { DIRECT_TASK_ID } from "./constants.ts";
 import { directTask } from "./direct-task.ts";
+import { followUpReviser, followUpTasks } from "./follow-up/index.ts";
 import { reconcilePlan } from "./reconcile.ts";
 import type { Expansion } from "./types.ts";
 import { validateExpansion } from "./validate-expansion.ts";
@@ -24,6 +25,7 @@ interface RunHooks {
   readonly routes: ReadonlyMap<string, readonly string[]>;
   readonly briefings: ReadonlyMap<string, string>;
   readonly modelHolder: { model: ProjectModel | null };
+  readonly followUp: Reviser;
 }
 
 export interface ExistingRunInput {
@@ -73,13 +75,15 @@ export async function runExisting(input: ExistingRunInput): Promise<PlanAndRunRe
   const holder = { model: null as ProjectModel | null };
   const prepared: Prepared = { roster: null };
   const routes = new Map<string, readonly string[]>();
-  const briefings = new Map<string, string>();
+  const briefings = new Map<string, string>(options.briefings ?? []);
   const inspection: { current: InspectHarvest | undefined } = { current: undefined };
   const controls: PoolControls = { concurrency: 1, waitForOwnership: true };
   const sessionGate = gate();
   const finished = doneGate();
   let session: PoolSession | null = null;
   let staffed: Staffing | null = null;
+  const pending = { current: Promise.resolve() };
+  const staged: { current: readonly PlannedTask[] | null } = { current: null };
   const snapshot = snapshotFor(input, holder, prepared);
   const initial: Planned = { status: "planned", tasks: liveTasks, intent: { goal: direct.title, assumptions: [], risks: [] }, contract: null, baseRef: undefined };
   const starting: Staffing = { tasks: liveTasks, decision: { mode: "sequential", reason: "single-task" }, count: { workers: 1, limitedBy: "plan", reason: "one worker starts immediately" }, adaptive: null, employees: null, routes: undefined };
@@ -95,7 +99,8 @@ export async function runExisting(input: ExistingRunInput): Promise<PlanAndRunRe
       const roster = prepared.roster;
       return input.plan({ model: holder.model, roster: roster?.roster ?? null, employeeIds: roster?.registry.employees.map((employee) => employee.id) ?? null, engineCandidates: input.candidates }, notes);
     },
-    expand: (planned, touched) => expand(input, { session, planned, touched, liveTasks, prepared, routes, briefings, inspection, controls, staffed: (value) => { staffed = value; } }),
+    expand: (planned, touched) => expand(input, { session, planned, touched, liveTasks, prepared, routes, briefings, inspection, controls, staged, staffed: (value) => { staffed = value; } }),
+    onPending: (work) => { pending.current = work; },
   });
   const ran = await input.execute(initial, starting, {
     controls,
@@ -103,6 +108,7 @@ export async function runExisting(input: ExistingRunInput): Promise<PlanAndRunRe
     routes,
     briefings,
     inspectHarvest: (task, path, files) => inspection.current?.(task, path, files) ?? Promise.resolve(null),
+    followUp: followUpReviser({ ledger: context.ledger, pending: () => pending.current, staged: () => staged.current }),
     attachSession: (opened) => {
       session = opened;
       sessionGate.resolve(opened);
@@ -122,7 +128,7 @@ async function outcomeOf(input: ExistingRunInput, ran: RunPlanResult, staffed: S
   };
 }
 
-async function expand(input: ExistingRunInput, state: {
+interface ExpandState {
   readonly session: PoolSession | null;
   readonly planned: Planned;
   readonly touched: readonly string[];
@@ -132,21 +138,11 @@ async function expand(input: ExistingRunInput, state: {
   readonly briefings: Map<string, string>;
   readonly inspection: { current: InspectHarvest | undefined };
   readonly controls: PoolControls;
+  readonly staged: { current: readonly PlannedTask[] | null };
   readonly staffed: (value: Staffing) => void;
-}): Promise<Expansion> {
-  const running = state.liveTasks[0];
-  const session = state.session;
-  if (!running || !session?.isOpen(DIRECT_TASK_ID)) return held("the first worker is no longer running");
-  const reconciled = reconcilePlan(running, state.planned.tasks, state.touched);
-  if (!reconciled.ok) return held(reconciled.reason);
-  const proposed = validateExpansion([reconciled.direct, ...reconciled.added]);
-  if (!proposed.ok) return { ok: false, reasons: proposed.reasons, canRepair: true };
-  const staffing = await input.staff({ ...state.planned, tasks: [reconciled.direct, ...reconciled.added] }, reconciled.added.length + 1, state.prepared.roster?.registry ?? null);
-  const direct = staffing.tasks.find((task) => task.id === DIRECT_TASK_ID);
-  const added = staffing.tasks.filter((task) => task.id !== DIRECT_TASK_ID);
-  if (!direct || !session.isOpen(DIRECT_TASK_ID)) return held("the first worker is no longer running");
-  const checked = validateExpansion([direct, ...added]);
-  if (!checked.ok) return { ok: false, reasons: checked.reasons, canRepair: true };
+}
+
+function applyStaffing(input: ExistingRunInput, state: ExpandState, staffing: Staffing): void {
   if (staffing.adaptive) {
     state.controls.budget = staffing.adaptive.budget;
     state.controls.priorityOf = (taskId) => staffing.adaptive?.priorities.get(taskId) ?? 0;
@@ -155,9 +151,43 @@ async function expand(input: ExistingRunInput, state: {
   for (const [taskId, route] of staffing.routes ?? []) state.routes.set(taskId, route);
   for (const [taskId, briefing] of staffing.employees?.briefings ?? []) state.briefings.set(taskId, briefing);
   if (staffing.employees) state.inspection.current = withEmployeeVerification(staffing.employees, input.context.ledger, state.inspection.current);
-  if (!session.retarget(DIRECT_TASK_ID, direct)) return held("the running worker could not take the revised task");
-  const admitted = session.admit(added);
-  if (!admitted.ok) return held(admitted.reason);
+}
+
+async function stageFollowUp(input: ExistingRunInput, state: ExpandState, running: PlannedTask): Promise<Expansion> {
+  const tasks = followUpTasks(state.planned.tasks);
+  const proposed = validateExpansion(tasks);
+  if (!proposed.ok) return { ok: false, reasons: proposed.reasons, canRepair: true };
+  const staffing = await input.staff({ ...state.planned, tasks }, tasks.length, state.prepared.roster?.registry ?? null);
+  const checked = validateExpansion(staffing.tasks);
+  if (!checked.ok) return { ok: false, reasons: checked.reasons, canRepair: true };
+  applyStaffing(input, state, staffing);
+  const team = [running, ...staffing.tasks];
+  state.liveTasks.splice(0, state.liveTasks.length, ...team);
+  state.staged.current = staffing.tasks;
+  state.staffed({ ...staffing, tasks: team });
+  input.log(staffing, { ...state.planned, tasks: staffing.tasks });
+  return { ok: true };
+}
+
+async function expand(input: ExistingRunInput, state: ExpandState): Promise<Expansion> {
+  const running = state.liveTasks[0];
+  const session = state.session;
+  if (!running) return held("the first worker is missing from the run");
+  if (!session?.isOpen(DIRECT_TASK_ID)) return stageFollowUp(input, state, running);
+  const reconciled = reconcilePlan(running, state.planned.tasks, state.touched);
+  if (!reconciled.ok) return held(reconciled.reason);
+  const proposed = validateExpansion([reconciled.direct, ...reconciled.added]);
+  if (!proposed.ok) return { ok: false, reasons: proposed.reasons, canRepair: true };
+  const staffing = await input.staff({ ...state.planned, tasks: [reconciled.direct, ...reconciled.added] }, reconciled.added.length + 1, state.prepared.roster?.registry ?? null);
+  const direct = staffing.tasks.find((task) => task.id === DIRECT_TASK_ID);
+  const added = staffing.tasks.filter((task) => task.id !== DIRECT_TASK_ID);
+  if (!direct) return held("the revised plan dropped the first worker");
+  if (!session.isOpen(DIRECT_TASK_ID)) return stageFollowUp(input, state, running);
+  const checked = validateExpansion([direct, ...added]);
+  if (!checked.ok) return { ok: false, reasons: checked.reasons, canRepair: true };
+  const expanded = session.expand(DIRECT_TASK_ID, direct, added);
+  if (!expanded.ok) return held(`the revised plan does not fit the running graph: ${expanded.reason}`);
+  applyStaffing(input, state, staffing);
   state.liveTasks.splice(0, state.liveTasks.length, ...staffing.tasks);
   state.staffed(staffing);
   input.log(staffing, { ...state.planned, tasks: staffing.tasks });

@@ -10,6 +10,7 @@ import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
+import { weaveMermaidOptions } from "./mermaid-theme";
 import type { UIMessage } from "ai";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -961,6 +962,7 @@ export const MessageResponse = memo(
     codeRenderers,
     imageRenderer,
     isAnimating,
+    mermaid: mermaidOptions,
     mode,
     onAnimationEnd,
     onAnimationStart,
@@ -1060,6 +1062,7 @@ export const MessageResponse = memo(
             components={streamdownComponents}
             isAnimating={isAnimating}
             linkSafety={linkSafetyConfig}
+            mermaid={mermaidOptions ?? weaveMermaidOptions()}
             mode={strikethroughFrom === undefined ? mode : "static"}
             onAnimationEnd={streamdownLayoutPending.onAnimationEnd}
             onAnimationStart={streamdownLayoutPending.onAnimationStart}
@@ -1091,7 +1094,8 @@ export const MessageResponse = memo(
     nextProps.mode === prevProps.mode &&
     nextProps.strikethroughFrom === prevProps.strikethroughFrom &&
     nextProps.strikethroughLabel === prevProps.strikethroughLabel &&
-    nextProps.codeRenderers === prevProps.codeRenderers,
+    nextProps.codeRenderers === prevProps.codeRenderers &&
+    nextProps.mermaid === prevProps.mermaid,
 );
 
 MessageResponse.displayName = "MessageResponse";

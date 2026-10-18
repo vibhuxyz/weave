@@ -24,3 +24,7 @@ export const LISTED_COMMANDS_PER_TURN = 5;
 export const HANDOFF_TAG = "weave-handoff";
 export const FILE_CHANGING_KINDS: ReadonlySet<string> = new Set(["edit", "delete", "move"]);
 export const COMMAND_KIND = "execute";
+export const MAX_RUN_ANSWER_CHARS_PER_TASK = 4000;
+export const MAX_RUN_BRIEF_BYTES = 6000;
+export const RUN_RESULT_TAG = "team-run-result";
+export const MAX_LISTED_RUN_FILES = 20;

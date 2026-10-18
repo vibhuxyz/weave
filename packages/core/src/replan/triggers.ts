@@ -11,7 +11,7 @@ function detailOf(text: string | null): string {
 
 function settledTriggers(pool: PoolReport): readonly ReplanTrigger[] {
   return pool.tasks.flatMap((entry): readonly ReplanTrigger[] => {
-    if (entry.status === "ok") return [];
+    if (entry.status === "ok" || entry.isSetupFailure) return [];
     if (entry.status === "skipped") return [{ kind: "worker-skipped", taskId: entry.taskId, detail: detailOf(entry.reason) }];
     const settledAs = entry.isRejected ? "rejected" : entry.status;
     return [{ kind: "worker-failed", taskId: entry.taskId, detail: `${settledAs}: ${detailOf(entry.reason)}` }];

@@ -4,6 +4,7 @@ export const DATA_DIR_NAME = "data";
 export const DATABASE_FILE_NAME = "weave.sqlite";
 export const PROJECTS_DIR_NAME = "projects";
 export const SKILLS_DIR_NAME = "skills";
+export const BUNDLED_SKILLS_DIR_NAME = "skills";
 export const RULES_DIR_NAME = "rules";
 export const LOGS_DIR_NAME = "logs";
 export const COMMITTED_SKILLS_DIR = ".agents/skills";

@@ -29,15 +29,21 @@ function mergeContracts(current: readonly TaskContract[] | undefined, rerun: rea
 
 function replaceReports(pool: PoolReport, rerun: PoolReport): PoolReport {
   const rerunById = new Map(rerun.tasks.map((entry) => [entry.taskId, entry]));
+  const known = new Set(pool.tasks.map((entry) => entry.taskId));
   const contracts = mergeContracts(pool.contracts, rerun.contracts);
   return {
-    tasks: pool.tasks.map((entry) => rerunById.get(entry.taskId) ?? entry),
+    tasks: [...pool.tasks.map((entry) => rerunById.get(entry.taskId) ?? entry), ...rerun.tasks.filter((entry) => !known.has(entry.taskId))],
     coordination: {
       addedDependencies: [...pool.coordination.addedDependencies, ...rerun.coordination.addedDependencies],
       escalations: [...pool.coordination.escalations, ...rerun.coordination.escalations],
     },
     ...(contracts ? { contracts } : {}),
   };
+}
+
+export function firstRevision(first: Reviser | undefined, then: Reviser): Reviser {
+  if (!first) return then;
+  return async (input) => (await first(input)) ?? then(input);
 }
 
 export async function runWithRevisions(input: RevisionLoopInput): Promise<{ pool: PoolReport; baseCommit: string }> {

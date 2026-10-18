@@ -1,4 +1,6 @@
 export * from "./auth/index.ts";
+export { setAwakeTimeout } from "./awake-timer/index.ts";
+export type { AwakeTimeout } from "./awake-timer/index.ts";
 export * from "./engines/index.ts";
 export * from "./permissions/index.ts";
 export { blocksForSessionPrompt, promptBlocks } from "./prompt/index.ts";

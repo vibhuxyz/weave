@@ -119,13 +119,15 @@ export async function handlePrompt({
     taskId: "desktop",
   });
 
+  const { builtinSkillCatalog, pinnedSkills } = await selectBuiltinSkills(text, msg.skillNames);
   const outgoing = composeSystemPrompt(text, {
     pendingPreamble: sessionMgr.pendingPreamble,
     persona: msg.persona,
     pluginBlock,
     ruleCatalog,
     decisionsBlock: decisions.formatBlock(),
-    builtinSkillCatalog: await selectBuiltinSkills(text),
+    pinnedSkills,
+    builtinSkillCatalog,
     skillCatalog,
     teamHandoff: canHandOff ? TEAM_HANDOFF_SECTION : undefined,
   });

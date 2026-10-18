@@ -1,3 +1,5 @@
+import { setAwakeTimeout, type AwakeTimeout } from "../awake-timer/index.ts";
+
 export interface StallWatchdog {
   /** Start watching. The returned promise rejects if the engine goes quiet. */
   arm(timeoutMs?: number): Promise<never>;
@@ -22,26 +24,26 @@ export function createStallWatchdog({
   timeoutMs,
   onStall,
 }: StallWatchdogOptions): StallWatchdog {
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  let timer: AwakeTimeout | null = null;
   let fail: ((error: Error) => void) | null = null;
   let holds = 0;
   let activeTimeoutMs = timeoutMs;
 
   const clear = () => {
-    if (timer) clearTimeout(timer);
+    timer?.clear();
     timer = null;
   };
 
   const start = () => {
     clear();
     if (holds > 0 || !fail) return;
-    timer = setTimeout(() => {
+    timer = setAwakeTimeout(() => {
       const reject = fail;
       fail = null;
       clear();
       reject?.(onStall(activeTimeoutMs));
     }, activeTimeoutMs);
-    timer.unref?.();
+    timer.unref();
   };
 
   return {

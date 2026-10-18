@@ -9,6 +9,7 @@ export interface Agent {
   name: string;
   description: string;
   instructions: string;
+  skills?: readonly string[];
   engineId?: string;
   model?: string;
   tint?: ProjectTone;

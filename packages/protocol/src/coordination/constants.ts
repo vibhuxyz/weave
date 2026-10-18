@@ -24,6 +24,7 @@ export const EMPLOYEE_EVENT_TYPES: readonly EmployeeEventType[] = [
   "contract.changed",
   "dependency.blocked",
   "scope.expand",
+  "split.suggested",
   "review.requested",
   "verification.failed",
   "verification.passed",

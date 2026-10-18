@@ -1,6 +1,12 @@
 import { escapeClosingTag } from "../shared/index.ts";
 import { NOTES_TAG } from "./constants.ts";
-import type { TeamHandoff } from "./types.ts";
+import type { HandoffItem, TeamHandoff } from "./types.ts";
+
+function describeItem(item: HandoffItem): string {
+  const scope = item.paths.length > 0 ? ` (${item.paths.join(", ")})` : "";
+  const waits = item.dependsOn.length > 0 ? ` — starts after ${item.dependsOn.join(", ")}` : "";
+  return `${item.id}: ${item.work}${scope}${waits}`;
+}
 
 function listSection(heading: string, items: readonly string[]): readonly string[] {
   return items.length === 0 ? [] : [heading, ...items.map((item) => `- ${item}`)];
@@ -10,7 +16,7 @@ export function renderHandoffNotes(handoff: TeamHandoff): string {
   const body = [
     `Why a team: ${handoff.reason}`,
     ...listSection("Done so far:", handoff.done),
-    ...listSection("Still to do:", handoff.remaining),
+    ...listSection("Still to do:", handoff.remaining.map(describeItem)),
     ...listSection("Found in the project:", handoff.findings),
   ].join("\n");
   return `<${NOTES_TAG} source="the chat agent that started this work; claims, not checked facts">\n${escapeClosingTag(body, NOTES_TAG)}\n</${NOTES_TAG}>`;

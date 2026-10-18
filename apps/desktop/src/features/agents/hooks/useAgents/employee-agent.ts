@@ -24,6 +24,7 @@ export function agentFromEmployee(employee: EmployeeSummary, source: EmployeeSou
     name: employee.name,
     description: employee.description,
     instructions: employeeInstructions(employee),
+    skills: employee.skills,
     builtin: source === "builtin",
     origin: { kind: "employee", source },
     createdAt: EMPLOYEE_CREATED_AT,

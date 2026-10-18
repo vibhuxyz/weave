@@ -30,8 +30,9 @@ import { ENGINES, DEFAULT_ENGINE_ID, tokenReportingFor } from "@weave/agent/brow
 import { EnginePicker } from '@/features/engines/components';
 import { SettingsView } from '@/features/settings';
 import { ChatSkeleton, ContextPanel, EngineSetupPanel, hasSelectableModes, ModePicker, PermissionCard, QuestionCard, UserMessage, type ContextPanelTab } from '@/features/chat/components';
-import { chatCommandFor, ParallelSuggest, routeDraft, RunPanel, RunStream, selectIsPlanOpen, selectIsRunActive, useRunStore } from '@/features/runs';
-import { FileViewer, useFileStore } from '@/features/files';
+import { matchingAgents, matchingSkills, MentionMenu, type MentionTab } from "@/features/chat/components/mention-menu";
+import { MultitaskChip, routeDraft, RunPanel, RunStream, selectIsPlanOpen, selectIsRunActive, useRunStore } from '@/features/runs';
+import { useFileStore } from '@/features/files';
 import { LocalPathOpenerContext } from '@/shared/ui/ai-elements';
 
 /** Inspector width: the spec's 400px to start, dragged from its left edge. */
@@ -40,20 +41,28 @@ const INSPECTOR_MAX_WIDTH = 720;
 const CONTEXT_PANEL_WIDTH = 288;
 
 const CHAT_COLUMN_WIDTH = "mx-auto w-full max-w-3xl";
-import { collectTasks, PlanPanel, planProgressOf, planSignatureOf, TurnDiffPanel, StreamedTurn, StreamStatusLine, TasksPanel } from "@/agent/components";
+import { collectTasks, planProgressOf, planSignatureOf, StreamedTurn, StreamStatusLine, TasksPanel } from "@/agent/components";
+import { InspectorPanel } from "./components";
+import type { DiffSource } from "@/features/diff-viewer";
 import type { BlockAction } from "@/agent/normalize";
 import { collectTurnDiffs } from "@/agent/diff";
 import { Sidebar } from "./Sidebar";
 import { CreateProjectDialog, toneColor } from '@/features/projects/components';
 import { AgentAvatar, EmployeesView, PersonasView, ConversationStart } from '@/features/agents/components';
 import { SkillsView } from "@/features/skills";
+import { useSkillListing } from "@/features/skills/hooks";
+import type { SkillView } from "@/features/skills/types";
 import { ProjectView } from "@/features/project-intelligence";
 import { formatSkillPluginsSystemPrompt, usePlugins, useSkillPlugins } from '@/features/plugins/hooks';
 import { PluginsView } from '@/features/plugins/components';
 import {
   activeAgents,
+  skillNamesOf,
+  MAX_PINNED_SKILLS,
   useAgents,
   formatPersonaSystemPrompt,
+  promptedAgents,
+  turnPersonasOf,
   type Agent,
 } from '@/features/agents/hooks';
 import { EngineAuthPanel } from "@/features/auth";
@@ -158,9 +167,6 @@ export function App() {
     cancelAuth,
     submitAuthInput,
     clearAuth,
-    fileMatches,
-    requestFiles,
-    clearFileMatches,
     cancel,
     setConfig,
     isSettingConfig,
@@ -177,6 +183,7 @@ export function App() {
     cancelRun,
     resumeTask,
     openFile,
+    diffChannel,
     employeeActions,
     refreshSkills,
     projectActions,
@@ -203,6 +210,7 @@ export function App() {
   const { pinnedDirs: homeProjectDirs, togglePin: toggleProjectHome } = useProjectHomePins();
   const [archivingProject, setArchivingProject] = useState<ProjectEntry | null>(null);
   const { agents } = useAgents();
+  const skillListing = useSkillListing();
   const chatWorkspace = useChatWorkspace();
   const chatWorkspaceDir = chatWorkspace.status === "ready" ? chatWorkspace.dir : null;
   const isChatWorkspaceActive = activeDir !== undefined && activeDir === chatWorkspaceDir;
@@ -515,9 +523,13 @@ export function App() {
   }, [modelOption, setConfig]);
 
   const [draft, setDraft] = useState("");
+  const [multitask, setMultitask] = useState(false);
+  const [stayInChat, setStayInChat] = useState(false);
   const keepInChat = useCallback((request: string) => {
     cancelRun();
-    setDraft(chatCommandFor(request));
+    setMultitask(false);
+    setStayInChat(true);
+    setDraft(request);
   }, [cancelRun]);
   const [focusEmployeeId, setFocusEmployeeId] = useState<string | null>(null);
   const openEmployee = useCallback(
@@ -592,7 +604,20 @@ export function App() {
     turnDiffEntries.some((entry) => entry.turnId === diffTurnId);
   const openFilePath = useFileStore((state) => state.openPath);
   const isFileExpanded = useFileStore((state) => state.isExpanded);
+  const toggleFileExpanded = useFileStore((state) => state.toggleExpanded);
+  const closeOpenFile = useFileStore((state) => state.close);
   const filePanelOpen = view === "chat" && openFilePath !== null;
+  const [pickedSource, setPickedSource] = useState<DiffSource | null>(null);
+  const activeTurnFiles = useMemo(
+    () => turnDiffEntries.find((entry) => entry.turnId === diffTurnId)?.diff.files ?? [],
+    [diffTurnId, turnDiffEntries],
+  );
+  const diffSource: DiffSource | null =
+    filePanelOpen && openFilePath !== null
+      ? { kind: "file", path: openFilePath }
+      : diffPanelOpen && diffTurnId !== null
+        ? (pickedSource ?? { kind: "turn", turnId: diffTurnId })
+        : null;
   const planEntries = useMemo(() => latestPlanEntries(turns), [turns]);
   const planSignature = planSignatureOf(planEntries);
   const planProgress = planProgressOf(planEntries);
@@ -712,8 +737,10 @@ export function App() {
 
   // @-mentioned agents applied to the *next* message only.
   const [mentioned, setMentioned] = useState<Agent[]>([]);
+  const [mentionedSkills, setMentionedSkills] = useState<string[]>([]);
   const chipAgent = selectedAgent && !mentioned.some((agent) => agent.id === selectedAgent.id) ? selectedAgent : null;
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionTab, setMentionTab] = useState<MentionTab>("employees");
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionItemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -724,17 +751,18 @@ export function App() {
   // `/img` has its own picker: one popover at a time.
   const commandMatches = imgQuery === null ? matchCommands(commandQuery) : [];
 
-  // A query with a "/" or "." is a path — `@src/App.tsx` — so the menu shows
-  // files instead of agents.
-  const fileMode = mentionQuery !== null && /[./]/.test(mentionQuery);
+  const mentionQueryText = mentionQuery ?? "";
+  const mentionedIds = new Set(mentioned.map((agent) => agent.id));
+  const takenSkillNames = new Set(mentionedSkills);
+  const catalogSkills = skillListing.status === "ready" ? skillListing.skills : [];
+  const employeeMatches =
+    mentionQuery === null ? [] : matchingAgents(agents, "employee", mentionQueryText, mentionedIds);
+  const personaMatches =
+    mentionQuery === null ? [] : matchingAgents(agents, "persona", mentionQueryText, mentionedIds);
+  const skillMatches =
+    mentionQuery === null ? [] : matchingSkills(catalogSkills, mentionQueryText, takenSkillNames);
   const mentionMatches =
-    mentionQuery === null || fileMode
-      ? []
-      : agents.filter(
-          (a) =>
-            !mentioned.some((m) => m.id === a.id) &&
-            a.name.toLowerCase().includes(mentionQuery.toLowerCase()),
-        );
+    mentionTab === "employees" ? employeeMatches : mentionTab === "agents" ? personaMatches : [];
 
   const imgMatches =
     imgQuery === null
@@ -744,15 +772,9 @@ export function App() {
         );
 
   useEffect(() => {
-    if (mentionMatches.length > 0 && mentionItemRefs.current[mentionIndex]) {
-      mentionItemRefs.current[mentionIndex]?.scrollIntoView({ block: "nearest" });
-    }
-  }, [mentionIndex, mentionMatches.length]);
-
-  useEffect(() => {
-    if (fileMode && mentionQuery !== null) requestFiles(mentionQuery);
-    else clearFileMatches();
-  }, [fileMode, mentionQuery, requestFiles, clearFileMatches]);
+    const el = mentionItemRefs.current[mentionIndex];
+    el?.scrollIntoView({ block: "nearest" });
+  }, [mentionIndex, mentionTab, employeeMatches.length, personaMatches.length, skillMatches.length]);
 
   const onDraftChange = (value: string) => {
     setDraft(value);
@@ -829,22 +851,16 @@ export function App() {
     requestAnimationFrame(() => el?.focus());
   };
 
-  // A file mention is literal text the agent should see — `@src/App.tsx` — not
-  // a pill. Swap the partial query for the full path and keep typing.
-  const pickFile = (path: string) => {
+  const pickSkill = (skill: SkillView) => {
     const el = textareaRef.current;
     const caret = el?.selectionStart ?? draft.length;
     const before = draft
       .slice(0, caret)
-      .replace(/@([\w./-]*)$/, `@${path} `);
-    const next = before + draft.slice(caret);
-    setDraft(next);
+      .replace(/(?:^|\s)@([\w./-]*)$/, (full) => full.replace(/@[\w./-]*$/, ""));
+    setDraft(before + draft.slice(caret));
+    setMentionedSkills((current) => (current.includes(skill.name) ? current : [...current, skill.name]));
     setMentionQuery(null);
-    clearFileMatches();
-    requestAnimationFrame(() => {
-      el?.focus();
-      el?.setSelectionRange(before.length, before.length);
-    });
+    requestAnimationFrame(() => el?.focus());
   };
 
   const addImageFiles = async (files: FileList | File[]) => {
@@ -961,7 +977,8 @@ export function App() {
     if (busy || !ready) return;
     if (!draft.trim() && imageAttachments.length === 0) return;
     dismissFinishedRun();
-    const route = routeDraft(draft, { imageCount: imageAttachments.length, mentionCount: mentioned.length, isRunActive });
+    const route = routeDraft(draft, { imageCount: imageAttachments.length, mentionCount: mentioned.length, isRunActive, multitask, stayInChat });
+    setStayInChat(false);
     if (route.kind === "team") {
       beginTeamRun(route.request);
       return;
@@ -976,41 +993,24 @@ export function App() {
       agents,
       extraIds,
     );
-    // The same set, as identity rather than instructions: the run card names
-    // who answered, so a standing agent is visible without opening settings.
-    const personas = activeAgents(activeProjectEntry?.agents, agents, extraIds).map(
-      (a) => ({ id: a.id, name: a.name, icon: a.icon, character: a.character }),
-    );
+    const standingAgents = activeAgents(activeProjectEntry?.agents, agents, extraIds);
+    const personas = turnPersonasOf(promptedAgents(activeProjectEntry?.agents, agents, extraIds));
     const plugins = formatSkillPluginsSystemPrompt(skillPlugins, activeDir);
-
-    let textToSend = route.text;
-    const trimmedDraft = route.text.trim();
-    const isPlanSlash = trimmedDraft.startsWith("/plan ") || trimmedDraft === "/plan";
-    const isNaturalPlan =
-      /^(?:create|make|propose|generate|write|draft)(?:\s+(?:a|an|one))?\s+plan\b/i.test(trimmedDraft) ||
-      /^plan\s*:\s*/i.test(trimmedDraft);
-
-    if (isPlanSlash || isNaturalPlan) {
-      const task = isPlanSlash
-        ? trimmedDraft.slice(5).trim()
-        : trimmedDraft
-            .replace(/^(?:create|make|propose|generate|write|draft)(?:\s+(?:a|an|one))?\s+plan\s*(?:to|for|on|about|how to)?\s*/i, "")
-            .replace(/^plan\s*:\s*/i, "")
-            .trim();
-      textToSend = task
-        ? `[Planning Mode]\nPlease inspect the workspace and propose a step-by-step execution plan for the following task, formatted inside a <plan> block with numbered steps. DO NOT modify any files or execute commands yet until I review and approve the plan:\n\n${task}`
-        : `[Planning Mode]\nPlease inspect the current status and propose a step-by-step execution plan inside a <plan> block with numbered steps before modifying any files or running commands.`;
-    }
+    const skillNames = [...new Set([...skillNamesOf(standingAgents), ...mentionedSkills])]
+      .sort()
+      .slice(0, MAX_PINNED_SKILLS);
 
     const withdrawnDraft = draft;
     const withdrawnImages = imageAttachments;
-    send(textToSend, {
+    send(route.text, {
       persona: [persona, plugins].filter(Boolean).join("\n\n") || undefined,
+      skillNames,
       mentions: mentioned.map((a) => a.name),
       personas,
+      skills: mentionedSkills.length > 0 ? mentionedSkills : undefined,
       images: imageAttachments,
       plugins: activePlugins.activeRefs,
-      canHandOff: route.canHandOff && !isPlanSlash && !isNaturalPlan,
+      canHandOff: route.canHandOff,
       onWithdrawn: () => {
         setDraft((current) => mergeDraftText(current, withdrawnDraft));
         setImageAttachments((current) => mergeDraftImages(current, withdrawnImages));
@@ -1019,6 +1019,7 @@ export function App() {
     setImageAttachments([]);
     setDraft("");
     setMentioned([]);
+    setMentionedSkills([]);
     setMentionQuery(null);
     setImgQuery(null);
     resetComposerHeight();
@@ -1052,8 +1053,6 @@ export function App() {
     previewTint ??
     toneColor(projects.find((p) => p.dir === activeDir)?.tint) ??
     "transparent";
-  const composerRoute = routeDraft(draft, { imageCount: imageAttachments.length, mentionCount: mentioned.length, isRunActive });
-
   const handleHeaderMouseDown = (e: React.MouseEvent) => {
     // Only drag on primary (left) button
     if (e.button !== 0) return;
@@ -1390,6 +1389,8 @@ export function App() {
                 text={turn.text}
                 createdAt={turn.createdAt}
                 mentions={turn.mentions}
+                personas={turn.personas}
+                skills={turn.skills}
                 images={turn.images}
                 onEdit={editPrompt}
                 onResend={resendPrompt}
@@ -1527,120 +1528,28 @@ export function App() {
               isDraggingImage && "outline outline-2 outline-offset-[-2px] outline-primary",
             )}
           >
-            <ParallelSuggest
-              visible={composerRoute.kind === "chat" && composerRoute.suggestParallel}
-              onRun={() => beginTeamRun(draft.trim())}
-            />
             <CommandMenu
               commands={commandMatches}
               activeIndex={commandIndex}
               onHighlight={setCommandIndex}
               onPick={pickCommand}
             />
-            {mentionMatches.length > 0 && (
-              <div className="absolute bottom-full left-0 z-20 mb-2 w-80 overflow-hidden rounded-2xl border border-agent-border bg-agent-surface-raised p-2 shadow-[0_20px_56px_rgba(0,0,0,0.5)]">
-                <div className="flex items-center gap-1 px-1 pb-2 text-sm">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      clearFileMatches();
-                      setMentionQuery("");
-                    }}
-                    className={cn(
-                      "rounded-full px-3 py-1 text-xs transition-colors",
-                      !fileMode
-                        ? "bg-agent-surface-hover text-agent-text-bright"
-                        : "text-agent-text-faint hover:text-agent-text-bright",
-                    )}
-                  >
-                    Agents <span className="text-agent-text-faint">@</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMentionQuery("/");
-                      requestFiles("");
-                    }}
-                    className={cn(
-                      "rounded-full px-3 py-1 text-xs transition-colors",
-                      fileMode
-                        ? "bg-agent-surface-hover text-agent-text-bright"
-                        : "text-agent-text-faint hover:text-agent-text-bright",
-                    )}
-                  >
-                    Files <span className="text-agent-text-faint">@</span>
-                  </button>
-                  <span className="px-2 py-1 text-xs text-agent-text-faint">
-                    Skills /
-                  </span>
-                </div>
-                <div className="max-h-72 overflow-y-auto pr-1">
-                  {mentionMatches.map((a, i) => (
-                    <button
-                      key={a.id}
-                      type="button"
-                      ref={(el) => {
-                        mentionItemRefs.current[i] = el;
-                      }}
-                      onMouseEnter={() => setMentionIndex(i)}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        pickMention(a);
-                      }}
-                      className={cn(
-                        "flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-sm transition-colors",
-                        i === mentionIndex && "bg-agent-surface-hover",
-                      )}
-                    >
-                      <AgentAvatar
-                        name={a.name}
-                        seed={a.id}
-                        tint={a.tint}
-                        icon={a.icon}
-                        character={a.character}
-                        size="sm"
-                        className="size-7 shrink-0"
-                      />
-                      <span className="min-w-0 flex-1 truncate text-agent-text-bright">
-                        {a.name}
-                      </span>
-                      {!a.builtin && (
-                        <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                          Custom
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {fileMode && fileMatches.length > 0 && (
-              <div className="absolute bottom-full left-0 z-20 mb-2 w-96 overflow-hidden rounded-2xl border border-agent-border bg-agent-surface-raised p-2 shadow-[0_20px_56px_rgba(0,0,0,0.5)]">
-                <div className="px-2 pb-2 text-xs text-agent-text-faint">
-                  Files matching “{mentionQuery}”
-                </div>
-                <div className="max-h-72 overflow-y-auto pr-1">
-                  {fileMatches.map((path, i) => (
-                    <button
-                      key={path}
-                      type="button"
-                      onMouseEnter={() => setMentionIndex(i)}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        pickFile(path);
-                      }}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left font-mono text-xs transition-colors",
-                        i === mentionIndex && "bg-agent-surface-hover",
-                      )}
-                    >
-                      <span className="min-w-0 flex-1 truncate text-agent-text-bright">
-                        {path}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {mentionQuery !== null && (
+              <MentionMenu
+                tab={mentionTab}
+                onTabChange={(tab) => {
+                  setMentionTab(tab);
+                  setMentionIndex(0);
+                }}
+                employees={employeeMatches}
+                agents={personaMatches}
+                skills={skillMatches}
+                activeIndex={mentionIndex}
+                onHighlight={setMentionIndex}
+                onPickAgent={pickMention}
+                onPickSkill={pickSkill}
+                itemRefs={mentionItemRefs}
+              />
             )}
             {imgQuery !== null && (
               <div className="absolute bottom-full left-0 z-20 mb-2 w-96 overflow-hidden rounded-2xl border border-agent-border bg-agent-surface-raised p-2 shadow-[0_20px_56px_rgba(0,0,0,0.5)]">
@@ -1700,7 +1609,7 @@ export function App() {
                 </div>
               </div>
             )}
-            {(mentioned.length > 0 || chipAgent) && (
+            {(mentioned.length > 0 || mentionedSkills.length > 0 || chipAgent) && (
               <div className="flex flex-wrap items-center gap-1.5">
                 {chipAgent && (
                   <span className="inline-flex items-center gap-1.5 rounded-md bg-primary/15 py-0.5 pl-1 pr-1.5 text-xs text-primary">
@@ -1751,6 +1660,22 @@ export function App() {
                       }}
                       className="ml-0.5 flex size-3.5 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
                       aria-label={`Remove @${a.name}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                {mentionedSkills.map((name) => (
+                  <span
+                    key={name}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-agent-surface-raised py-0.5 pr-2 pl-2 text-xs text-foreground shadow-sm"
+                  >
+                    <span className="font-medium">/{name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setMentionedSkills((current) => current.filter((skill) => skill !== name))}
+                      className="ml-0.5 flex size-3.5 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      aria-label={`Remove skill ${name}`}
                     >
                       ×
                     </button>
@@ -1824,29 +1749,31 @@ export function App() {
               value={draft}
               onChange={(event) => onDraftChange(event.target.value)}
               onKeyDown={(event) => {
-                if (fileMode && fileMatches.length > 0) {
-                  if (event.key === "ArrowDown") {
-                    event.preventDefault();
-                    setMentionIndex((i) => (i + 1) % fileMatches.length);
-                    return;
-                  }
-                  if (event.key === "ArrowUp") {
-                    event.preventDefault();
-                    setMentionIndex(
-                      (i) => (i - 1 + fileMatches.length) % fileMatches.length,
-                    );
-                    return;
-                  }
-                  if (event.key === "Enter" || event.key === "Tab") {
-                    event.preventDefault();
-                    const file = fileMatches[mentionIndex] ?? fileMatches[0];
-                    if (file) pickFile(file);
-                    return;
-                  }
-                  if (event.key === "Escape") {
-                    setMentionQuery(null);
-                    clearFileMatches();
-                    return;
+                if (mentionQuery !== null) {
+                  const mentionCount =
+                    mentionTab === "skills" ? skillMatches.length : mentionMatches.length;
+                  if (mentionCount > 0) {
+                    if (event.key === "ArrowDown") {
+                      event.preventDefault();
+                      setMentionIndex((i) => (i + 1) % mentionCount);
+                      return;
+                    }
+                    if (event.key === "ArrowUp") {
+                      event.preventDefault();
+                      setMentionIndex((i) => (i - 1 + mentionCount) % mentionCount);
+                      return;
+                    }
+                    if (event.key === "Enter" || event.key === "Tab") {
+                      event.preventDefault();
+                      if (mentionTab === "skills") {
+                        const skill = skillMatches[mentionIndex] ?? skillMatches[0];
+                        if (skill) pickSkill(skill);
+                      } else {
+                        const mention = mentionMatches[mentionIndex] ?? mentionMatches[0];
+                        if (mention) pickMention(mention);
+                      }
+                      return;
+                    }
                   }
                 }
                 if (commandMatches.length > 0) {
@@ -1868,26 +1795,6 @@ export function App() {
                     return;
                   }
                 }
-                if (mentionMatches.length > 0) {
-                  if (event.key === "ArrowDown") {
-                    event.preventDefault();
-                    setMentionIndex((i) => (i + 1) % mentionMatches.length);
-                    return;
-                  }
-                  if (event.key === "ArrowUp") {
-                    event.preventDefault();
-                    setMentionIndex(
-                      (i) => (i - 1 + mentionMatches.length) % mentionMatches.length,
-                    );
-                    return;
-                  }
-                  if (event.key === "Enter" || event.key === "Tab") {
-                    event.preventDefault();
-                    const mention = mentionMatches[mentionIndex] ?? mentionMatches[0];
-                    if (mention) pickMention(mention);
-                    return;
-                  }
-                }
                 if (event.key === "Escape" && mentionQuery !== null) {
                   setMentionQuery(null);
                   return;
@@ -1906,7 +1813,9 @@ export function App() {
                 }
               }}
               placeholder={
-                `Chat with ${selectedAgent?.name ?? (ready && engineLabel ? engineLabel : "Agent")}, / for commands, @ for agents or files`
+                multitask
+                  ? "Describe the work. Weave runs it with a team."
+                  : `Chat with ${selectedAgent?.name ?? (ready && engineLabel ? engineLabel : "Agent")}, / for commands, @ for employees, agents, or skills`
               }
               rows={1}
               disabled={!ready}
@@ -1927,6 +1836,13 @@ export function App() {
             </div>
             <div className="flex items-center justify-between gap-2 px-1">
               <div className="flex flex-wrap items-center gap-2">
+                <MultitaskChip
+                  on={multitask}
+                  onChange={(next) => {
+                    setMultitask(next);
+                    if (next) setStayInChat(false);
+                  }}
+                />
                 <EnginePicker
                   selectedEngineId={engineId || (project.status === "running" ? project.engineId : null) || undefined}
                   engines={enrichedEngines}
@@ -2097,107 +2013,69 @@ export function App() {
         )}
         </main>
 
-        <div
-          className={cn(
-            "relative h-fit max-h-full self-start shrink-0 overflow-hidden",
-            // A drag in progress must track the pointer, not ease behind it.
-            inspectorResize.resizing
-              ? "transition-none"
-              : "transition-[width,opacity] duration-200 ease-out",
-            sidePanelOpen ? "opacity-100" : "w-0 opacity-0",
-          )}
-          style={
-            sidePanelOpen
-              ? { width: inspectorWidth }
-              : undefined
-          }
+        <InspectorPanel
+          isOpen={sidePanelOpen}
+          width={inspectorWidth}
+          resize={inspectorResize}
+          diffSource={diffSource}
+          diffChannel={diffChannel}
+          turnFiles={activeTurnFiles}
+          isDiffExpanded={isFileExpanded}
+          planEntries={planEntries}
+          isPlanOpen={planPanelOpen}
+          isPlanExpanded={isPlanExpanded}
+          onPickSource={setPickedSource}
+          onToggleDiffExpanded={toggleFileExpanded}
+          onCloseDiff={(tab) => {
+            setDiffTurnId(null);
+            setPickedSource(null);
+            closeOpenFile();
+            setContextOpen(true);
+            if (tab) setContextTab(tab);
+          }}
+          onTogglePlanExpanded={() => setIsPlanExpanded((value) => !value)}
+          onClosePlan={() => setClosedPlanSignature(planSignature)}
         >
-          {sidePanelOpen && (diffPanelOpen || filePanelOpen || planPanelOpen) && (
-            <div
-              onMouseDown={inspectorResize.onResizeStart}
-              onDoubleClick={inspectorResize.onResizeDoubleClick}
-              title="Drag to resize · double-click to reset"
-              className="group absolute top-0 bottom-0 -left-1.5 z-20 w-3 cursor-ew-resize"
-              aria-hidden
-            >
-              <div className="absolute top-1/2 left-1/2 h-8 w-px -translate-x-1/2 -translate-y-1/2 rounded-full bg-transparent transition-colors group-hover:bg-border" />
-            </div>
-          )}
-          <div
-            className={filePanelOpen || planPanelOpen ? "h-full" : "h-fit max-h-full"}
-            style={{ width: inspectorWidth }}
-          >
-            {filePanelOpen ? (
-            <FileViewer key={openFilePath} />
-            ) : planPanelOpen ? (
-            <PlanPanel
-              entries={planEntries}
-              isExpanded={isPlanExpanded}
-              onToggleExpanded={() => setIsPlanExpanded((value) => !value)}
-              onClose={() => setClosedPlanSignature(planSignature)}
-            />
-            ) : diffPanelOpen ? (
-            <TurnDiffPanel
-              entries={turnDiffEntries}
-              turnId={diffTurnId!}
-              focusPath={diffFocusPath}
-              onSelectTurn={(id) => {
-                setDiffTurnId(id);
-                setDiffFocusPath(undefined);
-              }}
-              onClose={(tab) => {
-                setDiffTurnId(null);
-                setContextOpen(true);
-                if (tab) setContextTab(tab);
-              }}
-              projectDir={activeDir}
-            />
-            ) : (
-            <ContextPanel
-              tab={contextTab}
-              onTabChange={setContextTab}
-              turnDiffs={turnDiffEntries}
-              onOpenDiff={(id, path) => {
-                setDiffFocusPath(path);
-                setDiffTurnId(id);
-              }}
-              projectDir={activeDir ?? ""}
-              git={git}
-              onRefresh={refreshGit}
-              servers={servers}
-              onStopServer={stopServer}
-              agents={agents}
-              projectAgents={activeProjectEntry?.agents ?? []}
-              onProjectAgentsChange={(next) => {
-                if (activeDir) setProjectAgents(activeDir, next);
-              }}
-              manualActive={manualActive}
-              onToggleManual={(id) =>
-                setManualActive((cur) =>
-                  cur.includes(id)
-                    ? cur.filter((x) => x !== id)
-                    : [...cur, id],
-                )
-              }
-              pluginCatalog={pluginCatalog}
-              projectPlugins={activeProjectEntry?.plugins ?? []}
-              onProjectPluginsChange={(next) => {
-                if (activeDir) setProjectPlugins(activeDir, next);
-              }}
-              manualPluginActive={manualPluginActive}
-              onTogglePluginManual={(id) =>
-                setManualPluginActive((cur) =>
-                  cur.includes(id)
-                    ? cur.filter((x) => x !== id)
-                    : [...cur, id],
-                )
-              }
-              engineId={engineId ?? undefined}
-              engineLabel={engineLabel ?? undefined}
-            />
-            )}
-          </div>
-        </div>
+          <ContextPanel
+            tab={contextTab}
+            onTabChange={setContextTab}
+            turnDiffs={turnDiffEntries}
+            onOpenDiff={(id, path) => {
+              setDiffFocusPath(path);
+              setPickedSource(null);
+              setDiffTurnId(id);
+            }}
+            projectDir={activeDir ?? ""}
+            git={git}
+            onRefresh={refreshGit}
+            servers={servers}
+            onStopServer={stopServer}
+            agents={agents}
+            projectAgents={activeProjectEntry?.agents ?? []}
+            onProjectAgentsChange={(next) => {
+              if (activeDir) setProjectAgents(activeDir, next);
+            }}
+            manualActive={manualActive}
+            onToggleManual={(id) =>
+              setManualActive((cur) =>
+                cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
+              )
+            }
+            pluginCatalog={pluginCatalog}
+            projectPlugins={activeProjectEntry?.plugins ?? []}
+            onProjectPluginsChange={(next) => {
+              if (activeDir) setProjectPlugins(activeDir, next);
+            }}
+            manualPluginActive={manualPluginActive}
+            onTogglePluginManual={(id) =>
+              setManualPluginActive((cur) =>
+                cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
+              )
+            }
+            engineId={engineId ?? undefined}
+            engineLabel={engineLabel ?? undefined}
+          />
+        </InspectorPanel>
         </>
         )}
       </div>

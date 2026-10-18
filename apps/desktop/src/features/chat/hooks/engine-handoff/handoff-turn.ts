@@ -20,6 +20,10 @@ export function handoffTurn(message: EngineHandoffMessage, id: string, createdAt
   };
 }
 
+export function hasRunTurn(turns: readonly ChatTurn[]): boolean {
+  return turns.some((turn) => turn.run !== undefined);
+}
+
 export function hasEngineHandoff(turns: readonly ChatTurn[]): boolean {
   return turns.some((turn) => turn.handoff !== undefined);
 }

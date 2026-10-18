@@ -3,7 +3,7 @@ import { DEFAULT_ENGINE_ID } from "@weave/agent";
 import type { RunConfig } from "@weave/protocol";
 import { moveToFront } from "../adaptive/index.ts";
 import type { ProjectModel } from "../context/index.ts";
-import { hasLiveUpdates, renderBriefing, renderPublishNudge, renderUpdateBriefing } from "../coordination/index.ts";
+import { hasLiveUpdates, renderBriefing, renderPublishNudge, renderUpdateBriefing, withEmployeeProtocol } from "../coordination/index.ts";
 import type { RunWorker, WorkerInput, WorkerOutcome } from "../pool/index.ts";
 import { engineAttemptRunner, relayTask, type AttemptRunner, type RelayResult } from "../relay/index.ts";
 import { MAX_UPDATE_ROUNDS } from "./constants.ts";
@@ -46,9 +46,11 @@ function engineChainFor(deps: RelayDeps, task: WorkerInput["task"]): readonly st
   return task.engine !== undefined && chain.includes(task.engine) ? moveToFront(chain, task.engine) : chain;
 }
 
-function relayWith(deps: RelayDeps, input: WorkerInput, briefing: string): Promise<RelayResult> {
+function relayWith(deps: RelayDeps, input: WorkerInput, body: string): Promise<RelayResult> {
   const { task, ledger, signal } = input;
   const engines = engineChainFor(deps, task);
+  const employeeBrief = deps.context.briefings?.get(task.id);
+  const briefing = [...(employeeBrief ? [employeeBrief] : []), body].join("\n\n");
   return relayTask({ task, engines, weaveDir: deps.context.weaveDir, ledger, model: deps.context.model, runAttempt: deps.runAttempt, signal, briefing });
 }
 
@@ -58,7 +60,7 @@ async function followUpdates(deps: RelayDeps, input: WorkerInput, first: RelayRe
     if (relayed.status !== "ok" || input.signal.aborted) return relayed;
     const batch = input.coordination.drain();
     if (!hasLiveUpdates(batch)) return relayed;
-    relayed = await relayWith(deps, input, renderUpdateBriefing(batch));
+    relayed = await relayWith(deps, input, withEmployeeProtocol(renderUpdateBriefing(batch)));
   }
   return relayed;
 }
@@ -68,15 +70,13 @@ async function askToPublish(deps: RelayDeps, input: WorkerInput, done: RelayResu
   const nudge = renderPublishNudge(input.coordination.awaited(), input.coordination.published());
   if (nudge === null) return done;
   input.ledger.append("error", { taskId: input.task.id, where: "coordination.publish", message: nudge.split("\n")[0] ?? nudge });
-  return relayWith(deps, input, nudge);
+  return relayWith(deps, input, withEmployeeProtocol(nudge));
 }
 
 export function engineWorker(config: RunConfig | undefined, policy: PermissionPolicy | undefined, context: EngineWorkerContext): RunWorker {
   const deps: RelayDeps = { engines: enginesFor(config), context, runAttempt: context.runAttempt ?? engineAttemptRunner(config, policy, context.images) };
   return async (input) => {
-    const employeeBrief = context.briefings?.get(input.task.id);
-    const briefing = [...(employeeBrief ? [employeeBrief] : []), renderBriefing(input.coordination.drain(), input.coordination.awaited())].join("\n\n");
-    const first = await relayWith(deps, input, briefing);
+    const first = await relayWith(deps, input, renderBriefing(input.coordination.drain(), input.coordination.awaited()));
     const published = await askToPublish(deps, input, first);
     return toOutcome(await followUpdates(deps, input, published));
   };

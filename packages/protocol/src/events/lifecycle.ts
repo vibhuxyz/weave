@@ -59,6 +59,12 @@ export type LifecycleEvent =
       reason: string;
     })
   | (BaseEvent & {
+      type: "split.suggested";
+      taskId: string;
+      areas: string[];
+      reason: string;
+    })
+  | (BaseEvent & {
       type: "scope.denied";
       taskId: string;
       paths: string[];

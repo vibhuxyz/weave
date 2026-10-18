@@ -19,14 +19,14 @@ interface RunStreamProps {
 }
 
 export function RunStream({ onKeepInChat, onDecideResult, projectDir, onOpenDiff, onResumeTask }: RunStreamProps) {
-  const { blocks, hiddenBlockCount, outcome, plannerLabel, isPlanning } = useRunStore(useShallow(selectRunStream));
+  const { blocks, hiddenBlockCount, outcome, plannerLabel, isPlanning, hasLanes } = useRunStore(useShallow(selectRunStream));
   const notes = (
     <>
       <RouteNote onKeepInChat={onKeepInChat} />
       <RepoSetupNote />
     </>
   );
-  if (blocks.length === 0 && outcome === null) return notes;
+  if (blocks.length === 0 && outcome === null && !hasLanes) return notes;
   const planner = blocks.filter((block) => block.taskId === PLANNER_TASK_ID);
   return (
     <div className="flex flex-col gap-5" aria-label="Parallel run activity">

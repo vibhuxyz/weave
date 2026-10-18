@@ -117,6 +117,11 @@ function AttachedList({ always, manual, manualActive, onToggleManual }: { readon
   );
 }
 
+function rowLabel(mode: string, agent: Agent): string {
+  const count = agent.skills?.length ?? 0;
+  return count === 0 ? mode : `${mode} · ${count} ${count === 1 ? "skill" : "skills"}`;
+}
+
 function AgentFace({ agent }: { readonly agent: Agent }) {
   return (
     <AgentAvatar name={agent.name} seed={agent.id} tint={agent.tint} icon={agent.icon} character={agent.character} size="sm" className="size-6 shrink-0" />
@@ -128,7 +133,7 @@ function AlwaysRow({ agent }: { readonly agent: Agent }) {
     <div className="flex items-center gap-2 rounded-lg bg-secondary/70 px-2.5 py-1.5">
       <AgentFace agent={agent} />
       <span className="min-w-0 flex-1 truncate text-xs">{agent.name}</span>
-      <span className="shrink-0 text-[10px] text-muted-foreground">always</span>
+      <span className="shrink-0 text-[10px] text-muted-foreground">{rowLabel("always", agent)}</span>
     </div>
   );
 }
@@ -142,7 +147,7 @@ function ManualRow({ agent, isOn, onToggle }: { readonly agent: Agent; readonly 
     >
       <AgentFace agent={agent} />
       <span className="min-w-0 flex-1 truncate text-xs">{agent.name}</span>
-      <span className={cn("shrink-0 text-[10px]", isOn ? "text-agent-accent" : "text-muted-foreground")}>{isOn ? "on · next chat" : "manual"}</span>
+      <span className={cn("shrink-0 text-[10px]", isOn ? "text-agent-accent" : "text-muted-foreground")}>{rowLabel(isOn ? "on · next chat" : "manual", agent)}</span>
     </button>
   );
 }

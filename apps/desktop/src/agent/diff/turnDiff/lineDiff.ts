@@ -13,7 +13,7 @@ export function splitLines(text: string): string[] {
   return lines;
 }
 
-function lcsPairs(a: string[], b: string[]): Array<[number, number]> {
+export function lcsPairs(a: readonly string[], b: readonly string[]): Array<[number, number]> {
   const n = a.length;
   const m = b.length;
   const table = new Uint32Array((n + 1) * (m + 1));
@@ -151,10 +151,19 @@ export function toHunks(lines: DiffLine[]): DiffHunk[] {
   // Counted, not just elided: "1143 unmodified lines" tells the reader where
   // in the file they are, which a bare separator does not.
   let dropped = 0;
+  let oldAt = 1;
+  let newAt = 1;
   lines.forEach((line, i) => {
+    if (line.oldLine !== undefined) oldAt = line.oldLine;
+    if (line.newLine !== undefined) newAt = line.newLine;
     if (keep[i]) {
       if (current.length === 0) {
-        hunks.push({ lines: current, skippedBefore: dropped || undefined });
+        hunks.push({
+          lines: current,
+          oldStart: oldAt,
+          newStart: newAt,
+          skippedBefore: dropped || undefined,
+        });
         dropped = 0;
       }
       current.push(line);

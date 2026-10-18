@@ -20,6 +20,8 @@ const badgeVariants = cva(
           "rounded-full border-transparent bg-surface-chat-responding-pill-bg px-4 py-2 text-sm text-surface-chat-responding-pill-fg",
         outline:
           "text-foreground [a&]:hover:bg-muted [a&]:hover:text-muted-foreground",
+        agent:
+          "rounded-sm border-agent-chip-border bg-agent-chip-bg text-agent-text-muted",
       },
     },
     defaultVariants: {

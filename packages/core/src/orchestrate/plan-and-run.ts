@@ -1,10 +1,10 @@
 import { availableParallelism } from "node:os";
 import { resolve } from "node:path";
 import type { PlannedTaskFact, VerificationRung } from "@weave/protocol";
-import { concurrencyFor, decide, type Decision, type WorkerCount } from "../decide/index.ts";
+import { concurrencyFor, decide, withOverlapEdges, type Decision, type WorkerCount } from "../decide/index.ts";
 import { availableRungs, intake } from "../intake/index.ts";
 import type { PlannedTask, ProjectKind } from "../planner/index.ts";
-import { engineWorker, enginesFor, runPlan, type Reviser, type RunPlanResult } from "../run-plan/index.ts";
+import { engineWorker, enginesFor, firstRevision, runPlan, type Reviser, type RunPlanResult } from "../run-plan/index.ts";
 import type { InspectHarvest, PoolControls, PoolSession, RunWorker } from "../pool/index.ts";
 import { weaveDirFor } from "../runner/index.ts";
 import { choosePlanningEngines, readHistory, type EngineCandidate } from "../adaptive/index.ts";
@@ -12,7 +12,7 @@ import type { EmployeeRegistry, PreparedEmployees } from "../employees/index.ts"
 import { Ledger, newRunId, once } from "../shared/index.ts";
 import { buildProjectModel, type ProjectModel } from "../context/index.ts";
 import { buildExecutionPlan, executionPlanEvent } from "../execution-plan/index.ts";
-import { checkCleanBase, describeUntrackedFiles } from "../worktree/index.ts";
+import { describeUntrackedFiles, resolveRunBase, type RunBase } from "../worktree/index.ts";
 import { adaptiveSetup, engineCandidates, type AdaptiveSetup } from "./adaptive-setup.ts";
 import { employeeRoutes, employeeSetup, loadRoster, rememberRun, withEmployeeVerification } from "./employee-setup.ts";
 import { contractReviser } from "./contract-revision.ts";
@@ -90,7 +90,12 @@ interface PlanSources {
   readonly engineCandidates: readonly EngineCandidate[];
 }
 
+function presetPlan(tasks: readonly PlannedTask[]): PlanningOutcome {
+  return { status: "planned", tasks, intent: { goal: null, assumptions: [], risks: [] }, contract: null, baseRef: undefined };
+}
+
 async function plan(options: PlanAndRunOptions, context: PlanContext, sources: PlanSources, notes?: string): Promise<PlanningOutcome> {
+  if (options.presetTasks?.length) return presetPlan(options.presetTasks);
   const engines = choosePlanningEngines(sources.engineCandidates);
   const fast = options.images?.length ? null : fastPlan({ request: options.request, kind: context.kind, model: sources.model, repoRoot: context.repoRoot, ledger: context.ledger, engines, preflightWarnings: context.preflightWarnings });
   if (fast) return fast;
@@ -130,7 +135,7 @@ async function staff(options: PlanAndRunOptions, context: StaffContext, planned:
   const employees = context.registry
     ? await employeeSetup({ ...context, registry: context.registry, tasks: planned.tasks, configuredEngines, history })
     : null;
-  const tasks = employees?.tasks ?? planned.tasks;
+  const tasks = withOverlapEdges(employees?.tasks ?? planned.tasks);
   const baseline = decide({ kind, tasks, hasContract: planned.contract !== null, rungs });
   const maxWorkers = options.maxWorkers ?? DEFAULT_MAX_WORKERS;
   const adaptive = options.adaptive
@@ -174,6 +179,7 @@ interface ExecuteContext {
   readonly model: ProjectModel | null;
   readonly planned: Planned;
   readonly staffing: Staffing;
+  readonly base: RunBase;
   readonly engineCandidates: readonly EngineCandidate[];
 }
 
@@ -210,6 +216,12 @@ interface ExecuteHooks {
   readonly routes?: ReadonlyMap<string, readonly string[]>;
   readonly briefings?: ReadonlyMap<string, string>;
   readonly modelHolder?: { model: ProjectModel | null };
+  readonly followUp?: Reviser;
+}
+
+function mergedBriefings(options: PlanAndRunOptions, chosen: ReadonlyMap<string, string> | undefined): ReadonlyMap<string, string> | undefined {
+  if (!options.briefings) return chosen;
+  return new Map([...options.briefings, ...(chosen ?? [])]);
 }
 
 function execute(options: PlanAndRunOptions, context: ExecuteContext, hooks?: ExecuteHooks): Promise<RunPlanResult> {
@@ -220,7 +232,7 @@ function execute(options: PlanAndRunOptions, context: ExecuteContext, hooks?: Ex
     weaveDir,
     get model() { return modelHolder.model; },
     routes: hooks?.routes ?? staffing.routes,
-    briefings: hooks?.briefings ?? employees?.briefings,
+    briefings: mergedBriefings(options, hooks?.briefings ?? employees?.briefings),
     ...(options.images?.length ? { images: options.images } : {}),
   });
   const drift = planned.contract ? contractDriftInspector(planned.contract, ledger) : undefined;
@@ -230,7 +242,8 @@ function execute(options: PlanAndRunOptions, context: ExecuteContext, hooks?: Ex
     repoRoot,
     concurrency: hooks?.controls?.concurrency ?? staffing.count.workers,
     ledger,
-    baseRef: planned.baseRef,
+    baseRef: planned.baseRef ?? context.base.commit,
+    snapshot: planned.baseRef === undefined ? context.base.snapshot ?? undefined : undefined,
     config: options.config,
     policy: options.policy,
     runWorker,
@@ -245,18 +258,20 @@ function execute(options: PlanAndRunOptions, context: ExecuteContext, hooks?: Ex
       hooks?.attachSession?.(session);
       options.onPoolSession?.(session);
     },
-    revise: reviserFor(options, context, runWorker),
+    revise: firstRevision(hooks?.followUp, reviserFor(options, context, runWorker)),
   });
 }
 
 export async function planAndRun(options: PlanAndRunOptions): Promise<PlanAndRunResult> {
   const repoRoot = resolve(options.repoRoot);
-  const clean = await checkCleanBase(repoRoot);
-  if (!clean.ok) return { status: "refused", reason: clean.reason };
+  const base = await resolveRunBase(repoRoot);
+  if (!base.ok) return { status: "refused", reason: base.reason };
   const weaveDir = weaveDirFor(repoRoot, options.config);
   const ledger = new Ledger(weaveDir, newRunId(), options.onEvent);
   const [kind, detected, untracked] = await Promise.all([options.kind ?? detectProjectKind(repoRoot), intake(repoRoot), describeUntrackedFiles(repoRoot, weaveDir)]);
-  const context: PlanContext = { repoRoot, weaveDir, ledger, kind, rungs: availableRungs(detected), preflightWarnings: untracked ? [untracked] : [] };
+  const snapshotNote = base.value.snapshot ? `Workers started from a snapshot of ${base.value.snapshot.fileCount} uncommitted file(s), so they can see your unsaved work.` : null;
+  const warning = snapshotNote ?? untracked;
+  const context: PlanContext = { repoRoot, weaveDir, ledger, kind, rungs: availableRungs(detected), preflightWarnings: warning ? [warning] : [] };
 
   const candidates = engineCandidates(options.config);
   if (kind !== "greenfield") {
@@ -266,7 +281,7 @@ export async function planAndRun(options: PlanAndRunOptions): Promise<PlanAndRun
       candidates,
       plan: (sources, notes) => plan(options, context, sources, notes),
       staff: (planned, workers, registry) => staff(options, { ...context, registry, engineCandidates: candidates }, planned, workers),
-      execute: (planned, staffing, hooks) => execute(options, { repoRoot, weaveDir, ledger, model: hooks.modelHolder.model, planned, staffing, engineCandidates: candidates }, hooks),
+      execute: (planned, staffing, hooks) => execute(options, { repoRoot, weaveDir, ledger, model: hooks.modelHolder.model, planned, staffing, base: base.value, engineCandidates: candidates }, hooks),
       log: (staffing, planned) => {
         const engines = enginesFor(options.config);
         logPlan(ledger, kind, staffing, planned, engines);
@@ -288,7 +303,7 @@ export async function planAndRun(options: PlanAndRunOptions): Promise<PlanAndRun
   logExecutionPlan(ledger, staffing, defaultEngines);
   if (options.signal?.aborted) return { status: "refused", reason: RUN_STOPPED };
   if (options.approvePlan && !(await options.approvePlan())) return { status: "refused", reason: PLAN_NOT_APPROVED };
-  const ran = await execute(options, { repoRoot, weaveDir, ledger, model, planned, staffing, engineCandidates: candidates });
+  const ran = await execute(options, { repoRoot, weaveDir, ledger, model, planned, staffing, base: base.value, engineCandidates: candidates });
   if (!ran.ok) return { status: "refused", reason: ran.reason };
   if (staffing.employees) await rememberRun(staffing.employees, ran.value.pool, context);
   return {

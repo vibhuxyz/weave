@@ -1,5 +1,5 @@
 import { ENGINES } from "@weave/agent";
-import { realChecksOf } from "@weave/core";
+import { COORDINATOR_TURN_ID, RESERVED_TASK_IDS, realChecksOf } from "@weave/core";
 import type { PlannedTaskFact, WeaveEvent } from "@weave/protocol";
 import type { RunPlanTask, RunUpdate } from "../shared/index.ts";
 import { MAX_CRITIQUE_ISSUES, MAX_EXECUTION_SLOTS, MAX_DETAIL_CHARS, MAX_DOMAINS, MAX_PLAN_NOTES, MAX_PLAN_WARNINGS, MAX_REPLAN_RERUNS, MAX_REPLAN_TRIGGERS, MAX_SCOPE_PATHS, MAX_TASK_OUTPUTS, MAX_TASK_SKILLS, MAX_TASK_SUBTASKS, MAX_TEXT_CHUNK_CHARS, MAX_WARNING_CHARS } from "./constants.ts";
@@ -11,6 +11,10 @@ type PlanReviewedEvent = Extract<WeaveEvent, { type: "plan.reviewed" }>;
 
 function capped(text: string, maxChars: number): string {
   return text.length <= maxChars ? text : text.slice(0, maxChars);
+}
+
+function isReservedTask(taskId: string): boolean {
+  return RESERVED_TASK_IDS.includes(taskId);
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -59,6 +63,11 @@ function projectTaskEvent(event: WeaveEvent, taskId: string): RunUpdate | null {
       return { kind: "file", taskId, path: event.path, change: "modified" };
     case "file.deleted":
       return { kind: "file", taskId, path: event.path, change: "deleted" };
+    case "worktree.created":
+      return isReservedTask(taskId) ? null : { kind: "activity", taskId, activity: SETUP_ACTIVITY };
+    case "worktree.installed":
+      if (isReservedTask(taskId)) return null;
+      return { kind: "activity", taskId, activity: event.status === "failed" ? capped(`Install failed: ${event.detail}`, MAX_DETAIL_CHARS) : READY_ACTIVITY };
     case "worker.progress":
       return { kind: "activity", taskId, activity: capped(event.activity, MAX_DETAIL_CHARS) };
     case "task.retrying":
@@ -77,6 +86,9 @@ function projectTaskEvent(event: WeaveEvent, taskId: string): RunUpdate | null {
       return null;
   }
 }
+
+const SETUP_ACTIVITY = "Preparing the workspace and installing dependencies…";
+const READY_ACTIVITY = "Workspace ready, starting the worker…";
 
 function engineLabel(engineId: string | null): string | null {
   return engineId === null ? null : ENGINES[engineId]?.label ?? engineId;
@@ -176,6 +188,6 @@ export function projectRunEvent(event: WeaveEvent): RunUpdate | null {
     case "integration.finished":
       return { kind: "integration", status: event.status, branch: event.branch, brokenBy: event.brokenBy };
     default:
-      return workforceUpdate(event) ?? (event.taskId === undefined ? null : projectTaskEvent(event, event.taskId));
+      return workforceUpdate(event) ?? (event.taskId === undefined || event.taskId === COORDINATOR_TURN_ID ? null : projectTaskEvent(event, event.taskId));
   }
 }

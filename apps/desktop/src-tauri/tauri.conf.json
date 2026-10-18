@@ -47,7 +47,8 @@
       "resources/server.mjs": "server.mjs",
       "resources/server.mjs.map": "server.mjs.map",
       "resources/prebuilds/": "prebuilds/",
-      "resources/patches/": "patches/"
+      "resources/patches/": "patches/",
+      "resources/skills/": "skills/"
     },
     "icon": [
       "icons/32x32.png",

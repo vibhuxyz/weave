@@ -3,7 +3,6 @@ import type { PlannedTask } from "../planner/index.ts";
 import { hasPairwiseDisjointPaths } from "./overlap.ts";
 import type { DecideInput, Decision, DecisionReason } from "./types.ts";
 
-const MIN_PARALLEL_TASKS = 3;
 const MIN_PARALLEL_COMPONENTS = 2;
 const UNCONDITIONAL_RUNG: VerificationRung = "diff-review";
 
@@ -15,15 +14,18 @@ function parallel(reason: DecisionReason): Decision {
   return { mode: "parallel", reason };
 }
 
+function graph(reason: DecisionReason): Decision {
+  return { mode: "graph", reason };
+}
+
 function isVerifiable(task: PlannedTask, rungs: readonly VerificationRung[]): boolean {
   if (task.verify !== undefined && task.verifyRung !== undefined) return true;
   return rungs.some((rung) => rung !== UNCONDITIONAL_RUNG);
 }
 
 function decideExisting({ tasks, rungs }: DecideInput): Decision {
-  if (tasks.length < MIN_PARALLEL_TASKS) return sequential("too-few-tasks");
   if (!tasks.every((task) => isVerifiable(task, rungs))) return sequential("unverifiable-task");
-  if (!hasPairwiseDisjointPaths(tasks)) return sequential("overlapping-paths");
+  if (!hasPairwiseDisjointPaths(tasks)) return graph("overlap-serialized");
   return parallel("disjoint-paths");
 }
 
@@ -40,5 +42,5 @@ export function decide(input: DecideInput): Decision {
 }
 
 export function concurrencyFor(decision: Decision, taskCount: number, maxWorkers: number): number {
-  return decision.mode === "parallel" ? Math.max(1, Math.min(taskCount, maxWorkers)) : 1;
+  return decision.mode === "sequential" ? 1 : Math.max(1, Math.min(taskCount, maxWorkers));
 }

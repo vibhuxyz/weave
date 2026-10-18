@@ -136,7 +136,7 @@ export async function attemptTask(task: TaskContract, parent: PoolContext, optio
   const ctx: PoolContext = { ...parent, retryIndex: options.retryIndex };
   const started = Date.now();
   const isolate = options.isolate;
-  const base = { taskId: task.id, branch: null, harvest: null, finalMessage: null, installMs: 0, agentMs: 0, ranIn: isolate ? ("worktree" as const) : ("shared" as const), isRejected: false };
+  const base = { taskId: task.id, branch: null, harvest: null, finalMessage: null, installMs: 0, agentMs: 0, ranIn: isolate ? ("worktree" as const) : ("shared" as const), isRejected: false, isSetupFailure: false };
 
   let worktree: Worktree | null = null;
   let cwd = ctx.repoRoot;
@@ -152,7 +152,7 @@ export async function attemptTask(task: TaskContract, parent: PoolContext, optio
   try {
     const installed = worktree ? await install(task, worktree, ctx) : { ms: 0, problem: null };
     const withInstall = { ...base, branch: worktree?.branch ?? null, installMs: installed.ms };
-    if (installed.problem) return settle(ctx, { ...withInstall, status: "failed", reason: installed.problem, wallMs: Date.now() - started }, options.quiet);
+    if (installed.problem) return settle(ctx, { ...withInstall, status: "failed", isSetupFailure: true, reason: installed.problem, wallMs: Date.now() - started }, options.quiet);
 
     const worked = await work(task, cwd, ctx);
     const harvested = worktree ? await harvestIsolated(task, worktree, ctx) : await harvestShared(task, ctx, before);

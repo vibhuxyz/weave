@@ -42,6 +42,7 @@ function withPlan(run: RunState, update: PlanUpdate): RunState {
 
 function withLaneUpdate(run: RunState, update: LaneUpdate): RunState {
   const existing = run.lanes[update.taskId];
+  if (!existing && update.kind === "employee-assigned") return run;
   const lane = existing ?? emptyLane({ id: update.taskId, title: update.taskId, dependsOn: [], allowedPaths: [] });
   const laneOrder = existing ? run.laneOrder : [...run.laneOrder, update.taskId];
   const stream = applyStreamUpdate({ stream: run.stream, hiddenBlockCount: run.hiddenBlockCount }, update);

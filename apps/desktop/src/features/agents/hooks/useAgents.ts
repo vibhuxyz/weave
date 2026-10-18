@@ -9,7 +9,8 @@ import { agentFromEmployee } from "./useAgents/employee-agent";
 import { isStoredAgent, personaOf, type Agent } from "./useAgents/types";
 
 export type { Agent } from "./useAgents/types";
-export { activeAgents, formatPersonaSystemPrompt } from "./useAgents/personaPrompt";
+export { activeAgents, formatPersonaSystemPrompt, promptedAgents, turnPersonasOf } from "./useAgents/personaPrompt";
+export { MAX_PINNED_SKILLS, skillNamesOf } from "./useAgents/active-skills";
 
 const PERSONAS_KEY = "berd:agents";
 

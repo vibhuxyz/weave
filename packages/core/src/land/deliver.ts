@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readGitStatus } from "../shared/index.ts";
@@ -40,11 +40,40 @@ async function headOf(repoRoot: string): Promise<string | null> {
   return head.ok ? head.output.trim() : null;
 }
 
+async function editedSinceBase(repoRoot: string, baseCommit: string, files: readonly string[]): Promise<readonly string[]> {
+  if (files.length === 0) return [];
+  const batches = Array.from({ length: Math.ceil(files.length / PATHS_PER_GIT_CALL) }, (_, index) => files.slice(index * PATHS_PER_GIT_CALL, (index + 1) * PATHS_PER_GIT_CALL));
+  const [differing, atBase] = await Promise.all([
+    Promise.all(batches.map((batch) => runGit(repoRoot, ["diff", "--name-only", baseCommit, "--", ...batch]))),
+    filesAtCommit(repoRoot, baseCommit, files),
+  ]);
+  const known = atBase.ok ? atBase.files : new Set<string>();
+  const created = (await Promise.all(files.filter((path) => !known.has(path)).map((path) => stat(join(repoRoot, path)).then(() => [path], () => [])))).flat();
+  return [...new Set([...differing.flatMap((run) => outputLines(run.output)), ...created])].sort();
+}
+
+async function acceptOnWorkingTree(repoRoot: string, plan: DeliveryPlan, integrationHead: string): Promise<DeliveryResult> {
+  const files = plan.isolatedFiles;
+  const edited = await editedSinceBase(repoRoot, plan.baseCommit, files);
+  if (edited.length > 0) return { ok: false, reason: `You changed ${listed(edited)} since the run started, and accepting would overwrite them. Commit or stash them, then accept again.` };
+  const atResult = await filesAtCommit(repoRoot, integrationHead, files);
+  if (!atResult.ok) return atResult;
+  const present = files.filter((path) => atResult.files.has(path));
+  const restored = await checkoutFiles(repoRoot, integrationHead, present);
+  if (restored) return restored;
+  await Promise.all(files.filter((path) => !atResult.files.has(path)).map((path) => rm(join(repoRoot, path), { force: true })));
+  return { ok: true, summary: `Accepted: ${files.length} file(s) from the run were written into your working tree. Your branch and your other uncommitted changes were left as they were.` };
+}
+
 export async function acceptRun(repoRoot: string, plan: DeliveryPlan): Promise<DeliveryResult> {
   const { integrationHead } = plan;
   if (integrationHead === null) return { ok: false, reason: `Nothing was merged, so there is nothing to accept: ${plan.detail}` };
   if (plan.integrationStatus === "failed") return { ok: false, reason: `The combined result failed its checks, so it cannot be accepted: ${plan.detail}` };
+  if (plan.snapshotOf !== null) return acceptOnWorkingTree(repoRoot, plan, integrationHead);
   const head = await headOf(repoRoot);
+  if (head === integrationHead) {
+    return { ok: true, summary: `Already accepted: your branch is already at ${short(integrationHead)}, so nothing was moved.` };
+  }
   if (head !== plan.baseCommit) {
     return { ok: false, reason: `Your branch moved since the run started (from ${short(plan.baseCommit)} to ${head ? short(head) : "nothing"}). Merge ${short(integrationHead)} yourself instead.` };
   }

@@ -28,6 +28,7 @@ export function handoffWhenClosed(input: {
         return status.changes.map((change) => change.path);
       },
       request: input.request,
+      projectDir: input.projectDir,
       estimateNotes: estimate ? renderEstimateNotes(estimate) : "",
       images: input.images,
       ledger: input.ledger,

@@ -2,6 +2,7 @@ import type { TaskContract } from "@weave/protocol";
 import { Coordinator } from "../coordination/index.ts";
 import { nextStep, type ScheduledState, type SkippedTask } from "../scheduler/index.ts";
 import { readHeadCommit } from "../shared/index.ts";
+import type { RunSnapshot } from "../worktree/index.ts";
 import { createResumeSlot, sessionFor, type ResumeSlot } from "./resume.ts";
 import { runOneTask } from "./run-with-retry.ts";
 import type { BudgetManager } from "../adaptive/index.ts";
@@ -11,7 +12,7 @@ const RUN_STOP_KEY = "";
 const NEVER_REACHED_REASON = "never became ready: a dependency cycle or an unknown dependency";
 
 function notRunReport(taskId: string, status: "skipped" | "cancelled", reason: string): PoolTaskReport {
-  return { taskId, status, reason, branch: null, harvest: null, finalMessage: null, installMs: 0, agentMs: 0, wallMs: 0, ranIn: null, isRejected: false };
+  return { taskId, status, reason, branch: null, harvest: null, finalMessage: null, installMs: 0, agentMs: 0, wallMs: 0, ranIn: null, isRejected: false, isSetupFailure: false };
 }
 
 interface PoolState {
@@ -181,14 +182,15 @@ function isScoped(task: TaskContract): boolean {
   return (task.allowedPaths?.length ?? 0) > 0;
 }
 
-async function sharedBaseOf(repoRoot: string, baseCommit: string | undefined): Promise<string | null> {
+async function sharedBaseOf(repoRoot: string, baseCommit: string | undefined, snapshot: RunSnapshot | undefined): Promise<string | null> {
   const head = await readHeadCommit(repoRoot);
   if (head === null) return null;
-  return baseCommit === undefined || baseCommit === head ? head : null;
+  if (baseCommit === undefined || baseCommit === head) return head;
+  return snapshot !== undefined && baseCommit === snapshot.commit && head === snapshot.headCommit ? snapshot.commit : null;
 }
 
 export async function runPool(options: PoolOptions): Promise<PoolReport> {
-  const sharedBase = await sharedBaseOf(options.repoRoot, options.baseCommit);
+  const sharedBase = await sharedBaseOf(options.repoRoot, options.baseCommit, options.snapshot);
   const controller = linkedController(options.signal);
   const coordinator = options.coordinator ?? new Coordinator({ tasks: options.tasks, ledger: options.ledger });
   const ctx: PoolContext = {

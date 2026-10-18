@@ -1,5 +1,6 @@
-import { judgeHandoff, renderHandoffNotes, TEAM_HANDOFF_PROMPT_VERSION, type HandoffVerdict, type Ledger, type TeamHandoff, type WorktreeResult } from "@weave/core";
+import { briefingsFromHandoff, judgeHandoff, renderHandoffNotes, tasksFromHandoff, TEAM_HANDOFF_PROMPT_VERSION, type HandoffVerdict, type Ledger, type TeamHandoff, type WorktreeResult } from "@weave/core";
 import type { PromptImageData, ServerMessage } from "../shared/index.ts";
+import { describeConflicts, scopeConflicts } from "./handoff-scope.ts";
 import type { TeamRunStart } from "./types.ts";
 
 type TeamVerdict = Extract<HandoffVerdict, { kind: "team" }>;
@@ -8,6 +9,7 @@ type Outcome = "invalid" | "team" | "commit-failed";
 export interface SettleHandoffInput {
   readonly verdict: HandoffVerdict;
   readonly request: string;
+  readonly projectDir: string;
   readonly estimateNotes: string;
   readonly images?: readonly PromptImageData[];
   readonly ledger: Ledger;
@@ -19,7 +21,7 @@ export interface SettleHandoffInput {
 
 function requestForWorkers(original: string, handoff: TeamHandoff): string {
   if (handoff.remaining.length === 0) return original;
-  const pieces = handoff.remaining.map((item) => `- ${item}`);
+  const pieces = handoff.remaining.map((item) => `- ${item.work}`);
   return ["Do only the remaining work below. The chat agent already started and is still working on its own files. Do not redo what it finished.", ...pieces].join("\n");
 }
 
@@ -27,8 +29,18 @@ function logDecision(ledger: Ledger, outcome: Outcome, detail: string): void {
   ledger.append("handoff.decided", { outcome, detail, promptVersion: TEAM_HANDOFF_PROMPT_VERSION });
 }
 
+function reportScopeConflicts(input: SettleHandoffInput, verdict: TeamVerdict): void {
+  const conflicts = scopeConflicts(verdict.uncommitted, verdict.handoff);
+  if (conflicts.length === 0) return;
+  for (const conflict of conflicts) {
+    input.ledger.append("error", { taskId: "desktop", where: "handoff.scope", message: `${conflict.path} is still open in this chat and belongs to worker ${conflict.takenBy}` });
+  }
+  input.send({ type: "error", message: describeConflicts(conflicts) });
+}
+
 async function isReadyToStart(input: SettleHandoffInput, verdict: TeamVerdict): Promise<boolean> {
   if (verdict.uncommitted.length === 0) return true;
+  reportScopeConflicts(input, verdict);
   const committed = await input.commitWork();
   if (committed.ok) return true;
   logDecision(input.ledger, "commit-failed", committed.reason);
@@ -47,6 +59,7 @@ export async function releaseToTeam(input: Omit<SettleHandoffInput, "verdict"> &
   await settleHandoff({
     verdict,
     request: input.request,
+    projectDir: input.projectDir,
     estimateNotes: input.estimateNotes,
     images: input.images,
     ledger: input.ledger,
@@ -71,6 +84,8 @@ export async function settleHandoff(input: SettleHandoffInput): Promise<void> {
     request: requestForWorkers(input.request, verdict.handoff),
     routeReason: verdict.handoff.reason,
     plannerNotes,
+    presetTasks: tasksFromHandoff(verdict.handoff, input.projectDir),
+    briefings: briefingsFromHandoff(verdict.handoff),
     ...(input.images && input.images.length > 0 ? { images: input.images } : {}),
   });
 }

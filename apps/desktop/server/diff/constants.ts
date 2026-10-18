@@ -1,0 +1,9 @@
+export const MAX_DIFF_FILES = 400;
+export const MAX_LINES_PER_FILE = 4_000;
+export const MAX_PATCH_BYTES = 4_000_000;
+export const MAX_GIT_STDOUT_BYTES = 8_000_000;
+export const MAX_COMMITS = 200;
+export const MAX_BRANCHES = 200;
+export const MAX_EXPAND_LINES = 400;
+export const CONTEXT_LINES = 3;
+export const SHORT_SHA_LENGTH = 7;

@@ -1,4 +1,16 @@
+const WILDCARD = /[*?]/;
+const TRAILING_SLASHES = /\/+$/;
+
+function escapeLiteral(text: string): string {
+  return text.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+}
+
+function pathOrBelowRegExp(pattern: string): RegExp {
+  return new RegExp(`^${escapeLiteral(pattern.replace(TRAILING_SLASHES, ""))}(?:/.*)?$`);
+}
+
 function toRegExp(pattern: string): RegExp {
+  if (!WILDCARD.test(pattern)) return pathOrBelowRegExp(pattern);
   let source = "";
   for (let i = 0; i < pattern.length; i += 1) {
     const char = pattern[i];
@@ -25,7 +37,7 @@ function toRegExp(pattern: string): RegExp {
       continue;
     }
 
-    source += char.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    source += escapeLiteral(char);
   }
 
   source = source.replace(/\/\(\?:\.\*\/\)\?\.\*$/, "(?:/.*)?");

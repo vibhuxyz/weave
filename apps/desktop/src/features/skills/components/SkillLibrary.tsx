@@ -3,10 +3,11 @@ import { SearchIcon } from "lucide-react";
 import { FIELD } from "@/features/projects/components";
 import { cn } from "@/shared/lib";
 import { useSkillListing } from "../hooks";
-import { filterSkills } from "../lib";
+import { filterByScope, filterSkills, type SkillScope } from "../lib";
 import type { SkillListing, SkillView } from "../types";
 import { MAX_SKILLS_SHOWN } from "./constants";
 import { SkillCard } from "./SkillCard";
+import { SkillScopeTabs } from "./SkillScopeTabs";
 import { UnknownSkills } from "./UnknownSkills";
 
 interface SkillLibraryProps {
@@ -47,10 +48,11 @@ function SkillList({ skills, onOpenEmployee }: { readonly skills: readonly Skill
 export function SkillLibrary({ hasProject, onOpenEmployee, onRefresh }: SkillLibraryProps) {
   const listing = useSkillListing();
   const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<SkillScope>("all");
   const deferredQuery = useDeferredValue(query);
   const searchId = useId();
   const skills = listing.status === "ready" ? listing.skills : null;
-  const filtered = useMemo(() => (skills ? filterSkills(skills, deferredQuery) : []), [skills, deferredQuery]);
+  const filtered = useMemo(() => (skills ? filterSkills(filterByScope(skills, scope), deferredQuery) : []), [skills, scope, deferredQuery]);
 
   useEffect(() => {
     onRefresh();
@@ -71,6 +73,7 @@ export function SkillLibrary({ hasProject, onOpenEmployee, onRefresh }: SkillLib
           className={cn(FIELD, "h-11 pl-10")}
         />
       </div>
+      <SkillScopeTabs skills={listing.skills} scope={scope} onChange={setScope} />
       <UnknownSkills skills={listing.unknownSkills} />
       <SkillList skills={filtered} onOpenEmployee={onOpenEmployee} />
     </div>

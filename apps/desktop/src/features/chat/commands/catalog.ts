@@ -8,27 +8,6 @@ export interface SlashCommand {
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
   {
-    id: "parallel",
-    trigger: "/parallel",
-    title: "Run it with a team",
-    hint: "Plans the work, then runs the workers at the same time. Attached images go with the request",
-    takesPrompt: true,
-  },
-  {
-    id: "chat",
-    trigger: "/chat",
-    title: "Keep it in this chat",
-    hint: "Sends it to one agent here, even when Weave would run it with a team",
-    takesPrompt: true,
-  },
-  {
-    id: "plan",
-    trigger: "/plan",
-    title: "Plan it first",
-    hint: "Asks for a step-by-step plan and changes nothing until you approve it",
-    takesPrompt: true,
-  },
-  {
     id: "img",
     trigger: "/img",
     title: "Attach an image",

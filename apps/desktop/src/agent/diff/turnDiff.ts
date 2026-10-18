@@ -1,4 +1,5 @@
 import type { ChatTurn } from "@/features/chat/hooks";
+import { splitPath } from "./turnDiff/path-parts";
 import { groupToolDiffs } from "./turnDiff/groupToolDiffs";
 import { diffLines, splitLines, toHunks } from "./turnDiff/lineDiff";
 import type { DiffHunk, FileDiff, TurnDiff } from "./turnDiff/types";
@@ -9,6 +10,7 @@ export type {
   DiffLineKind,
   FileDiff,
   FileDiffStatus,
+  LineSegment,
   TurnDiff,
 } from "./turnDiff/types";
 
@@ -42,7 +44,7 @@ export function turnDiff(turn: ChatTurn): TurnDiff {
     additions += fileAdds;
     deletions += fileDels;
     files.push({
-      path,
+      ...splitPath(path),
       status: created ? "added" : emptied ? "deleted" : "modified",
       additions: fileAdds,
       deletions: fileDels,

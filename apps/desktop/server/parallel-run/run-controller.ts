@@ -1,4 +1,4 @@
-import { deliveryPlanOf, type DeliveryPlan, type planAndRun, type PoolSession } from "@weave/core";
+import { deliveryPlanOf, type DeliveryPlan, type planAndRun, type PlannedTask, type PoolSession } from "@weave/core";
 import type { WeaveEvent } from "@weave/protocol";
 import type { ResultDecision, RunOutcome, ServerMessage } from "../shared/index.ts";
 import { errorMessage } from "../shared/index.ts";
@@ -21,6 +21,9 @@ export interface StartRunInput {
   readonly configOptions?: Readonly<Record<string, string>>;
   readonly routeReason?: string;
   readonly plannerNotes?: string;
+  readonly presetTasks?: readonly PlannedTask[];
+  readonly briefings?: ReadonlyMap<string, string>;
+  readonly autoApprove?: boolean;
   readonly images?: unknown;
   readonly send: (message: ServerMessage) => void;
 }
@@ -79,10 +82,12 @@ export function createRunController(runPlanAndRun: PlanAndRun, dependencies: Run
       onApproved: () => send({ type: "run-update", runKey, update: { kind: "plan-approved" } }),
     });
     Object.assign(active, { runKey, gate });
+    if (input.autoApprove === true) send({ type: "run-update", runKey, update: { kind: "plan-approved" } });
     const onEvent = (event: WeaveEvent) => {
       const update = projectRunEvent(event);
       if (update) send({ type: "run-update", runKey, update });
     };
+    const awake = dependencies.holdAwake((message) => send({ type: "error", message }));
     try {
       const result = await runPlanAndRun({
         request: input.plannerNotes ? `${request}\n\n${input.plannerNotes}` : request,
@@ -92,7 +97,9 @@ export function createRunController(runPlanAndRun: PlanAndRun, dependencies: Run
         onEvent,
         employees: {},
         adaptive: { budgets: ready.budgets },
-        approvePlan: gate.wait,
+        ...(input.autoApprove === true ? {} : { approvePlan: gate.wait }),
+        ...(input.presetTasks && input.presetTasks.length > 0 ? { presetTasks: input.presetTasks } : {}),
+        ...(input.briefings && input.briefings.size > 0 ? { briefings: input.briefings } : {}),
         onPoolSession: (session) => { active.pool = session; },
         ...(images.images.length > 0 ? { images: images.images } : {}),
       });
@@ -102,6 +109,7 @@ export function createRunController(runPlanAndRun: PlanAndRun, dependencies: Run
     } catch (error: unknown) {
       send({ type: "run-finished", runKey, outcome: { status: "error", reason: `Parallel run failed: ${errorMessage(error)}` } });
     } finally {
+      awake.release();
       Object.assign(active, { abort: null, runKey: null, gate: null, pool: null });
     }
   };

@@ -132,7 +132,7 @@ export type MergeStatus = "merged" | "empty" | "conflict" | "merge-error" | "ver
 export type RunUpdate =
   | {
       readonly kind: "plan";
-      readonly mode: "sequential" | "parallel";
+      readonly mode: "sequential" | "parallel" | "graph";
       readonly reason: string;
       readonly goal: string | null;
       readonly assumptions: readonly string[];

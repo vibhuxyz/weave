@@ -1,6 +1,4 @@
 import { IMAGE_ONLY_RUN_REQUEST, OTHER_SLASH_COMMAND } from "./constants";
-import { asksForParallel } from "./parallel-intent";
-import { parseChatCommand, parseRunCommand } from "./run-command";
 import type { DraftContext, DraftRoute } from "./types";
 
 export interface RunImageInput {
@@ -33,14 +31,11 @@ export function teamStartMessage(request: string, images: readonly RunImageInput
 }
 
 function needsChat(context: DraftContext): boolean {
-  return context.mentionCount > 0 || context.isRunActive;
+  return context.stayInChat || context.mentionCount > 0 || context.isRunActive;
 }
 
 export function routeDraft(draft: string, context: DraftContext): DraftRoute {
-  const runRequest = parseRunCommand(draft);
-  if (runRequest !== null) return { kind: "team", request: runRequest };
-  const chatRequest = parseChatCommand(draft);
-  if (chatRequest !== null) return { kind: "chat", text: chatRequest, canHandOff: false, suggestParallel: false };
   const canHandOff = !needsChat(context) && !OTHER_SLASH_COMMAND.test(draft.trim());
-  return { kind: "chat", text: draft, canHandOff, suggestParallel: canHandOff && asksForParallel(draft) };
+  if (context.multitask && canHandOff) return { kind: "team", request: draft.trim() };
+  return { kind: "chat", text: draft, canHandOff };
 }

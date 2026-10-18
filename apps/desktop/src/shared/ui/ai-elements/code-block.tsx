@@ -125,7 +125,7 @@ type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   transparentBackground?: boolean;
 };
 
-interface TokenizedCode {
+export interface TokenizedCode {
   tokens: ThemedToken[][];
   fg: string;
   bg: string;

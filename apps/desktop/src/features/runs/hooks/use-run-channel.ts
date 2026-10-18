@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
+import type { ChatTurn } from "@/features/chat/hooks";
 import type { ResultDecision, ServerMessage } from "../../../../server/index.ts";
+import { isRunSettled, runToTurn } from "../lib/run-to-turn";
 import { teamStartMessage, type RunImageInput } from "../route-draft";
 import { useRunStore } from "../store";
 import type { RunMessage } from "../types";
@@ -8,7 +10,7 @@ function isRunMessage(message: ServerMessage): message is RunMessage {
   return message.type === "run-started" || message.type === "run-update" || message.type === "run-finished";
 }
 
-export function useRunChannel(socketRef: RefObject<WebSocket | null>) {
+export function useRunChannel(socketRef: RefObject<WebSocket | null>, turnSinkRef: RefObject<(turn: ChatTurn) => void>) {
   const pendingRef = useRef<RunMessage[]>([]);
   const frameRef = useRef<number | null>(null);
 
@@ -16,8 +18,14 @@ export function useRunChannel(socketRef: RefObject<WebSocket | null>) {
     frameRef.current = null;
     const batch = pendingRef.current;
     pendingRef.current = [];
-    useRunStore.getState().applyMessages(batch);
-  }, []);
+    const { applyMessages, dismiss } = useRunStore.getState();
+    applyMessages(batch);
+    const run = useRunStore.getState().run;
+    if (run === null || !isRunSettled(run)) return;
+    const turn = runToTurn(run, Date.now());
+    if (turn) turnSinkRef.current(turn);
+    dismiss();
+  }, [turnSinkRef]);
 
   useEffect(
     () => () => {

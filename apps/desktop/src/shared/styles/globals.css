@@ -687,6 +687,29 @@
   --agent-running: #8fc0ff;
   --agent-running-bg: rgba(143, 192, 255, 0.09);
 
+  /* Diff viewer — row washes, word emphasis, chrome */
+  --diff-add-row: rgba(116, 224, 163, 0.10);
+  --diff-del-row: rgba(255, 139, 139, 0.10);
+  --diff-add-word: rgba(116, 224, 163, 0.26);
+  --diff-del-word: rgba(255, 139, 139, 0.26);
+  --diff-add-marker: #74e0a3;
+  --diff-del-marker: #ff8b8b;
+  --diff-gutter-fg: #6d737e;
+  --diff-row-hover: rgba(255, 255, 255, 0.025);
+  --diff-file-header-bg: #141821;
+  --diff-file-header-border: #232833;
+  --diff-expander-bg: #101420;
+  --diff-expander-hover-bg: #171c27;
+  --diff-expander-fg: #8b93a1;
+  --diff-tree-row-hover-bg: rgba(255, 255, 255, 0.04);
+  --diff-tree-row-active-bg: #1d222b;
+  --diff-tree-row-active-fg: #eceef2;
+  --diff-commit-row-active-bg: rgba(240, 132, 93, 0.12);
+  --diff-commit-row-active-border: rgba(240, 132, 93, 0.35);
+  --diff-menu-bg: #171b22;
+  --diff-menu-border: #2a303b;
+  --diff-banner-bg: #171c27;
+
   /* Shadows — 4-tier hierarchy. Dark block doubles intensity. */
   --shadow-mini: 0 2px 8px rgba(76, 76, 76, 0.15);
   --shadow-mini-inset: 0 1px 4px rgba(76, 76, 76, 0.1) inset;
@@ -1146,6 +1169,29 @@
   --agent-running: #8fc0ff;
   --agent-running-bg: rgba(143, 192, 255, 0.09);
 
+  /* Diff viewer — row washes, word emphasis, chrome */
+  --diff-add-row: rgba(116, 224, 163, 0.10);
+  --diff-del-row: rgba(255, 139, 139, 0.10);
+  --diff-add-word: rgba(116, 224, 163, 0.26);
+  --diff-del-word: rgba(255, 139, 139, 0.26);
+  --diff-add-marker: #74e0a3;
+  --diff-del-marker: #ff8b8b;
+  --diff-gutter-fg: #6d737e;
+  --diff-row-hover: rgba(255, 255, 255, 0.025);
+  --diff-file-header-bg: #141821;
+  --diff-file-header-border: #232833;
+  --diff-expander-bg: #101420;
+  --diff-expander-hover-bg: #171c27;
+  --diff-expander-fg: #8b93a1;
+  --diff-tree-row-hover-bg: rgba(255, 255, 255, 0.04);
+  --diff-tree-row-active-bg: #1d222b;
+  --diff-tree-row-active-fg: #eceef2;
+  --diff-commit-row-active-bg: rgba(240, 132, 93, 0.12);
+  --diff-commit-row-active-border: rgba(240, 132, 93, 0.35);
+  --diff-menu-bg: #171b22;
+  --diff-menu-border: #2a303b;
+  --diff-banner-bg: #171c27;
+
   /* Shadows — doubled intensity over dark surfaces */
   --shadow-mini: 0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-mini-inset: 0 1px 4px rgba(0, 0, 0, 0.5) inset;
@@ -1375,6 +1421,29 @@
   --color-agent-warn-bg: var(--agent-warn-bg);
   --color-agent-running: var(--agent-running);
   --color-agent-running-bg: var(--agent-running-bg);
+
+  /* Diff viewer palette */
+  --color-diff-add-row: var(--diff-add-row);
+  --color-diff-del-row: var(--diff-del-row);
+  --color-diff-add-word: var(--diff-add-word);
+  --color-diff-del-word: var(--diff-del-word);
+  --color-diff-add-marker: var(--diff-add-marker);
+  --color-diff-del-marker: var(--diff-del-marker);
+  --color-diff-gutter-fg: var(--diff-gutter-fg);
+  --color-diff-row-hover: var(--diff-row-hover);
+  --color-diff-file-header-bg: var(--diff-file-header-bg);
+  --color-diff-file-header-border: var(--diff-file-header-border);
+  --color-diff-expander-bg: var(--diff-expander-bg);
+  --color-diff-expander-hover-bg: var(--diff-expander-hover-bg);
+  --color-diff-expander-fg: var(--diff-expander-fg);
+  --color-diff-tree-row-hover-bg: var(--diff-tree-row-hover-bg);
+  --color-diff-tree-row-active-bg: var(--diff-tree-row-active-bg);
+  --color-diff-tree-row-active-fg: var(--diff-tree-row-active-fg);
+  --color-diff-commit-row-active-bg: var(--diff-commit-row-active-bg);
+  --color-diff-commit-row-active-border: var(--diff-commit-row-active-border);
+  --color-diff-menu-bg: var(--diff-menu-bg);
+  --color-diff-menu-border: var(--diff-menu-border);
+  --color-diff-banner-bg: var(--diff-banner-bg);
 
   /* Goose status extensions */
   --color-success: var(--success);
@@ -2303,6 +2372,27 @@ html[data-window-kind="voice-buddy"] #root {
  * ladder token. */
 [data-streamdown="mermaid-block"] {
   background: var(--card-glass);
+}
+
+/* Diagrams in the transcript read as a bordered figure, matching the card
+   chrome around compared options rather than floating on the page. */
+.chat-transcript [data-streamdown="mermaid-block"] {
+  border: 1px solid var(--agent-border);
+  border-radius: 0.75rem;
+  background: var(--agent-surface-base);
+  padding-block: 1.25rem;
+  padding-inline: 1rem;
+}
+
+.chat-transcript [data-streamdown="mermaid"] .cluster rect {
+  rx: 10px;
+  ry: 10px;
+}
+
+.chat-transcript [data-streamdown="mermaid"] .node rect,
+.chat-transcript [data-streamdown="mermaid"] .node polygon {
+  rx: 8px;
+  ry: 8px;
 }
 
 [data-streamdown="mermaid-block-actions"] {

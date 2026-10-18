@@ -18,7 +18,7 @@ export function mayOverlap(a: string, b: string): boolean {
   return prefixA.length <= prefixB.length ? isPrefixOf(prefixA, prefixB) : isPrefixOf(prefixB, prefixA);
 }
 
-function tasksMayOverlap(a: PlannedTask, b: PlannedTask): boolean {
+export function tasksMayOverlap(a: PlannedTask, b: PlannedTask): boolean {
   const pathsB = b.allowedPaths ?? [];
   return (a.allowedPaths ?? []).some((pathA) => pathsB.some((pathB) => mayOverlap(pathA, pathB)));
 }

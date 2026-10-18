@@ -31,3 +31,20 @@ export function filterSkills(skills: readonly SkillView[], query: string): reado
     return words.every((word) => text.includes(word));
   });
 }
+
+export type SkillScope = "all" | "in-use" | "unused";
+
+export function filterByScope(skills: readonly SkillView[], scope: SkillScope): readonly SkillView[] {
+  switch (scope) {
+    case "all":
+      return skills;
+    case "in-use":
+      return skills.filter((skill) => skill.usedBy.length > 0);
+    case "unused":
+      return skills.filter((skill) => skill.usedBy.length === 0);
+    default: {
+      const exhaustive: never = scope;
+      return exhaustive;
+    }
+  }
+}

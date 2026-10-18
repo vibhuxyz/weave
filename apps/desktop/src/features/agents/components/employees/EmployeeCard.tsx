@@ -50,6 +50,9 @@ export const EmployeeCard = memo(function EmployeeCard({ agent, entry, isPinned,
           <p className="mt-1 line-clamp-3 max-w-[28ch] text-muted-foreground text-xs leading-relaxed">
             {agent.description || agent.instructions}
           </p>
+          {agent.skills && agent.skills.length > 0 && (
+            <p className="mt-1 text-muted-foreground text-xs">{agent.skills.length} skills</p>
+          )}
           {performance && (
             <p className="mt-1 text-muted-foreground text-xs">
               {performance.ok} of {performance.tasks} tasks succeeded

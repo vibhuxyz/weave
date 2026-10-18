@@ -59,6 +59,7 @@ export interface RunStreamView {
   readonly outcome: RunState["outcome"] | null;
   readonly plannerLabel: string | null;
   readonly isPlanning: boolean;
+  readonly hasLanes: boolean;
 }
 
 export function selectRunStream(state: { readonly run: RunState | null }): RunStreamView {
@@ -69,6 +70,7 @@ export function selectRunStream(state: { readonly run: RunState | null }): RunSt
     outcome: run?.outcome ?? null,
     plannerLabel: run?.planning?.planner ?? null,
     isPlanning: run !== null && run.plan === null && run.outcome === null,
+    hasLanes: (run?.laneOrder.length ?? 0) > 0,
   };
 }
 

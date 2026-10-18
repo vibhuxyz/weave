@@ -63,6 +63,20 @@ export class DependencyGraph<T extends GraphTask> {
     return { ok: true };
   }
 
+  expand(taskId: string, patch: Partial<T>, incoming: readonly T[]): { readonly ok: true } | { readonly ok: false; readonly reason: string } {
+    const current = this.tasks.find((task) => task.id === taskId);
+    if (!current) return { ok: false, reason: `Unknown task ${taskId}` };
+    const ids = new Set(this.tasks.map((task) => task.id));
+    const duplicate = incoming.find((task) => ids.has(task.id));
+    if (duplicate) return { ok: false, reason: `Duplicate task id ${duplicate.id}` };
+    const updated = { ...current, ...patch, id: taskId };
+    const next = [...this.tasks.map((task) => (task.id === taskId ? updated : task)), ...incoming];
+    const issues = validateGraph(next);
+    if (issues.length > 0) return { ok: false, reason: issues.join("; ") };
+    this.tasks = next;
+    return { ok: true };
+  }
+
   replace(taskId: string, patch: Partial<T>): boolean {
     const current = this.tasks.find((task) => task.id === taskId);
     if (!current) return false;

@@ -4,6 +4,7 @@ import type { BudgetManager } from "../adaptive/index.ts";
 import type { IntegrationReport, VerifyWorkspace } from "../integrator/index.ts";
 import type { InspectHarvest, PoolControls, PoolReport, PoolSession, RunWorker } from "../pool/index.ts";
 import type { Ledger } from "../shared/index.ts";
+import type { RunSnapshot } from "../worktree/index.ts";
 
 export interface RunPlanOptions {
   readonly tasks: readonly TaskContract[];
@@ -16,6 +17,7 @@ export interface RunPlanOptions {
   readonly signal?: AbortSignal;
   readonly shouldInstall?: boolean;
   readonly baseRef?: string;
+  readonly snapshot?: RunSnapshot;
   readonly ledger?: Ledger;
   readonly inspectHarvest?: InspectHarvest;
   readonly revise?: Reviser;
@@ -43,6 +45,7 @@ export interface RunPlanReport {
   readonly runId: string;
   readonly ledgerFile: string;
   readonly baseCommit: string;
+  readonly snapshotOf: string | null;
   readonly status: "ok" | "failed" | "cancelled" | "unverified";
   readonly pool: PoolReport;
   readonly integration: IntegrationReport | null;

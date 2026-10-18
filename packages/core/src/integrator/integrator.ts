@@ -1,9 +1,12 @@
 import type { VerificationRung } from "@weave/protocol";
 import { createWorktree, installWorktree, removeWorktree, runGit, type Worktree } from "../worktree/index.ts";
-import { describeConflict, mergeBranch } from "./merge.ts";
+import { mergeBranch, readHead } from "./merge.ts";
+import { settleConflict, settledAttempt } from "./settle-conflict.ts";
 import type { IntegrateOptions, IntegrationReport, MergeCandidate, MergeReport, VerifyResult } from "./types.ts";
 
 export const INTEGRATION_WORKTREE_ID = "integration";
+
+const CURRENT_HEAD = "HEAD";
 
 const UNVERIFIED_DETAIL =
   "verification already fails on the base commit, so no merge can be blamed for a failure; merges were checked for conflicts only";
@@ -29,20 +32,22 @@ async function mergeOne(
   options: IntegrateOptions & { readonly canVerify: boolean },
 ): Promise<MergeReport> {
   if (candidate.commit === null) return report(candidate, { status: "empty", commit: null, rungs: [], detail: "task changed no files" });
+  const head = (await readHead(worktree.path)) ?? CURRENT_HEAD;
   const attempt = await mergeBranch(worktree.path, candidate.branch, `weave: merge ${candidate.taskId}`);
-  if (attempt.status === "conflict") {
-    return report(candidate, { status: "conflict", commit: null, rungs: [], detail: describeConflict(attempt.files) });
-  }
-  if (attempt.status === "merge-error") return report(candidate, { status: "merge-error", commit: null, rungs: [], detail: attempt.detail });
-  if (!options.canVerify) return report(candidate, { status: "merged", commit: attempt.commit, rungs: [], detail: "merged; not verified" });
+  const merged = attempt.status === "conflict"
+    ? await settleConflict({ cwd: worktree.path, head, candidate, files: attempt.files, resolve: options.resolveConflict })
+    : settledAttempt(attempt);
+  if (merged.status !== "merged") return report(candidate, { status: merged.status, commit: null, rungs: [], detail: merged.detail });
+  const note = merged.note ? `${merged.note}; ` : "";
+  if (!options.canVerify) return report(candidate, { status: "merged", commit: merged.commit, rungs: [], detail: `${note}merged; not verified` });
   const verifyStarted = performance.now();
   const verified = await options.verify(worktree.path, options.baseCommit);
   return report(candidate, {
     verifyMs: Math.round(performance.now() - verifyStarted),
     status: verified.ok ? "merged" : "verify-failed",
-    commit: attempt.commit,
+    commit: merged.commit,
     rungs: verified.rungs,
-    detail: verified.ok ? "merged and verified" : verified.detail,
+    detail: verified.ok ? `${note}merged and verified` : `${note}${verified.detail}`,
   });
 }
 

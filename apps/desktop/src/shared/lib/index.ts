@@ -1,4 +1,5 @@
 export { cn } from "./cn";
+export { PLAIN_LANGUAGE, languageOf } from "./code-language";
 export { resolveAvatarMedia, resolveAvatarSrc } from "./avatarUrl";
 export { revealInFileManager } from "./fileManager";
 export { changedFilesQueryKey, gitStateQueryKey } from "./gitStateQueryKey";

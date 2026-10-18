@@ -15,6 +15,17 @@ export interface VerifyResult {
 
 export type VerifyWorkspace = (cwd: string, baseCommit: string) => Promise<VerifyResult>;
 
+export interface MergeConflict {
+  readonly cwd: string;
+  readonly taskId: string;
+  readonly branch: string;
+  readonly files: readonly string[];
+}
+
+export type ConflictFix = { readonly ok: true } | { readonly ok: false; readonly reason: string };
+
+export type ResolveConflict = (conflict: MergeConflict) => Promise<ConflictFix>;
+
 export interface IntegrateOptions {
   readonly repoRoot: string;
   readonly weaveDir: string;
@@ -23,6 +34,7 @@ export interface IntegrateOptions {
   readonly candidates: readonly MergeCandidate[];
   readonly verify: VerifyWorkspace;
   readonly shouldInstall?: boolean;
+  readonly resolveConflict?: ResolveConflict;
 }
 
 export type MergeStatus = "merged" | "empty" | "conflict" | "merge-error" | "verify-failed" | "not-run";

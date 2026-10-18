@@ -39,6 +39,8 @@ function headline(event: CoordinationEvent): string {
       return `${prefix} ${event.data.output} from ${event.data.producer} is now available`;
     case "scope.expand":
       return `${prefix} asks to also work on ${event.data.paths.join(", ")}: ${flatten(event.data.reason)}`;
+    case "split.suggested":
+      return `${prefix} suggests splitting the work${event.data.areas.length > 0 ? ` across ${event.data.areas.join(", ")}` : ""}: ${flatten(event.data.reason)}`;
     case "scope.granted":
       return `${prefix} may now also work on ${event.data.paths.join(", ")}`;
     case "scope.denied":

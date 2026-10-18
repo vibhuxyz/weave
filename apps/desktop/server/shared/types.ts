@@ -17,6 +17,7 @@ import type {
 import type { EmployeeClientMessage, EmployeeServerMessage } from "./employee-types.ts";
 import type { QuestionField, QuestionNotice } from "./question-types.ts";
 import type { BudgetClientMessage, BudgetServerMessage } from "./budget-types.ts";
+import type { DiffClientMessage, DiffServerMessage } from "./diff-types.ts";
 import type { ProjectClientMessage, ProjectServerMessage } from "./project-types.ts";
 import type { SkillClientMessage, SkillServerMessage } from "./skill-types.ts";
 import type { ResultDecision, RunOutcome, RunUpdate } from "./run-types.ts";
@@ -49,6 +50,7 @@ export interface PermissionOption {
 }
 
 export type ClientMessage =
+  | DiffClientMessage
   | EmployeeClientMessage
   | SkillClientMessage
   | ProjectClientMessage
@@ -60,6 +62,7 @@ export type ClientMessage =
       readonly autoCompactThreshold?: number;
       readonly persona?: string;
       readonly personaIds?: readonly string[];
+      readonly skillNames?: readonly string[];
       readonly plugins?: readonly ActivePluginRef[];
       readonly images?: readonly PromptImageData[];
       readonly allowHandoff?: boolean;
@@ -168,6 +171,7 @@ export type CompactionEvent =
   | (CompactionEventBase & { readonly status: "cancelled" });
 
 export type ServerMessage =
+  | DiffServerMessage
   | CompactionEvent
   | EmployeeServerMessage
   | SkillServerMessage

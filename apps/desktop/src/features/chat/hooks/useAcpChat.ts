@@ -41,6 +41,7 @@ import type { ArchiveChannelOptions } from "./acpChat/use-archive-channel";
 import { useQuestionChannel, type AnsweredQuestion } from "./question";
 import { useRunChannel } from "@/features/runs";
 import { useFileChannel } from "@/features/files";
+import { useDiffChannel } from "@/features/diff-viewer";
 import { useEmployeeChannel } from "@/features/employees";
 import { useSkillChannel } from "@/features/skills";
 import { useProjectChannel } from "@/features/project-intelligence";
@@ -80,8 +81,11 @@ export type {
   ToolDiff,
   ToolEntry,
   TurnCheckpoint,
+  TurnAgentKind,
   TurnPersona,
   TurnPlan,
+  TurnRunLane,
+  TurnRunSummary,
   TurnSegment,
   TurnUsage,
   PlanChangeKind,
@@ -168,8 +172,10 @@ export function useAcpChat(server: ChatServerEndpoint | null, options: ArchiveCh
   const token = server?.token ?? null;
   const socketRef = useRef<WebSocket | null>(null);
   const archive = useArchiveChannel(socketRef, options);
-  const runChannel = useRunChannel(socketRef);
+  const runTurnSinkRef = useRef<(turn: ChatTurn) => void>(() => undefined);
+  const runChannel = useRunChannel(socketRef, runTurnSinkRef);
   const fileChannel = useFileChannel(socketRef);
+  const diffChannel = useDiffChannel(socketRef);
   const employeeChannel = useEmployeeChannel(socketRef);
   const skillChannel = useSkillChannel(socketRef);
   const projectChannel = useProjectChannel(socketRef);
@@ -655,6 +661,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
         if (questionChannel.handleMessage(message)) return;
         if (runChannel.handleMessage(message)) return;
         if (fileChannel.handleMessage(message)) return;
+        if (diffChannel.handleMessage(message)) return;
         if (employeeChannel.handleMessage(message)) return;
         if (skillChannel.handleMessage(message)) return;
         if (projectChannel.handleMessage(message)) return;
@@ -1129,7 +1136,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       clearTimeout(retry);
       socket?.close();
     };
-  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset, runChannel.handleMessage, fileChannel.handleMessage, employeeChannel.handleMessage, employeeChannel.reset, employeeChannel.expectListing, employeeChannel.disconnect, skillChannel.handleMessage, skillChannel.expectListing, skillChannel.reset, projectChannel.handleMessage, projectChannel.reset, budgetChannel.handleMessage, budgetChannel.reset, budgetChannel.disconnect]);
+  }, [applyUpdate, withAssistantTurn, port, token, archive.handleMessage, archive.reset, questionChannel.handleMessage, questionChannel.reset, runChannel.handleMessage, fileChannel.handleMessage, diffChannel.handleMessage, employeeChannel.handleMessage, employeeChannel.reset, employeeChannel.expectListing, employeeChannel.disconnect, skillChannel.handleMessage, skillChannel.expectListing, skillChannel.reset, projectChannel.handleMessage, projectChannel.reset, budgetChannel.handleMessage, budgetChannel.reset, budgetChannel.disconnect]);
 
   const { readEmployee, saveEmployee, deleteEmployee } = employeeChannel;
   const { readOverview, queryProject } = projectChannel;
@@ -1165,9 +1172,16 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
 
   /**
    * Put a message the user typed in the transcript without prompting the
-   * engine. `/parallel` runs through the run channel, not a prompt, and the
+   * engine. A team run goes through the run channel, not a prompt, and the
    * request still belongs in the chat where they typed it.
    */
+  const appendRunTurn = useCallback((runTurn: ChatTurn) => {
+    setTurns((current) => (current.some((turn) => turn.id === runTurn.id) ? current : [...current, runTurn]));
+  }, []);
+  useEffect(() => {
+    runTurnSinkRef.current = appendRunTurn;
+  }, [appendRunTurn]);
+
   const showUserMessage = useCallback((text: string, images?: readonly ChatImageAttachment[]) => {
     const turn = userTurn(text, crypto.randomUUID(), Date.now(), images);
     if (turn) setTurns((current) => [...current, turn]);
@@ -1178,8 +1192,10 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
       text: string,
       opts?: {
         persona?: string;
+        skillNames?: string[];
         mentions?: string[];
         personas?: TurnPersona[];
+        skills?: string[];
         images?: ChatImageAttachmentDraft[];
         plugins?: ActivePluginRef[];
         onWithdrawn?: () => void;
@@ -1205,6 +1221,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           createdAt: Date.now(),
           mentions: opts?.mentions?.length ? opts.mentions : undefined,
           personas: personasRef.current,
+          skills: opts?.skills?.length ? opts.skills : undefined,
           images: images?.map((image) => ({
             previewUrl: image.previewUrl,
             mimeType: image.mimeType,
@@ -1221,6 +1238,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
           autoCompactThreshold,
           persona: opts?.persona,
           personaIds: personasRef.current?.map((persona) => persona.id),
+          skillNames: opts?.skillNames?.length ? opts.skillNames : undefined,
           plugins: opts?.plugins?.length ? opts.plugins : undefined,
           allowHandoff: opts?.canHandOff === true ? true : undefined,
           images: images?.map((image) => ({
@@ -1466,6 +1484,7 @@ const [fileMatches, setFileMatches] = useState<readonly string[]>([]);
     cancelRun: runChannel.cancelRun,
     resumeTask: runChannel.resumeTask,
     openFile: fileChannel.openFile,
+    diffChannel,
     employeeActions,
     refreshSkills: skillChannel.refreshSkills,
     projectActions,

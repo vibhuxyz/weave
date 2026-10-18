@@ -1,7 +1,14 @@
+export interface HandoffItem {
+  readonly id: string;
+  readonly work: string;
+  readonly paths: readonly string[];
+  readonly dependsOn: readonly string[];
+}
+
 export interface TeamHandoff {
   readonly reason: string;
   readonly done: readonly string[];
-  readonly remaining: readonly string[];
+  readonly remaining: readonly HandoffItem[];
   readonly findings: readonly string[];
 }
 
